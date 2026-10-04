@@ -81,6 +81,12 @@ authorized to receive that item data.
 | `update_reminder` | create fields plus `itemID`, `expectedVersion` |
 | `complete_reminder`, `delete_reminder` | `listID`, `itemID`, `expectedVersion`, `idempotencyKey` |
 
+The implemented event write surface is title and UTC start/end time, plus
+delete. All-day creation, location, notes, alarms, attendees, and recurrence
+edits are not implemented. The implemented reminder write surface is title,
+completion, and delete; due dates, priority, notes, subtasks, and tags are
+not implemented. The command set is deliberately narrower than EventKit.
+
 Each request requires an active random session token, recent timestamp, and
 unique request UUID. The app rejects extra fields, unselected targets,
 unarmed writes, event ranges over 31 days, times outside 1900–2100,
