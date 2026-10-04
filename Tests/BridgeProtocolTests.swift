@@ -128,6 +128,10 @@ struct BridgeProtocolTests {
             "floating_time_unsupported")
         precondition(MutationPolicy.reminderError(recurring: false, completed: true,
             completing: true) == "already_completed")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: true) == "recurrence_unsupported")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: false) == "recurrence_unsupported")
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("eventkit-journal-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temporary) }

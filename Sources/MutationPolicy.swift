@@ -11,6 +11,9 @@ enum MutationPolicy {
 
     static func reminderError(recurring: Bool, completed: Bool,
                               completing: Bool) -> String? {
+        // EventKit's reminder removal API has no occurrence/series span choice.
+        // Keep both completion and removal of recurring reminders blocked until
+        // their provider-specific occurrence behavior is verified live.
         if recurring { return "recurrence_unsupported" }
         if completing && completed { return "already_completed" }
         return nil
