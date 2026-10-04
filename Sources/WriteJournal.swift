@@ -28,7 +28,7 @@ final class WriteJournal {
         file = directory.appendingPathComponent("write-journal.json")
     }
 
-    func begin(_ request: BridgeRequest) -> Decision {
+    func inspect(_ request: BridgeRequest) -> Decision {
         guard let key = request.parameters["idempotencyKey"] as? String,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
         guard load() else { return .reject("journal_unavailable") }
@@ -40,11 +40,19 @@ final class WriteJournal {
             return .repeatResult(result)
         }
         guard (entries?.count ?? 0) < 1_000 else { return .reject("journal_full") }
-        entries?[key] = Entry(digest: digest, result: nil)
-        guard persist() else {
-            entries?.removeValue(forKey: key)
-            return .reject("journal_unavailable")
+        return .execute
+    }
+
+    func begin(_ request: BridgeRequest) -> Decision {
+        switch inspect(request) {
+        case .repeatResult(let result): return .repeatResult(result)
+        case .reject(let error): return .reject(error)
+        case .execute: break
         }
+        guard let key = request.parameters["idempotencyKey"] as? String,
+              let digest = digest(request) else { return .reject("invalid_idempotency_key") }
+        entries?[key] = Entry(digest: digest, result: nil)
+        guard persist() else { return .reject("journal_unavailable") }
         return .execute
     }
 
@@ -53,7 +61,11 @@ final class WriteJournal {
               let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
               entries?[key] != nil else { return false }
         entries?[key]?.result = data
-        return persist()
+        guard persist() else {
+            entries?[key]?.result = nil
+            return false
+        }
+        return true
     }
 
     private func digest(_ request: BridgeRequest) -> String? {
@@ -69,10 +81,22 @@ final class WriteJournal {
     private func load() -> Bool {
         if entries != nil { return true }
         do {
+            let existed = FileManager.default.fileExists(atPath: directory.path)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
-            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
-            guard (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else { return false }
+            var directoryInfo = stat()
+            guard lstat(directory.path, &directoryInfo) == 0,
+                  directoryInfo.st_uid == getuid(),
+                  directoryInfo.st_mode & S_IFMT == S_IFDIR,
+                  directoryInfo.st_mode & 0o077 == 0 else { return false }
+            if !existed {
+                let parentFD = open(directory.deletingLastPathComponent().path,
+                                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard parentFD >= 0 else { return false }
+                let synced = fsync(parentFD) == 0
+                close(parentFD)
+                guard synced else { return false }
+            }
             if !FileManager.default.fileExists(atPath: file.path) {
                 entries = [:]
                 return true
@@ -112,6 +136,9 @@ final class WriteJournal {
             unlink(temporary.path)
             return false
         }
-        return true
+        let directoryFD = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard directoryFD >= 0 else { return false }
+        defer { close(directoryFD) }
+        return fsync(directoryFD) == 0
     }
 }
