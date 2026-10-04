@@ -71,6 +71,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                                    action: #selector(toggleWrites))
         #if !EVENTKIT_LIVE_WRITES
         armWritesButton.isEnabled = false
+        armWritesButton.title = "Writes unavailable in this build"
         armWritesButton.toolTip = "Live writes require a separately approved build."
         #endif
         stack.addArrangedSubview(armWritesButton)
@@ -288,7 +289,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                                 keyEquivalent: ""))
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        login.isEnabled = installedLocation
+        login.isEnabled = installedLocation &&
+            SMAppService.mainApp.status != .requiresApproval &&
+            SMAppService.mainApp.status != .notFound
         menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -358,6 +361,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleLoginItem(_ sender: Any?) {
         guard installedLocation else {
             output.string = "Install the reviewed signed app in Applications before enabling login startup."
+            openControls(nil)
+            return
+        }
+        guard SMAppService.mainApp.status != .requiresApproval else {
+            output.string = "Approve the login item in System Settings, then check its status here."
             openControls(nil)
             return
         }
