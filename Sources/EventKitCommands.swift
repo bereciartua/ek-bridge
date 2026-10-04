@@ -149,7 +149,7 @@ final class EventKitCommands {
                 completion(["error": "item_unavailable"]); return
             }
             if let error = MutationPolicy.eventError(
-                recurring: event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil,
+                recurring: isRecurring(event),
                 allDay: event.isAllDay, hasAttendees: event.hasAttendees,
                 floatingTime: event.timeZone == nil, updating: command == .updateEvent
             ) {
@@ -225,6 +225,11 @@ final class EventKitCommands {
         guard let calendar = calendar(value, type), calendar.allowsContentModifications else { return nil }
         return calendar
     }
+    // Some providers populate occurrenceDate for a one-off event. Use recurrence
+    // rules and detachment to decide whether mutations need series handling.
+    private func isRecurring(_ event: EKEvent) -> Bool {
+        event.hasRecurrenceRules || event.isDetached
+    }
     private func eventRow(_ event: EKEvent) -> [String: Any] {
         let (title, titleTruncated) = boundedTitle(event.title)
         var row: [String: Any] = [
@@ -233,7 +238,7 @@ final class EventKitCommands {
             "titleTruncated": titleTruncated,
             "start": event.startDate.timeIntervalSince1970,
             "end": event.endDate.timeIntervalSince1970,
-            "recurring": event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil,
+            "recurring": isRecurring(event),
             "allDay": event.isAllDay,
             "timeZone": event.timeZone?.identifier ?? "",
         ]
