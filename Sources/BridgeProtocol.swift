@@ -43,6 +43,11 @@ enum BridgeProtocol {
     static let sessionLifetime: TimeInterval = 15 * 60
     static let requestLifetime: TimeInterval = 30
 
+    static func sessionIsActive(now: TimeInterval, expiresAt: TimeInterval,
+                                uptime: TimeInterval, expiresUptime: TimeInterval) -> Bool {
+        now < expiresAt && uptime < expiresUptime
+    }
+
     static func validate(
         _ data: Data,
         token: String,
@@ -53,12 +58,16 @@ enum BridgeProtocol {
         guard let object = try? JSONSerialization.jsonObject(with: data),
               let fields = object as? [String: Any],
               Set(fields.keys) == Set(["version", "id", "command", "token", "issuedAt", "parameters"]),
-              let version = fields["version"] as? Int, version == 1,
+              let version = fields["version"] as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(), version.intValue == 1,
+              version.doubleValue == 1,
               let id = fields["id"] as? String, UUID(uuidString: id) != nil,
               let commandName = fields["command"] as? String,
               let command = BridgeCommand(rawValue: commandName),
               let suppliedToken = fields["token"] as? String,
-              let issuedAt = fields["issuedAt"] as? Double, issuedAt.isFinite,
+              let issuedAtNumber = fields["issuedAt"] as? NSNumber,
+              CFGetTypeID(issuedAtNumber) != CFBooleanGetTypeID(),
+              let issuedAt = Optional(issuedAtNumber.doubleValue), issuedAt.isFinite,
               let parameters = fields["parameters"] as? [String: Any]
         else { return .failure(.invalid) }
         guard secureEquals(suppliedToken, token) else { return .failure(.unauthorized) }
