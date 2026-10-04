@@ -1,24 +1,23 @@
 import Darwin
 import Foundation
-import Security
 
 @MainActor
 final class LocalBridge {
     private let root: URL
     private let session: URL
-    private let token: String
     private let expiresAt: Date
     private let expiresUptime: TimeInterval
-    private let handle: (BridgeRequest, @escaping ([String: Any]) -> Void) -> Void
+    private let handle: (ClientBridgeEnvelope, @escaping ([String: Any]) -> Void) -> Void
     private let onStop: () -> Void
     private var timer: Timer?
     private var usedIDs = Set<String>()
     private var lockFD: Int32 = -1
 
     var expiration: Date { expiresAt }
+    var active: Bool { timer != nil && isActive }
 
     init(
-        handle: @escaping (BridgeRequest, @escaping ([String: Any]) -> Void) -> Void,
+        handle: @escaping (ClientBridgeEnvelope, @escaping ([String: Any]) -> Void) -> Void,
         onStop: @escaping () -> Void
     ) throws {
         self.handle = handle
@@ -27,12 +26,6 @@ final class LocalBridge {
         session = root.appendingPathComponent("session-\(UUID().uuidString)", isDirectory: true)
         expiresAt = Date().addingTimeInterval(BridgeProtocol.sessionLifetime)
         expiresUptime = ProcessInfo.processInfo.systemUptime + BridgeProtocol.sessionLifetime
-
-        var randomBytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes) == errSecSuccess else {
-            throw BridgeIOError.randomFailed
-        }
-        token = randomBytes.map { String(format: "%02x", $0) }.joined()
 
         try Self.ensureDirectory(root)
         let lockPath = root.appendingPathComponent("lock").path
@@ -49,9 +42,8 @@ final class LocalBridge {
             try Self.ensureDirectory(session.appendingPathComponent("requests", isDirectory: true))
             try Self.ensureDirectory(session.appendingPathComponent("responses", isDirectory: true))
             let descriptor: [String: Any] = [
-                "version": 1,
+                "version": 2,
                 "session": session.lastPathComponent,
-                "token": token,
                 "expiresAt": expiresAt.timeIntervalSince1970,
             ]
             let data = try JSONSerialization.data(withJSONObject: descriptor)
@@ -99,12 +91,14 @@ final class LocalBridge {
             }
             let data = Self.readOwnedFile(requestURL, maxBytes: BridgeProtocol.maxRequestBytes + 1)
             let result = data.map {
-                BridgeProtocol.validate($0, token: token, now: Date().timeIntervalSince1970, usedIDs: usedIDs)
+                ClientBridgeProtocol.validate(
+                    $0, session: session.lastPathComponent,
+                    now: Date().timeIntervalSince1970, usedIDs: usedIDs)
             } ?? .failure(.invalid)
             switch result {
-            case .success(let request) where request.id == id:
-                usedIDs.insert(id)
-                handle(request) { [weak self] value in
+            case .success(let envelope) where envelope.request.id == id.lowercased():
+                usedIDs.insert(envelope.request.id)
+                handle(envelope) { [weak self] value in
                     guard let self, self.isActive, self.timer != nil else { return }
                     self.reply(value, id: id, to: responses.appendingPathComponent(name))
                 }
@@ -125,7 +119,7 @@ final class LocalBridge {
     }
 
     private func reply(_ value: [String: Any], id: String, to url: URL) {
-        var envelope: [String: Any] = ["version": 1, "id": id]
+        var envelope: [String: Any] = ["version": 2, "id": id]
         if let error = value["error"] as? String {
             envelope["ok"] = false
             envelope["error"] = error
@@ -136,7 +130,7 @@ final class LocalBridge {
         guard let data = try? JSONSerialization.data(withJSONObject: envelope),
               data.count <= BridgeProtocol.maxResponseBytes else {
             let fallback: [String: Any] = [
-                "version": 1, "id": id, "ok": false, "error": "response_too_large"
+                "version": 2, "id": id, "ok": false, "error": "response_too_large"
             ]
             if let data = try? JSONSerialization.data(withJSONObject: fallback) {
                 try? Self.writeAtomically(data, to: url)
@@ -200,7 +194,6 @@ final class LocalBridge {
 }
 
 enum BridgeIOError: Error {
-    case randomFailed
     case directoryFailed
     case unsafePath
     case alreadyActive

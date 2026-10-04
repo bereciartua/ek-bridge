@@ -23,6 +23,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var store = EKEventStore()
     private lazy var commands = EventKitCommands(store: store)
     private lazy var testCollections = TestCollections(store: store)
+    private lazy var clientRegistry = ClientRegistry()
+    private lazy var clientManager = ClientManagerUI(registry: clientRegistry, store: store)
+    private let approvalGate = ExactActionApproval()
+    private let approvalUI = ExactActionApprovalUI()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -41,7 +45,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         stack.addArrangedSubview(title)
 
         let explanation = NSTextField(wrappingLabelWithString:
-            "Select one calendar and one reminder list to scope item commands. The local bridge is off until enabled here. Writes require a separate arm switch.")
+            "Create named local clients and grant actions on individual calendars and reminder lists. The bridge is off until enabled here. Every write needs an exact on-screen approval.")
         explanation.maximumNumberOfLines = 3
         stack.addArrangedSubview(explanation)
 
@@ -62,28 +66,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         bridgeEnableButton = button("Enable for 15 Minutes", #selector(enableBridge))
         bridgeDisableButton = button("Disable", #selector(disableBridge))
         stack.addArrangedSubview(NSStackView(views: [bridgeEnableButton, bridgeDisableButton]))
-        stack.addArrangedSubview(targetStatus)
-        stack.addArrangedSubview(NSStackView(views: [
-            button("Choose Calendar Target", #selector(chooseCalendar)),
-            button("Choose Reminder List Target", #selector(chooseReminderList)),
-            button("Clear Targets", #selector(clearTargets)),
-        ]))
+        stack.addArrangedSubview(button("Manage Clients…", #selector(manageClients)))
         stack.addArrangedSubview(NSStackView(views: [
             button("Check Test Sources", #selector(checkTestSources)),
             button("Create Test Collections", #selector(createTestCollections)),
             button("Remove Empty Test Collections", #selector(removeTestCollections)),
         ]))
-        armWritesButton = NSButton(checkboxWithTitle: "Arm writes for this app session", target: self,
-                                   action: #selector(toggleWrites))
-        #if !EVENTKIT_LIVE_WRITES
+        armWritesButton = NSButton(checkboxWithTitle: "Per-action approval", target: nil, action: nil)
         armWritesButton.isEnabled = false
-        armWritesButton.title = "Writes unavailable in this build"
-        armWritesButton.toolTip = "Live writes require a separately approved build."
-        #endif
-        stack.addArrangedSubview(armWritesButton)
 
         let hint = NSTextField(wrappingLabelWithString:
-            "Local only. Sessions expire after 15 minutes. A login launch starts with bridge off, no selected targets, and writes disabled; open controls to enable access.")
+            "Local only. Sessions expire after 15 minutes. A login launch starts with bridge off. Stored client grants do not turn the bridge on; writes need individual approval.")
         hint.textColor = .secondaryLabelColor
         hint.maximumNumberOfLines = 3
         stack.addArrangedSubview(hint)
@@ -128,6 +121,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        approvalGate.cancelAll()
         localBridge?.stop()
         localBridge = nil
     }
@@ -219,12 +213,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func enableBridge(_ sender: Any?) {
         guard localBridge == nil else { return }
+        guard clientRegistry.clients() != nil else {
+            bridgeStatus.stringValue = "Local bridge: client policy store unavailable"
+            return
+        }
         do {
-            localBridge = try LocalBridge(handle: { [weak self] request, completion in
+            localBridge = try LocalBridge(handle: { [weak self] envelope, completion in
                 guard let self else { completion(["error": "app_unavailable"]); return }
-                self.commands.run(request, completion: completion)
+                self.handleClient(envelope, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
+                self?.approvalGate.cancelAll()
                 self?.commands.scope.writesArmed = false
                 self?.commands.scope.generation += 1
                 self?.armWritesButton.state = .off
@@ -237,7 +236,163 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func disableBridge(_ sender: Any?) {
+        approvalGate.cancelAll()
         localBridge?.stop()
+    }
+
+    @objc private func manageClients(_ sender: Any?) {
+        clientManager.show()
+    }
+
+    private func handleClient(_ envelope: ClientBridgeEnvelope,
+                              completion: @escaping ([String: Any]) -> Void) {
+        let request = envelope.request
+        let checked = clientRegistry.authorize(
+            clientID: envelope.clientID, signature: envelope.signature,
+            signedPayload: envelope.signedPayload, request: request)
+        guard case .success(let call) = checked else {
+            let error: String
+            if case .failure(let reason) = checked { error = reason.rawValue }
+            else { error = "unauthorized" }
+            completion(["error": error])
+            return
+        }
+        let selected = BridgeScope(
+            calendarID: call.grant?.resource == .calendar ? call.targetID : nil,
+            reminderListID: call.grant?.resource == .reminderList ? call.targetID : nil,
+            writesArmed: false, generation: call.revision)
+        if let error = CommandPolicy.validateShapeAndTarget(request, scope: selected) {
+            finishClient(call, ["error": error], completion)
+            return
+        }
+        guard clientRegistry.stillAuthorized(call), localBridge?.active == true else {
+            finishClient(call, ["error": "scope_changed"], completion)
+            return
+        }
+        switch request.command {
+        case .scopeStatus, .calendarCount, .reminderListCount:
+            guard let client = clientRegistry.clients()?.first(where: { $0.id == call.clientID }) else {
+                finishClient(call, ["error": "client_unavailable"], completion)
+                return
+            }
+            let grants = client.grants
+            if request.command == .scopeStatus {
+                let rows = grants.map { grant -> [String: Any] in
+                    ["resource": grant.resource.rawValue,
+                     "targetID": grant.targetID, "mask": grant.mask]
+                }
+                finishClient(call, ["grants": rows], completion)
+            } else {
+                let type: EKEntityType = request.command == .calendarCount ? .event : .reminder
+                guard EKEventStore.authorizationStatus(for: type) == .fullAccess else {
+                    finishClient(call, ["error": "full_access_required"], completion)
+                    return
+                }
+                let resource: ClientResource = type == .event ? .calendar : .reminderList
+                let allowed = Set(grants.filter { $0.resource == resource }.map(\.targetID))
+                let count = store.calendars(for: type).filter {
+                    allowed.contains($0.calendarIdentifier)
+                }.count
+                finishClient(call, ["count": count], completion)
+            }
+        case .authorizationStatus:
+            commands.runAuthorized(request, selected: selected,
+                                   stillAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
+            }) { [weak self] value in
+                self?.finishClient(call, value, completion)
+            }
+        default:
+            if request.command.isWrite {
+                reviewWrite(request, call: call, selected: selected, completion: completion)
+            } else {
+                commands.runAuthorized(request, selected: selected,
+                                       stillAuthorized: { [weak self] in
+                    guard let self else { return false }
+                    return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
+                }) { [weak self] value in
+                    self?.finishClient(call, value, completion)
+                }
+            }
+        }
+    }
+
+    private func reviewWrite(_ request: BridgeRequest, call: AuthorizedClientCall,
+                             selected: BridgeScope,
+                             completion: @escaping ([String: Any]) -> Void) {
+        #if !EVENTKIT_LIVE_WRITES
+        finishClient(call, ["error": "writes_not_built"], completion)
+        #else
+        guard let window, let targetName = commands.targetName(for: request) else {
+            finishClient(call, ["error": "target_unavailable"], completion)
+            return
+        }
+        let existing = commands.existingDescription(for: request)
+        if request.parameters["itemID"] != nil && existing == nil {
+            finishClient(call, ["error": "item_unavailable"], completion)
+            return
+        }
+        let proposalFields: [String: Any] = [
+            "version": 2, "epoch": approvalGate.epoch, "id": request.id,
+            "command": request.command.rawValue,
+            "issuedAt": Date().timeIntervalSince1970,
+            "parameters": request.parameters,
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: proposalFields, options: [.sortedKeys]) else {
+            finishClient(call, ["error": "invalid_request"], completion)
+            return
+        }
+        switch approvalGate.propose(
+            data, peerVerified: true, scope: selected,
+            now: Date().timeIntervalSince1970,
+            uptime: ProcessInfo.processInfo.systemUptime) {
+        case .failure(let error):
+            finishClient(call, ["error": error.rawValue], completion)
+        case .success(let proposal):
+            approvalUI.review(
+                proposal, clientName: call.clientName,
+                targetName: targetName, existingItemDescription: existing,
+                in: window, gate: approvalGate,
+                currentScope: { [weak self] in
+                    guard let self, self.clientRegistry.stillAuthorized(call),
+                          self.localBridge?.active == true else { return BridgeScope() }
+                    return selected
+                }) { [weak self] result in
+                    guard let self else { return }
+                    switch result {
+                    case .failure(let error):
+                        self.finishClient(call, ["error": error.rawValue], completion)
+                    case .success(let approved):
+                        guard self.clientRegistry.stillAuthorized(call),
+                              self.localBridge?.active == true else {
+                            self.finishClient(call, ["error": "scope_changed"], completion)
+                            return
+                        }
+                        self.commands.runAuthorized(
+                            approved.request, selected: selected,
+                            stillAuthorized: { [weak self] in
+                                guard let self else { return false }
+                                return self.clientRegistry.stillAuthorized(call) &&
+                                    self.localBridge?.active == true
+                            }) { [weak self] value in
+                                self?.finishClient(call, value, completion)
+                            }
+                    }
+                }
+        }
+        #endif
+    }
+
+    private func finishClient(_ call: AuthorizedClientCall, _ value: [String: Any],
+                              _ completion: ([String: Any]) -> Void) {
+        let outcome = (value["error"] as? String).map { "error:\($0)" } ?? "success"
+        guard clientRegistry.recordResult(call, outcome: outcome) else {
+            completion(["error": "activity_unavailable"])
+            return
+        }
+        completion(value)
     }
 
     private func refreshBridgeStatus() {
@@ -276,13 +431,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         @unknown default: loginStatus = "unknown"
         }
         #if EVENTKIT_LIVE_WRITES
-        let writeStatus = commands.scope.writesArmed ? "armed" : "off"
+        let writeStatus = "exact on-screen approval required"
         #else
         let writeStatus = "disabled in this build"
         #endif
+        let clientCount = clientRegistry.clients()?.filter { !$0.revoked }.count
         for line in ["Calendar: \(calendar)", "Reminders: \(reminders)",
                      bridgeLine,
-                     "Targets: calendar \(commands.scope.calendarID == nil ? "none" : "selected"), reminders \(commands.scope.reminderListID == nil ? "none" : "selected")",
+                     "Active clients: \(clientCount.map(String.init) ?? "policy unavailable")",
                      "Writes: \(writeStatus)", "Login: \(loginStatus)"] {
             let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
             item.isEnabled = false

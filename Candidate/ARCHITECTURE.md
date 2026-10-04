@@ -1,8 +1,11 @@
 # Signed XPC candidate — source only
 
-This directory is a review candidate. It has not been installed, registered,
-launched, or signed with Martin's Keychain identity. The installed app still
-uses the attended 15-minute file bridge and starts with that bridge off.
+This directory remains an **XPC transport candidate**. It has not been
+installed, registered, launched, or signed with Martin's Keychain identity.
+The separate version 2 source in `Sources/` now wires the exact-action gate
+and AppKit sheet into a signed-request file bridge with named client keys.
+That new app source has also not been deployed. The installed pilot still
+uses the attended version 1 bridge and starts with that bridge off.
 
 ## What the offline code proves
 
@@ -15,25 +18,27 @@ uses the attended 15-minute file bridge and starts with that bridge off.
   ad hoc test executable with a different identifier fails a static code
   requirement. The test does not validate the real self-signed certificate
   or an actual XPC connection.
-- `ExactActionApproval` accepts a version-2 write proposal only from a
-  transport that has verified the peer. It binds the proposal to an app-launch
+- `ExactActionApproval` accepts a version-2 write proposal only after the
+  caller has verified the request. In the version 2 file bridge, that means
+  verifying the client's Ed25519 signature; an XPC implementation would use
+  OS-enforced peer verification. It binds the proposal to an app-launch
   epoch and one request ID, validates strict command shape and selected
   target, retains exact request bytes and their digest, and issues a single
   in-memory approval ticket. Approval rechecks expiry and target generation
   and consumes the ticket. Cancellation, app restart, and target changes
   cannot turn a pending proposal into an automatic write.
-- `ExactActionApprovalUI` is a source-only AppKit sheet. It shows the action,
+- `ExactActionApprovalUI` is an AppKit sheet wired into version 2 source. It shows the action,
   collection, existing item summary for edits/deletions, proposed title and
   times, and request digest. The app must resolve the collection and existing
   item from EventKit and hold the exact proposed bytes through approval.
   The XPC interface must expose proposal and reply methods only; it must not
   expose `approve`, `cancel`, or EventKit mutation methods to the client.
 
-These parts are **not wired together or operational**. No Mach listener,
-signed client executable, EventKit approval execution path, or remembered
-read mode has been deployed. The AppKit sheet has been typechecked, not shown
-in a live app. The offline tests use a mocked `peerVerified` value for the
-approval policy and separate ad hoc binaries for the identifier requirement.
+No Mach listener or remembered read mode has been deployed. The version 2
+file bridge does wire a signing client and EventKit approval execution path,
+but it has only been built and tested offline. The AppKit sheet has not been
+shown in a live app. The XPC tests use a mocked `peerVerified` value and
+separate ad hoc binaries for the identifier requirement.
 
 ## Required transport and signing decision
 

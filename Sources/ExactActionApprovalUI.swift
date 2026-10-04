@@ -1,12 +1,13 @@
 import AppKit
 import Foundation
 
-// Review surface for the source-only XPC candidate. The caller resolves the
-// target name from EventKit and supplies the current scope at decision time.
+// Review surface for an authenticated local client request. The caller resolves
+// the target name from EventKit and supplies the current scope at decision time.
 @MainActor
 final class ExactActionApprovalUI {
     func review(
         _ proposal: ActionProposal,
+        clientName: String,
         targetName: String,
         existingItemDescription: String?,
         in window: NSWindow,
@@ -24,7 +25,7 @@ final class ExactActionApprovalUI {
         let alert = NSAlert()
         alert.messageText = "Approve this one Calendar or Reminders change?"
         alert.informativeText = description(
-            proposal, targetName: targetName,
+            proposal, clientName: clientName, targetName: targetName,
             existingItemDescription: existingItemDescription)
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Approve Once")
@@ -46,9 +47,10 @@ final class ExactActionApprovalUI {
         }
     }
 
-    private func description(_ proposal: ActionProposal, targetName: String,
+    private func description(_ proposal: ActionProposal, clientName: String, targetName: String,
                              existingItemDescription: String?) -> String {
         var lines = [
+            "Client: \(String(reflecting: clientName))",
             "Action: \(proposal.command.rawValue)",
             "Collection: \(String(reflecting: targetName)) [\(proposal.targetID)]",
         ]

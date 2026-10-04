@@ -17,6 +17,15 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientBridgeProtocol.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Tests/ClientRegistryTests.swift" \
+    -o "$project_dir/build/client-registry-tests"
+"$project_dir/build/client-registry-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Tests/BridgePollingTimerTests.swift" \
     -o "$project_dir/build/bridge-polling-timer-tests"
@@ -54,4 +63,3 @@ codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.impostor \
 "$project_dir/build/signed-xpc-boundary-tests" \
     "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
-PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/test_client.py"

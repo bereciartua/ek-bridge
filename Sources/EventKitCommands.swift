@@ -10,7 +10,33 @@ final class EventKitCommands {
     init(store: EKEventStore) { self.store = store }
 
     func run(_ request: BridgeRequest, completion: @escaping ([String: Any]) -> Void) {
-        if let error = CommandPolicy.validate(request, scope: scope) {
+        let selected = scope
+        run(request, selected: selected, requiresArm: true,
+            stillAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.scope.generation == selected.generation &&
+                    self.scope.calendarID == selected.calendarID &&
+                    self.scope.reminderListID == selected.reminderListID
+            }, completion: completion)
+    }
+
+    // Client authorization is checked before entry and again by the supplied
+    // closure after asynchronous EventKit reads or a UI approval.
+    func runAuthorized(_ request: BridgeRequest, selected: BridgeScope,
+                       stillAuthorized: @escaping () -> Bool,
+                       completion: @escaping ([String: Any]) -> Void) {
+        run(request, selected: selected, requiresArm: false,
+            stillAuthorized: stillAuthorized, completion: completion)
+    }
+
+    private func run(_ request: BridgeRequest, selected: BridgeScope,
+                     requiresArm: Bool, stillAuthorized: @escaping () -> Bool,
+                     completion: @escaping ([String: Any]) -> Void) {
+        guard stillAuthorized() else { completion(["error": "scope_changed"]); return }
+        let policyError = requiresArm
+            ? CommandPolicy.validate(request, scope: selected)
+            : CommandPolicy.validateShapeAndTarget(request, scope: selected)
+        if let error = policyError {
             completion(["error": error])
             return
         }
@@ -44,9 +70,9 @@ final class EventKitCommands {
         switch command {
         case .scopeStatus:
             completion([
-                "calendarID": scope.calendarID as Any? ?? NSNull(),
-                "reminderListID": scope.reminderListID as Any? ?? NSNull(),
-                "writesArmed": scope.writesArmed,
+                "calendarID": selected.calendarID as Any? ?? NSNull(),
+                "reminderListID": selected.reminderListID as Any? ?? NSNull(),
+                "writesArmed": selected.writesArmed,
             ])
         case .authorizationStatus:
             completion([
@@ -65,7 +91,7 @@ final class EventKitCommands {
             let end = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
             let predicate = store.predicateForEvents(withStart: start, end: end, calendars: [calendar])
             let limit = (p["limit"] as! NSNumber).intValue
-            let generation = scope.generation
+            let generation = selected.generation
             var rows = [[String: Any]]()
             var truncated = false
             store.enumerateEvents(matching: predicate) { event, stop in
@@ -78,7 +104,8 @@ final class EventKitCommands {
             }
             guard CommandPolicy.scopeStillSelected(
                     id: calendar.calendarIdentifier, generation: generation,
-                    scope: scope, reminders: false),
+                    scope: selected, reminders: false),
+                  stillAuthorized(),
                   EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
                 completion(["error": "scope_changed"]); return
             }
@@ -96,13 +123,14 @@ final class EventKitCommands {
             }
             let predicate = store.predicateForReminders(in: [list])
             let limit = (p["limit"] as! NSNumber).intValue
-            let generation = scope.generation
+            let generation = selected.generation
             store.fetchReminders(matching: predicate) { [weak self] reminders in
                 DispatchQueue.main.async {
                     guard let self else { completion(["error": "app_unavailable"]); return }
                     guard CommandPolicy.scopeStillSelected(
                             id: list.calendarIdentifier, generation: generation,
-                            scope: self.scope, reminders: true),
+                            scope: selected, reminders: true),
+                          stillAuthorized(),
                           EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
                         completion(["error": "scope_changed"]); return
                     }
@@ -220,6 +248,39 @@ final class EventKitCommands {
     private func calendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
         guard let id = value as? String else { return nil }
         return store.calendars(for: type).first { $0.calendarIdentifier == id }
+    }
+    func targetName(for request: BridgeRequest) -> String? {
+        let reminders: Bool
+        switch request.command {
+        case .readReminders, .createReminder, .updateReminder, .completeReminder,
+             .deleteReminder: reminders = true
+        default: reminders = false
+        }
+        let type: EKEntityType = reminders ? .reminder : .event
+        guard EKEventStore.authorizationStatus(for: type) == .fullAccess else { return nil }
+        return calendar(request.parameters[reminders ? "listID" : "calendarID"], type)?.title
+    }
+
+    // A write review must identify the existing item before showing Approve.
+    // This value is displayed locally and never put in the activity history.
+    func existingDescription(for request: BridgeRequest) -> String? {
+        guard let itemID = request.parameters["itemID"] as? String else { return nil }
+        let p = request.parameters
+        switch request.command {
+        case .updateEvent, .deleteEvent:
+            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess,
+                  let event = store.event(withIdentifier: itemID), event.refresh(),
+                  let start = event.startDate, let end = event.endDate,
+                  event.calendar.calendarIdentifier == p["calendarID"] as? String else { return nil }
+            let title = boundedTitle(event.title).0
+            return "\(title), \(start) to \(end)"
+        case .updateReminder, .completeReminder, .deleteReminder:
+            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess,
+                  let reminder = store.calendarItem(withIdentifier: itemID) as? EKReminder,
+                  reminder.calendar.calendarIdentifier == p["listID"] as? String else { return nil }
+            return "\(boundedTitle(reminder.title).0), completed: \(reminder.isCompleted)"
+        default: return nil
+        }
     }
     private func writableCalendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
         guard let calendar = calendar(value, type), calendar.allowsContentModifications else { return nil }

@@ -2,9 +2,9 @@ import CoreFoundation
 import CryptoKit
 import Foundation
 
-// Source-only candidate for a future XPC route. The transport must derive
-// peerVerified from an OS-enforced code-signing requirement, never from a
-// message field. These methods run on the app's main thread.
+// Immutable one-action approval gate. The caller must verify the submitting
+// client before setting peerVerified; a message field must never set it.
+// These methods run on the app's main thread.
 enum ActionApprovalError: String, Error {
     case unverifiedPeer
     case invalidRequest
@@ -47,8 +47,8 @@ final class ExactActionApproval {
     static let requestLifetime: TimeInterval = 30
     static let approvalLifetime: TimeInterval = 5 * 60
 
-    // A new gate must be created on every app launch. The client obtains the
-    // epoch through a verified XPC handshake; it is not a durable credential.
+    // A new gate is created on every app launch. Its epoch is internal to the
+    // app's review proposal and is not a durable client credential.
     let epoch: String
 
     private struct Pending {
@@ -103,8 +103,8 @@ final class ExactActionApproval {
             endsAt: (request.parameters["end"] as? NSNumber)?.doubleValue))
     }
 
-    // Called only by the app's approval UI. The XPC interface must not expose
-    // this method. The request is re-parsed from the exact retained bytes.
+    // Called only by the app's approval UI. A transport must not expose this
+    // method. The request is re-parsed from the exact retained bytes.
     func approve(ticketID: String, displayedDigest: String, scope: BridgeScope,
                  now: TimeInterval, uptime: TimeInterval)
         -> Result<ApprovedAction, ActionApprovalError> {

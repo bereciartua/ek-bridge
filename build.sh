@@ -22,6 +22,9 @@ xcrun swiftc -parse-as-library \
     -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientBridgeProtocol.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientManagerUI.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/TestCollections.swift" \
@@ -29,7 +32,15 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
+    "$project_dir/Sources/ExactActionApproval.swift" \
+    "$project_dir/Sources/ExactActionApprovalUI.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
+
+xcrun swiftc -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/BridgeClient.swift" \
+    -o "$output_dir/bridge-client"
 
 # Default signing is ad hoc for build validation only. Use the same approved
 # identity for installed updates when testing permission-grant persistence.
