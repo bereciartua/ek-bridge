@@ -27,11 +27,12 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/TestCollections.swift" \
     "$project_dir/Sources/EventKitCommands.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
-# Default signing is ad hoc for build validation only. A stable, trusted signing
-# identity is needed before permission and lock-screen tests on the user's Mac.
+# Default signing is ad hoc for build validation only. Use the same approved
+# identity for installed updates when testing permission-grant persistence.
 sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
 codesign --force --sign "$sign_identity" --options runtime \
     --entitlements "$project_dir/Entitlements.plist" "$app_dir"
