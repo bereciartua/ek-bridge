@@ -8,6 +8,7 @@ final class LocalBridge {
     private let session: URL
     private let token: String
     private let expiresAt: Date
+    private let expiresUptime: TimeInterval
     private let handle: (BridgeRequest, @escaping ([String: Any]) -> Void) -> Void
     private let onStop: () -> Void
     private var timer: Timer?
@@ -25,6 +26,7 @@ final class LocalBridge {
         root = URL(fileURLWithPath: "/tmp/eventkit-bridge-\(getuid())", isDirectory: true)
         session = root.appendingPathComponent("session-\(UUID().uuidString)", isDirectory: true)
         expiresAt = Date().addingTimeInterval(BridgeProtocol.sessionLifetime)
+        expiresUptime = ProcessInfo.processInfo.systemUptime + BridgeProtocol.sessionLifetime
 
         var randomBytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes) == errSecSuccess else {
@@ -81,7 +83,7 @@ final class LocalBridge {
     }
 
     private func poll() {
-        guard Date() < expiresAt else {
+        guard isActive else {
             stop()
             return
         }
@@ -103,7 +105,7 @@ final class LocalBridge {
             case .success(let request) where request.id == id:
                 usedIDs.insert(id)
                 handle(request) { [weak self] value in
-                    guard let self, Date() < self.expiresAt, self.timer != nil else { return }
+                    guard let self, self.isActive, self.timer != nil else { return }
                     self.reply(value, id: id, to: responses.appendingPathComponent(name))
                 }
             case .success:
@@ -115,6 +117,11 @@ final class LocalBridge {
             }
             unlink(requestURL.path)
         }
+    }
+    private var isActive: Bool {
+        BridgeProtocol.sessionIsActive(
+            now: Date().timeIntervalSince1970, expiresAt: expiresAt.timeIntervalSince1970,
+            uptime: ProcessInfo.processInfo.systemUptime, expiresUptime: expiresUptime)
     }
 
     private func reply(_ value: [String: Any], id: String, to url: URL) {
