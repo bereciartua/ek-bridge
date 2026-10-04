@@ -7,10 +7,15 @@ app_dir="$output_dir/EventKitBridge.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 sdk_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+write_flag=""
+if [ "${EVENTKIT_LIVE_WRITES:-0}" = "1" ]; then
+    write_flag="-D EVENTKIT_LIVE_WRITES"
+fi
 
 mkdir -p "$contents_dir/MacOS" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
 xcrun swiftc -parse-as-library \
+    $write_flag \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
