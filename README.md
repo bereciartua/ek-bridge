@@ -57,6 +57,13 @@ lists calendar or list metadata, lets the user select at most one target of
 each type, clears targets, and has a separate write arm checkbox. The app
 starts with no item targets, bridge off, and writes unarmed. The bridge
 expires after 15 minutes and disarms writes.
+For a supervised synthetic test, the controls can preview the Calendar and
+Reminders account sources, create an empty calendar and list named
+`EventKit Bridge Test`, and remove only those app-created collections after
+they are verified empty. The app records their IDs to avoid deleting an
+unrelated collection with the same name. It prefers a local source when one
+already has collections of that type; otherwise it uses the default source,
+which may sync to an account. These controls have been compiled but not run.
 Login startup alone does not enable the bridge or restore targets. This is a
 deliberate attended prototype; it does not yet offer unattended access after
 restart or after session expiry.
@@ -71,7 +78,7 @@ authorized to receive that item data.
 
 | Command | Required parameters |
 | --- | --- |
-| `authorization_status`, `calendar_count`, `reminder_list_count` | none |
+| `authorization_status`, `calendar_count`, `reminder_list_count`, `scope_status` | none |
 | `read_events` | `calendarID`, `start`, `end` (Unix seconds), `limit` |
 | `read_reminders` | `listID`, `limit`, optional `afterID` cursor |
 | `create_event` | `calendarID`, `title`, `start`, `end`, `idempotencyKey` |
@@ -129,6 +136,7 @@ synchronization.
 | --- | --- |
 | Permission and count bridge while locked and awake | Tested on previous build |
 | Menu bar UI, target selection, login control | Compiled; not launched |
+| App-created synthetic test collection controls | Compiled; not launched |
 | Bounded item reads | Implemented; no real-item validation |
 | Calendar and Reminders mutations | Implemented and statically built; disabled in default build |
 | Idempotency and stale-version checks | Isolated tests; no EventKit transaction guarantee |
