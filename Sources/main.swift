@@ -69,6 +69,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         ]))
         armWritesButton = NSButton(checkboxWithTitle: "Arm writes for this app session", target: self,
                                    action: #selector(toggleWrites))
+        #if !EVENTKIT_LIVE_WRITES
+        armWritesButton.isEnabled = false
+        armWritesButton.toolTip = "Live writes require a separately approved build."
+        #endif
         stack.addArrangedSubview(armWritesButton)
 
         let hint = NSTextField(labelWithString: "Local only. Bridge sessions expire after 15 minutes. Login item is controlled from the menu bar.")
