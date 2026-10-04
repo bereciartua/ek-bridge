@@ -64,10 +64,9 @@ final class LocalBridge {
             throw error
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = BridgePollingTimer.schedule(interval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
 
     func stop() {
