@@ -15,7 +15,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var reminderListButton: NSButton!
     private var bridgeEnableButton: NSButton!
     private var bridgeDisableButton: NSButton!
-    private let bridgeStatus = NSTextField(labelWithString: "Local counts bridge: off")
+    private let bridgeStatus = NSTextField(labelWithString: "Local bridge: off")
     private let targetStatus = NSTextField(labelWithString: "Item targets: none selected")
     private var armWritesButton: NSButton!
     private var localBridge: LocalBridge?
@@ -75,8 +75,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         #endif
         stack.addArrangedSubview(armWritesButton)
 
-        let hint = NSTextField(labelWithString: "Local only. Bridge sessions expire after 15 minutes. Login item is controlled from the menu bar.")
+        let hint = NSTextField(wrappingLabelWithString:
+            "Local only. Sessions expire after 15 minutes. A login launch starts with bridge off, no selected targets, and writes disabled; open controls to enable access.")
         hint.textColor = .secondaryLabelColor
+        hint.maximumNumberOfLines = 3
         stack.addArrangedSubview(hint)
 
         output.isEditable = false
@@ -217,12 +219,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             }, onStop: { [weak self] in
                 self?.localBridge = nil
                 self?.commands.scope.writesArmed = false
+                self?.commands.scope.generation += 1
                 self?.armWritesButton.state = .off
                 self?.refreshBridgeStatus()
             })
             refreshBridgeStatus()
         } catch {
-            bridgeStatus.stringValue = "Local counts bridge: could not start (\(error))"
+            bridgeStatus.stringValue = "Local bridge: could not start (\(error))"
         }
     }
 
@@ -234,12 +237,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         if let localBridge {
             let formatter = DateFormatter()
             formatter.timeStyle = .short
-            bridgeStatus.stringValue = "Local counts bridge: active until \(formatter.string(from: localBridge.expiration))"
+            bridgeStatus.stringValue = "Local bridge: active until \(formatter.string(from: localBridge.expiration))"
         } else {
-            bridgeStatus.stringValue = "Local counts bridge: off"
+            bridgeStatus.stringValue = "Local bridge: off"
         }
         bridgeEnableButton.isEnabled = localBridge == nil
         bridgeDisableButton.isEnabled = localBridge != nil
+        refreshWriteControl()
         refreshMenu()
     }
 
@@ -248,8 +252,31 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let calendar = name(EKEventStore.authorizationStatus(for: .event))
         let reminders = name(EKEventStore.authorizationStatus(for: .reminder))
+        let bridgeLine: String
+        if let localBridge {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            bridgeLine = "Bridge: active until \(formatter.string(from: localBridge.expiration))"
+        } else {
+            bridgeLine = "Bridge: off"
+        }
+        let loginStatus: String
+        switch SMAppService.mainApp.status {
+        case .enabled: loginStatus = "enabled"
+        case .requiresApproval: loginStatus = "needs System Settings approval"
+        case .notFound: loginStatus = "app unavailable"
+        case .notRegistered: loginStatus = "off"
+        @unknown default: loginStatus = "unknown"
+        }
+        #if EVENTKIT_LIVE_WRITES
+        let writeStatus = commands.scope.writesArmed ? "armed" : "off"
+        #else
+        let writeStatus = "disabled in this build"
+        #endif
         for line in ["Calendar: \(calendar)", "Reminders: \(reminders)",
-                     "Bridge: \(localBridge == nil ? "off" : "active")"] {
+                     bridgeLine,
+                     "Targets: calendar \(commands.scope.calendarID == nil ? "none" : "selected"), reminders \(commands.scope.reminderListID == nil ? "none" : "selected")",
+                     "Writes: \(writeStatus)", "Login: \(loginStatus)"] {
             let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
@@ -261,6 +288,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                                 keyEquivalent: ""))
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.isEnabled = installedLocation
         menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -270,6 +298,22 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshTargetStatus() {
         targetStatus.stringValue = "Calendar: \(commands.scope.calendarID == nil ? "none" : "selected") · Reminders: \(commands.scope.reminderListID == nil ? "none" : "selected")"
+        refreshWriteControl()
+        refreshMenu()
+    }
+    private var installedLocation: Bool {
+        let path = Bundle.main.bundleURL.standardizedFileURL.path
+        let userApps = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true).path
+        return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
+    }
+    private func refreshWriteControl() {
+        #if EVENTKIT_LIVE_WRITES
+        armWritesButton.isEnabled = localBridge != nil &&
+            (commands.scope.calendarID != nil || commands.scope.reminderListID != nil)
+        #else
+        armWritesButton.isEnabled = false
+        #endif
     }
     @objc private func openControls(_ sender: Any?) {
         window?.makeKeyAndOrderFront(nil)
@@ -292,22 +336,31 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Select")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard calendars.indices.contains(picker.indexOfSelectedItem) else { return }
         let id = calendars[picker.indexOfSelectedItem].calendarIdentifier
         if type == .event { commands.scope.calendarID = id }
         else { commands.scope.reminderListID = id }
+        commands.scope.generation += 1
         refreshTargetStatus()
     }
     @objc private func clearTargets(_ sender: Any?) {
         commands.scope.calendarID = nil
         commands.scope.reminderListID = nil
         commands.scope.writesArmed = false
+        commands.scope.generation += 1
         armWritesButton.state = .off
         refreshTargetStatus()
     }
     @objc private func toggleWrites(_ sender: Any?) {
         commands.scope.writesArmed = armWritesButton.state == .on
+        refreshMenu()
     }
     @objc private func toggleLoginItem(_ sender: Any?) {
+        guard installedLocation else {
+            output.string = "Install the reviewed signed app in Applications before enabling login startup."
+            openControls(nil)
+            return
+        }
         do {
             if SMAppService.mainApp.status == .enabled {
                 try SMAppService.mainApp.unregister()
