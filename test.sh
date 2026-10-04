@@ -9,6 +9,7 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Tests/BridgeProtocolTests.swift" \
     -o "$project_dir/build/bridge-protocol-tests"
