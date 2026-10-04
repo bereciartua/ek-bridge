@@ -157,15 +157,29 @@ final class ClientManagerUI {
             check.state = check.isEnabled && ((old?.mask ?? 0) & bit) != 0 ? .on : .off
             return check
         }
+        // NSAlert measures an accessory view by its frame. A bare NSStackView
+        // has no initial frame, so AppKit can lay the checkboxes over the
+        // informative text and leave them impossible to click.
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 480,
+                                             height: CGFloat(controls.count) * 30))
         let stack = NSStackView(views: controls)
         stack.orientation = .vertical
         stack.alignment = .leading
+        stack.distribution = .fillEqually
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        accessory.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: accessory.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
+        ])
         let edit = NSAlert()
         edit.messageText = "Permissions for \(client.name)"
-        edit.informativeText = "\(kind): \(selected.calendar.title) [\(selected.calendar.calendarIdentifier)]\n" +
-            (writable ? "" : "EventKit reports this collection as read-only, so write actions are unavailable.\n") +
-            "Checked actions stay authorized until changed or revoked. Clear all boxes to remove this grant. Individual writes do not ask for another app approval."
-        edit.accessoryView = stack
+        edit.informativeText = "\(kind): \(selected.calendar.title)\nID: \(selected.calendar.calendarIdentifier)\n" +
+            (writable ? "" : "EventKit reports this collection as read-only.\n") +
+            "Checked actions remain authorized until changed or revoked. Clear all to remove this grant."
+        edit.accessoryView = accessory
         edit.addButton(withTitle: "Save Grants")
         edit.addButton(withTitle: "Cancel")
         guard edit.runModal() == .alertFirstButtonReturn else { return }
