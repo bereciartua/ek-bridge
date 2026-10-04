@@ -8,6 +8,7 @@ from pathlib import Path
 import stat
 import sys
 import time
+from typing import Optional
 import uuid
 
 
@@ -57,7 +58,7 @@ def atomic_request(path: Path, content: bytes) -> None:
         os.close(fd)
 
 
-def send(command: str) -> dict:
+def send(command: str, parameters: Optional[dict] = None) -> dict:
     root = Path("/tmp") / ("eventkit-bridge-" + str(os.getuid()))
     owned_directory(root)
     descriptor = json.loads(owned_file(root / "current.json", 2048))
@@ -82,18 +83,19 @@ def send(command: str) -> dict:
         "version": 1,
         "id": request_id,
         "command": command,
+        "parameters": parameters or {},
         "token": descriptor["token"],
         "issuedAt": time.time(),
     }
     request = json.dumps(message, separators=(",", ":")).encode("utf-8")
-    if len(request) > 2048:
+    if len(request) > 8192:
         raise BridgeClientError("request too large")
     response_path = responses / (request_id + ".json")
     atomic_request(requests / (request_id + ".json"), request)
     deadline = min(time.monotonic() + 10, time.monotonic() + max(0, descriptor["expiresAt"] - time.time()))
     while time.monotonic() < deadline:
         try:
-            response = json.loads(owned_file(response_path, 2048))
+            response = json.loads(owned_file(response_path, 65536))
             response_path.unlink()
             if response.get("version") != 1 or response.get("id") != request_id:
                 raise BridgeClientError("invalid bridge response")
@@ -105,10 +107,19 @@ def send(command: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("authorization_status", "calendar_count", "reminder_list_count"))
+    parser.add_argument("command", choices=(
+        "authorization_status", "calendar_count", "reminder_list_count",
+        "read_events", "read_reminders", "create_event", "update_event",
+        "delete_event", "create_reminder", "update_reminder",
+        "complete_reminder", "delete_reminder"))
+    parser.add_argument("--params-file", type=Path,
+                        help="JSON object in a private mode-0600 file")
     args = parser.parse_args()
     try:
-        response = send(args.command)
+        parameters = json.loads(owned_file(args.params_file, 8192)) if args.params_file else {}
+        if not isinstance(parameters, dict):
+            raise BridgeClientError("parameters must be an object")
+        response = send(args.command, parameters)
     except (BridgeClientError, OSError, ValueError, KeyError, TypeError):
         print("Bridge request failed or session is unavailable.", file=sys.stderr)
         return 1
