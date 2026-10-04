@@ -12,6 +12,7 @@ struct BridgeProtocolTests {
             suppliedToken: String? = nil,
             issuedAt: Any? = nil,
             extra: Bool = false,
+            omitParameters: Bool = false,
             version: Any = 1,
             parameters: [String: Any] = [:]
         ) throws -> Data {
@@ -23,6 +24,7 @@ struct BridgeProtocolTests {
                 "issuedAt": issuedAt ?? now,
                 "parameters": parameters,
             ]
+            if omitParameters { object.removeValue(forKey: "parameters") }
             if extra { object["unapproved"] = true }
             return try JSONSerialization.data(withJSONObject: object)
         }
@@ -51,6 +53,8 @@ struct BridgeProtocolTests {
         expect(BridgeProtocol.validate(try message(), token: token,
                                        now: now, usedIDs: [id]), error: .replay)
         expect(BridgeProtocol.validate(try message(extra: true), token: token,
+                                       now: now, usedIDs: []), error: .invalid)
+        expect(BridgeProtocol.validate(try message(omitParameters: true), token: token,
                                        now: now, usedIDs: []), error: .invalid)
         expect(BridgeProtocol.validate(try message(version: true), token: token,
                                        now: now, usedIDs: []), error: .invalid)
@@ -164,6 +168,6 @@ struct BridgeProtocolTests {
         }
         guard case .reject("journal_unavailable") = WriteJournal(directory: link).begin(write)
         else { preconditionFailure("symlink journal directory") }
-        print("Bridge protocol/policy/journal: 38 positive/negative checks passed")
+        print("Bridge protocol/policy/journal: 39 positive/negative checks passed")
     }
 }
