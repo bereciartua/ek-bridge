@@ -4,6 +4,7 @@ enum BridgeCommand: String {
     case authorizationStatus = "authorization_status"
     case calendarCount = "calendar_count"
     case reminderListCount = "reminder_list_count"
+    case scopeStatus = "scope_status"
     case readEvents = "read_events"
     case readReminders = "read_reminders"
     case createEvent = "create_event"
