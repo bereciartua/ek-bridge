@@ -1,76 +1,104 @@
 # EventKit Bridge
 
-A small, user-operated macOS app for testing native Calendar and Reminders
-permissions without GUI automation of Apple's apps. Version 0.1 can show
-authorization state, request access when its buttons are pressed, and list only
-calendar or Reminders-list **name, ID, and writability** after full access has
-been granted. It does not read or change any event or reminder item.
+A local macOS menu bar app that owns Apple Calendar and Reminders permission.
+It exposes a short-lived, narrowly scoped file bridge to a task running **on
+the same Mac**. There is no internet listener, daemon, or cloud-to-localhost
+path.
 
-## Build
+## Current validation
 
-This Mac has Command Line Tools and Swift 6.4. Its default macOS 27 SDK does
-not match the installed compiler, so `build.sh` uses its installed 26.5 SDK.
+The earlier counts-only build was launched with the user's approval. macOS
+reported Full access to both EventKit types. Its local task client returned
+permission status, 23 calendar count, and 12 reminder-list count while
+unlocked and again while the screen was manually locked with the Mac awake.
+No item was read or changed.
 
-```sh
-sh build.sh
-```
+The current menu bar build compiles and its isolated protocol, policy, journal,
+and client tests pass. **It has not been launched or tested with real items.**
+Its ad hoc signature is not a durable TCC identity. Sleep, logout, offline,
+login item startup, synchronization conflicts, and actual reads/writes remain
+untested. Do not infer locked-screen operation after sleep or logout.
 
-This creates `build/EventKitBridge.app` inside the project. Set
-`EVENTKIT_OUTPUT_DIR="$PWD/build/prototype"` to build at a separate path and
-preserve an already granted app while testing a new version. Run `sh test.sh`
-for the isolated request-validation checks. The default ad hoc
-signature is for compilation checks only; **do not use it as a durable TCC
-identity**. For a user-approved signing test, pass an existing, reviewed
-Apple signing identity as `EVENTKIT_SIGN_IDENTITY` to `build.sh`. The script
-does not create or fetch any certificate. Keep the bundle identifier
-`dev.martin.dot.eventkitbridge` and signing identity stable across versions.
-Review the signature and entitlement with `codesign --display --verbose=4
---entitlements - build/EventKitBridge.app` and verify with `codesign --verify
---verbose=2 build/EventKitBridge.app`.
+## Build and tests
 
-## Access and current limits
-
-- The app is launched independently by the user through the normal macOS app
-  lifecycle. No installation or launch has been performed as part of this
-  project yet.
-- Calendar and Reminders requests are separate button actions. The user
-  decides each macOS permission prompt. Full access is broader than the app's
-  current list operation; it could permit item access to this app.
-- List results are displayed only in the app window after the corresponding
-  List button is pressed. The local bridge returns counts and permission
-  status only; it never returns titles or IDs. No analytics, network listener,
-  login item, or startup service is implemented.
-- An independent app process and its TCC attribution must be verified on
-  the test Mac before any permission is granted. An earlier CLI prototype failed
-  inside the local task sandbox; that result does not establish this app's
-  runtime behavior.
-
-## Temporary local counts bridge
-
-The user must press **Enable for 15 Minutes** in the running app. While enabled,
-an in-process timer checks a local folder under `/tmp/eventkit-bridge-<uid>`.
-It accepts only `authorization_status`, `calendar_count`, and
-`reminder_list_count`. A local task can call one command at a time with:
+This Mac has Command Line Tools with a working macOS 26.5 SDK:
 
 ```sh
-python3 client.py authorization_status
-python3 client.py calendar_count
-python3 client.py reminder_list_count
+sh test.sh
+EVENTKIT_OUTPUT_DIR="$PWD/build/next" sh build.sh
+codesign --verify --verbose=2 build/next/EventKitBridge.app
 ```
 
-Requests and replies are small JSON files written with atomic renames. The
-folder is owned by the current Mac user and mode 0700; files are mode 0600.
-The app checks file ownership, type, size, command, one-time request ID, token,
-and timestamp. A random session token is stored in `current.json`, read by the
-client without printing it, and expires after 15 minutes. **Disable** removes
-the session files immediately. A crash may leave expired files in `/tmp`; the
-token cannot authorize a request after its expiry.
+The build uses ad hoc signing by default. A user-approved stable signing
+identity can be supplied through `EVENTKIT_SIGN_IDENTITY`; the script does
+not create or fetch a certificate. Preserve the bundle identifier and
+signing identity across versions. Do not treat an ad hoc rebuild as retaining
+the prior macOS permission grant.
 
-This is a bounded same-user proof of concept, not strong isolation from other
-apps running as the same Mac user: they could read the temporary token. It
-must not expose item contents or writes. No app group, Mach service, network
-socket, daemon, or background startup is used. The app must remain running and
-the Mac must remain awake. A lock-screen test is meaningful only after an
-unlocked baseline succeeds; sleep and logout are separate, untested cases.
-Dot's cloud computer has no direct access to the Mac's localhost and cannot
-work through this app while the Mac is offline.
+## App controls
+
+The status menu shows Calendar and Reminders permission state, bridge state,
+Open Controls, Enable/Disable Bridge, Launch at Login, and Quit. Launch at
+Login uses `SMAppService.mainApp` when the user clicks that menu item; it has
+not been enabled or tested. The controls window requests each permission,
+lists calendar or list metadata, lets the user select at most one target of
+each type, clears targets, and has a separate write arm checkbox. The app
+starts with no item targets, bridge off, and writes unarmed. The bridge
+expires after 15 minutes and disarms writes.
+
+## Local commands
+
+`client.py` sends one JSON command to an active session. For item commands,
+put a JSON parameter object in a private mode-0600 file and pass
+`--params-file /path/to/params.json`. Keep titles out of process arguments
+and logs. The client prints the response, so invoke it only when the task is
+authorized to receive that item data.
+
+| Command | Required parameters |
+| --- | --- |
+| `authorization_status`, `calendar_count`, `reminder_list_count` | none |
+| `read_events` | `calendarID`, `start`, `end` (Unix seconds), `limit` |
+| `read_reminders` | `listID`, `limit` |
+| `create_event` | `calendarID`, `title`, `start`, `end`, `idempotencyKey` |
+| `update_event` | create fields plus `itemID`, `expectedVersion` |
+| `delete_event` | `calendarID`, `itemID`, `expectedVersion`, `idempotencyKey` |
+| `create_reminder` | `listID`, `title`, `idempotencyKey` |
+| `update_reminder` | create fields plus `itemID`, `expectedVersion` |
+| `complete_reminder`, `delete_reminder` | `listID`, `itemID`, `expectedVersion`, `idempotencyKey` |
+
+Each request requires an active random session token, recent timestamp, and
+unique request UUID. The app rejects extra fields, unselected targets,
+unarmed writes, event ranges over 31 days, reads over 100 results, titles over
+200 UTF-8 bytes, event durations over 7 days, stale versions, and changes to
+recurring or detached events and recurring reminders. It returns only title,
+time/status, identifier, version, and recurrence flag for reads. It never
+returns notes, attendees, locations, or reminder notes. EventKit's
+`lastModifiedDate` supplies a best-effort version; items without one cannot
+be updated or deleted.
+
+Writes use a private journal in Application Support. An idempotency key is
+recorded before EventKit is called. Repeating a completed request returns
+its small receipt (identifier/version or deleted flag); a changed payload
+with the same key is rejected. An interrupted pending write is rejected until
+manually reconciled, because EventKit might have committed it. The journal
+stores a payload hash and small receipts, not titles. It is not an atomic
+transaction with EventKit. Calendar sync can change identifiers or records
+between fetch, version check, and save; the app cannot guarantee conflict-free
+remote synchronization.
+
+## Boundaries and next live steps
+
+The `/tmp/eventkit-bridge-<uid>` exchange is mode 0700 with mode 0600 files.
+It authenticates a local same-user task with a short-lived token, but another
+process running as that user could read that token. This is **not** strong
+isolation from same-user software. An XPC or peer-verified socket design
+would need a stable signed client and its own local-task connectivity test.
+
+Before real item access, review the built app and obtain approval to launch
+it, handle any fresh macOS permission prompt, select a disposable test
+calendar and reminder list, and read only test items. Obtain separate approval
+before creating, updating, completing, or deleting disposable items. Review
+signing and same-user threat assumptions before enabling live writes. Login
+item registration and installation need separate approval. Cloud tasks cannot
+call this bridge directly, and an offline, sleeping, or logged-out Mac cannot
+be assumed reachable.
