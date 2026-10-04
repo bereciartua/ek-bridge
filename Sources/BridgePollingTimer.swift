@@ -8,6 +8,7 @@ enum BridgePollingTimer {
     ) -> Timer {
         precondition(Thread.isMainThread)
         let timer = Timer(timeInterval: interval, repeats: repeats, block: block)
+        // Menu tracking and modal UI can run the main loop outside default mode.
         RunLoop.main.add(timer, forMode: .common)
         return timer
     }
