@@ -21,5 +21,37 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/BridgePollingTimerTests.swift" \
     -o "$project_dir/build/bridge-polling-timer-tests"
 "$project_dir/build/bridge-polling-timer-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/ExactActionApproval.swift" \
+    "$project_dir/Tests/ExactActionApprovalTests.swift" \
+    -o "$project_dir/build/exact-action-approval-tests"
+"$project_dir/build/exact-action-approval-tests"
+xcrun swiftc -typecheck -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework AppKit \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/ExactActionApproval.swift" \
+    "$project_dir/Sources/ExactActionApprovalUI.swift"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Candidate/SignedXPCBoundary.swift" \
+    "$project_dir/Tests/SignedXPCBoundaryTests.swift" \
+    -o "$project_dir/build/signed-xpc-boundary-tests"
+printf 'int main(void) { return 0; }\n' > "$project_dir/build/test-peer.c"
+xcrun clang "$project_dir/build/test-peer.c" -o "$project_dir/build/test-peer-good"
+cp "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
+codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.client \
+    "$project_dir/build/test-peer-good"
+codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.impostor \
+    "$project_dir/build/test-peer-bad"
+"$project_dir/build/signed-xpc-boundary-tests" \
+    "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/test_client.py"
