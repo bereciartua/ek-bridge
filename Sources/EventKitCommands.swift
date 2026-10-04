@@ -29,7 +29,7 @@ final class EventKitCommands {
             default: .event
             }
         }()
-        if command != .authorizationStatus,
+        if command != .authorizationStatus && command != .scopeStatus,
            EKEventStore.authorizationStatus(for: entity) != .fullAccess {
             completion(["error": "full_access_required"])
             return
@@ -42,6 +42,12 @@ final class EventKitCommands {
             }
         }
         switch command {
+        case .scopeStatus:
+            completion([
+                "calendarID": scope.calendarID as Any? ?? NSNull(),
+                "reminderListID": scope.reminderListID as Any? ?? NSNull(),
+                "writesArmed": scope.writesArmed,
+            ])
         case .authorizationStatus:
             completion([
                 "calendar": status(.event),
