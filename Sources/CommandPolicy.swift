@@ -6,9 +6,16 @@ struct BridgeScope {
     var calendarID: String?
     var reminderListID: String?
     var writesArmed = false
+    var generation = 0
 }
 
 enum CommandPolicy {
+    static func scopeStillSelected(id: String, generation: Int,
+                                   scope: BridgeScope, reminders: Bool) -> Bool {
+        scope.generation == generation &&
+            (reminders ? scope.reminderListID : scope.calendarID) == id
+    }
+
     static func validate(_ request: BridgeRequest, scope: BridgeScope) -> String? {
         let p = request.parameters
         let command = request.command
@@ -20,13 +27,16 @@ enum CommandPolicy {
             guard keys(p, ["calendarID", "start", "end", "limit"]),
                   target(p, "calendarID", scope.calendarID),
                   let start = number(p["start"]), let end = number(p["end"]),
-                  start.isFinite, end.isFinite, end > start, end - start <= 31 * 86_400,
+                  validTimestamp(start), validTimestamp(end),
+                  end > start, end - start <= 31 * 86_400,
                   let limit = integer(p["limit"]), (1...100).contains(limit)
             else { return "invalid_parameters_or_target" }
         case .readReminders:
-            guard keys(p, ["listID", "limit"]),
+            guard (keys(p, ["listID", "limit"]) ||
+                   keys(p, ["listID", "limit", "afterID"])),
                   target(p, "listID", scope.reminderListID),
-                  let limit = integer(p["limit"]), (1...100).contains(limit)
+                  let limit = integer(p["limit"]), (1...100).contains(limit),
+                  p["afterID"] == nil || item(p["afterID"])
             else { return "invalid_parameters_or_target" }
         case .createEvent:
             guard keys(p, ["calendarID", "title", "start", "end", "idempotencyKey"]),
@@ -104,7 +114,10 @@ enum CommandPolicy {
     }
     private static func dateRange(_ a: Any?, _ b: Any?) -> Bool {
         guard let start = number(a), let end = number(b) else { return false }
-        return start.isFinite && end.isFinite && start > 0 &&
+        return validTimestamp(start) && validTimestamp(end) &&
             end > start && end - start <= 7 * 86_400
+    }
+    private static func validTimestamp(_ value: Double) -> Bool {
+        value.isFinite && value >= -2_208_988_800 && value <= 4_102_444_800
     }
 }
