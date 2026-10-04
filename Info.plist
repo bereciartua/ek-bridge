@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>EventKitBridge</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.martin.dot.eventkitbridge</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>EventKit Bridge</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>List calendar names and IDs when you choose List Calendars. This prototype does not read or change events.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>List Reminders list names and IDs when you choose List Reminder Lists. This prototype does not read or change reminders.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>List calendar names and IDs only when you request it.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>List Reminders list names and IDs only when you request it.</string>
+</dict>
+</plist>
