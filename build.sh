@@ -23,6 +23,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/EventKitCommands.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
