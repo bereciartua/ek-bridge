@@ -8,7 +8,7 @@ final class LocalBridge {
     private let session: URL
     private let token: String
     private let expiresAt: Date
-    private let handle: (BridgeCommand) -> [String: Any]
+    private let handle: (BridgeRequest, @escaping ([String: Any]) -> Void) -> Void
     private let onStop: () -> Void
     private var timer: Timer?
     private var usedIDs = Set<String>()
@@ -17,7 +17,7 @@ final class LocalBridge {
     var expiration: Date { expiresAt }
 
     init(
-        handle: @escaping (BridgeCommand) -> [String: Any],
+        handle: @escaping (BridgeRequest, @escaping ([String: Any]) -> Void) -> Void,
         onStop: @escaping () -> Void
     ) throws {
         self.handle = handle
@@ -99,31 +99,44 @@ final class LocalBridge {
             let result = data.map {
                 BridgeProtocol.validate($0, token: token, now: Date().timeIntervalSince1970, usedIDs: usedIDs)
             } ?? .failure(.invalid)
-            var reply: [String: Any] = ["version": 1, "id": id]
             switch result {
             case .success(let request) where request.id == id:
                 usedIDs.insert(id)
-                let value = handle(request.command)
-                if let error = value["error"] as? String {
-                    reply["ok"] = false
-                    reply["error"] = error
-                } else {
-                    reply["ok"] = true
-                    reply["result"] = value
+                handle(request) { [weak self] value in
+                    guard let self, Date() < self.expiresAt, self.timer != nil else { return }
+                    self.reply(value, id: id, to: responses.appendingPathComponent(name))
                 }
             case .success:
-                reply["ok"] = false
-                reply["error"] = BridgeRequestError.invalid.rawValue
+                reply(["error": BridgeRequestError.invalid.rawValue],
+                      id: id, to: responses.appendingPathComponent(name))
             case .failure(let error):
-                reply["ok"] = false
-                reply["error"] = error.rawValue
-            }
-            if let responseData = try? JSONSerialization.data(withJSONObject: reply),
-               responseData.count <= BridgeProtocol.maxResponseBytes {
-                try? Self.writeAtomically(responseData, to: responses.appendingPathComponent(name))
+                reply(["error": error.rawValue], id: id,
+                      to: responses.appendingPathComponent(name))
             }
             unlink(requestURL.path)
         }
+    }
+
+    private func reply(_ value: [String: Any], id: String, to url: URL) {
+        var envelope: [String: Any] = ["version": 1, "id": id]
+        if let error = value["error"] as? String {
+            envelope["ok"] = false
+            envelope["error"] = error
+        } else {
+            envelope["ok"] = true
+            envelope["result"] = value
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: envelope),
+              data.count <= BridgeProtocol.maxResponseBytes else {
+            let fallback: [String: Any] = [
+                "version": 1, "id": id, "ok": false, "error": "response_too_large"
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: fallback) {
+                try? Self.writeAtomically(data, to: url)
+            }
+            return
+        }
+        try? Self.writeAtomically(data, to: url)
     }
 
     private static func ensureDirectory(_ url: URL) throws {
