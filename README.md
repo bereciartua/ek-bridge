@@ -237,6 +237,14 @@ token risk. The earlier approval for a supervised 15-minute test and Launch
 at Login does not cover that expansion. Approval for each real write must
 also be tied to its exact action and target.
 
+An offline [signed XPC candidate](Candidate/ARCHITECTURE.md) now contains
+peer-requirement construction, an immutable per-action approval policy, and
+an AppKit review sheet. It is source only: the installed app has not changed,
+there is no registered Mach service or signed client executable, and
+remembered reads remain unimplemented and off. A signed CLI can still be
+launched by another same-user process, so peer verification alone does not
+resolve the remembered-read decision.
+
 ## Boundaries and next live steps
 
 The `/tmp/eventkit-bridge-<uid>` exchange is mode 0700 with mode 0600 files.
