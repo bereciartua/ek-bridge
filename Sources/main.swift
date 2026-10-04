@@ -1,9 +1,11 @@
 import AppKit
 import EventKit
+import ServiceManagement
 
 @MainActor
 final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private var statusItem: NSStatusItem?
     private let eventStatus = NSTextField(labelWithString: "")
     private let reminderStatus = NSTextField(labelWithString: "")
     private let output = NSTextView()
@@ -14,11 +16,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var bridgeEnableButton: NSButton!
     private var bridgeDisableButton: NSButton!
     private let bridgeStatus = NSTextField(labelWithString: "Local counts bridge: off")
+    private let targetStatus = NSTextField(labelWithString: "Item targets: none selected")
+    private var armWritesButton: NSButton!
     private var localBridge: LocalBridge?
     private var requestInFlight = false
     private lazy var store = EKEventStore()
+    private lazy var commands = EventKitCommands(store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem?.button?.title = "◷"
+        refreshMenu()
         let content = NSView()
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -27,12 +35,12 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
 
-        let title = NSTextField(labelWithString: "EventKit Bridge · Read-only prototype")
+        let title = NSTextField(labelWithString: "EventKit Bridge")
         title.font = .boldSystemFont(ofSize: 19)
         stack.addArrangedSubview(title)
 
         let explanation = NSTextField(wrappingLabelWithString:
-            "macOS full access covers calendar or reminder items. This prototype lists only calendar and list names, IDs, and writability after you press List. It never reads or changes an item.")
+            "Select one calendar and one reminder list to scope item commands. The local bridge is off until enabled here. Writes require a separate arm switch.")
         explanation.maximumNumberOfLines = 3
         stack.addArrangedSubview(explanation)
 
@@ -46,15 +54,24 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         reminderListButton = button("List Reminder Lists", #selector(listReminders))
         stack.addArrangedSubview(NSStackView(views: [reminderRequestButton, reminderListButton]))
 
-        let bridgeTitle = NSTextField(labelWithString: "Temporary local counts bridge")
+        let bridgeTitle = NSTextField(labelWithString: "Temporary local bridge")
         bridgeTitle.font = .boldSystemFont(ofSize: 14)
         stack.addArrangedSubview(bridgeTitle)
         stack.addArrangedSubview(bridgeStatus)
         bridgeEnableButton = button("Enable for 15 Minutes", #selector(enableBridge))
         bridgeDisableButton = button("Disable", #selector(disableBridge))
         stack.addArrangedSubview(NSStackView(views: [bridgeEnableButton, bridgeDisableButton]))
+        stack.addArrangedSubview(targetStatus)
+        stack.addArrangedSubview(NSStackView(views: [
+            button("Choose Calendar Target", #selector(chooseCalendar)),
+            button("Choose Reminder List Target", #selector(chooseReminderList)),
+            button("Clear Targets", #selector(clearTargets)),
+        ]))
+        armWritesButton = NSButton(checkboxWithTitle: "Arm writes for this app session", target: self,
+                                   action: #selector(toggleWrites))
+        stack.addArrangedSubview(armWritesButton)
 
-        let hint = NSTextField(labelWithString: "The local bridge accepts only permission status and calendar/list counts. No network server or startup service runs.")
+        let hint = NSTextField(labelWithString: "Local only. Bridge sessions expire after 15 minutes. Login item is controlled from the menu bar.")
         hint.textColor = .secondaryLabelColor
         stack.addArrangedSubview(hint)
 
@@ -87,15 +104,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "EventKit Bridge"
         window.contentView = content
         window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         self.window = window
         refreshStatus()
         refreshBridgeStatus()
+        refreshTargetStatus()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -118,6 +134,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         reminderRequestButton.isEnabled = !requestInFlight && reminders == .notDetermined
         eventListButton.isEnabled = !requestInFlight && events == .fullAccess
         reminderListButton.isEnabled = !requestInFlight && reminders == .fullAccess
+        refreshMenu()
     }
 
     private func name(_ status: EKAuthorizationStatus) -> String {
@@ -190,10 +207,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func enableBridge(_ sender: Any?) {
         guard localBridge == nil else { return }
         do {
-            localBridge = try LocalBridge(handle: { [weak self] command in
-                self?.bridgeResult(for: command) ?? ["error": "app_unavailable"]
+            localBridge = try LocalBridge(handle: { [weak self] request, completion in
+                guard let self else { completion(["error": "app_unavailable"]); return }
+                self.commands.run(request, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
+                self?.commands.scope.writesArmed = false
+                self?.armWritesButton.state = .off
                 self?.refreshBridgeStatus()
             })
             refreshBridgeStatus()
@@ -216,26 +236,88 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         }
         bridgeEnableButton.isEnabled = localBridge == nil
         bridgeDisableButton.isEnabled = localBridge != nil
+        refreshMenu()
     }
 
-    private func bridgeResult(for command: BridgeCommand) -> [String: Any] {
-        switch command {
-        case .authorizationStatus:
-            return [
-                "calendar": name(EKEventStore.authorizationStatus(for: .event)),
-                "reminders": name(EKEventStore.authorizationStatus(for: .reminder)),
-            ]
-        case .calendarCount:
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-                return ["error": "calendar_access_not_granted"]
-            }
-            return ["count": store.calendars(for: .event).count]
-        case .reminderListCount:
-            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
-                return ["error": "reminders_access_not_granted"]
-            }
-            return ["count": store.calendars(for: .reminder).count]
+    private func refreshMenu() {
+        guard let statusItem else { return }
+        let menu = NSMenu()
+        let calendar = name(EKEventStore.authorizationStatus(for: .event))
+        let reminders = name(EKEventStore.authorizationStatus(for: .reminder))
+        for line in ["Calendar: \(calendar)", "Reminders: \(reminders)",
+                     "Bridge: \(localBridge == nil ? "off" : "active")"] {
+            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
         }
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Open Controls…", action: #selector(openControls), keyEquivalent: "o"))
+        menu.addItem(NSMenuItem(title: localBridge == nil ? "Enable for 15 Minutes" : "Disable Bridge",
+                                action: localBridge == nil ? #selector(enableBridge) : #selector(disableBridge),
+                                keyEquivalent: ""))
+        let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        for item in menu.items where item.action != nil { item.target = self }
+        statusItem.menu = menu
+    }
+
+    private func refreshTargetStatus() {
+        targetStatus.stringValue = "Calendar: \(commands.scope.calendarID == nil ? "none" : "selected") · Reminders: \(commands.scope.reminderListID == nil ? "none" : "selected")"
+    }
+    @objc private func openControls(_ sender: Any?) {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc private func chooseCalendar(_ sender: Any?) { chooseTarget(.event) }
+    @objc private func chooseReminderList(_ sender: Any?) { chooseTarget(.reminder) }
+    private func chooseTarget(_ type: EKEntityType) {
+        guard EKEventStore.authorizationStatus(for: type) == .fullAccess else { return }
+        let calendars = store.calendars(for: type)
+        guard !calendars.isEmpty else { return }
+        let picker = NSPopUpButton()
+        for calendar in calendars {
+            picker.addItem(withTitle: "\(calendar.title) [\(calendar.calendarIdentifier)]")
+        }
+        let alert = NSAlert()
+        alert.messageText = type == .event ? "Choose calendar target" : "Choose reminder list target"
+        alert.informativeText = "Only this target will be accessible through the local bridge during this app session."
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "Select")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let id = calendars[picker.indexOfSelectedItem].calendarIdentifier
+        if type == .event { commands.scope.calendarID = id }
+        else { commands.scope.reminderListID = id }
+        refreshTargetStatus()
+    }
+    @objc private func clearTargets(_ sender: Any?) {
+        commands.scope.calendarID = nil
+        commands.scope.reminderListID = nil
+        commands.scope.writesArmed = false
+        armWritesButton.state = .off
+        refreshTargetStatus()
+    }
+    @objc private func toggleWrites(_ sender: Any?) {
+        commands.scope.writesArmed = armWritesButton.state == .on
+    }
+    @objc private func toggleLoginItem(_ sender: Any?) {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+            refreshMenu()
+        } catch {
+            output.string = "Login item update failed: \((error as NSError).domain) \((error as NSError).code)"
+            openControls(nil)
+        }
+    }
+    @objc private func quit(_ sender: Any?) {
+        NSApp.terminate(nil)
     }
 }
 
@@ -245,7 +327,7 @@ struct EventKitBridgeApp {
         let app = NSApplication.shared
         let delegate = BridgeAppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.regular)
+        app.setActivationPolicy(.accessory)
         app.run()
     }
 }
