@@ -418,6 +418,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct EventKitBridgeApp {
     static func main() {
+        #if EVENTKIT_SYNTHETIC_TEST
+        if CommandLine.arguments.count > 1 {
+            _ = NSApplication.shared
+            SyntheticTestMode.run(CommandLine.arguments[1])
+            return
+        }
+        #endif
         let app = NSApplication.shared
         let delegate = BridgeAppDelegate()
         app.delegate = delegate

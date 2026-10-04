@@ -7,10 +7,15 @@ app_dir="$output_dir/EventKitBridge.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 sdk_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+test_flag=""
+if [ "${EVENTKIT_SYNTHETIC_TEST:-0}" = "1" ]; then
+    test_flag="-D EVENTKIT_SYNTHETIC_TEST"
+fi
 
 mkdir -p "$contents_dir/MacOS" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
 xcrun swiftc -parse-as-library \
+    $test_flag \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
@@ -30,6 +35,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
+    "$project_dir/Sources/SyntheticTestMode.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 xcrun swiftc -sdk "$sdk_dir" \
