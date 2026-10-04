@@ -2,7 +2,8 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-app_dir="$project_dir/build/EventKitBridge.app"
+output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build"}
+app_dir="$output_dir/EventKitBridge.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 sdk_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
@@ -13,8 +14,10 @@ xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
-    -framework AppKit -framework EventKit \
+    -framework AppKit -framework EventKit -framework Security \
     "$project_dir/Sources/main.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/LocalBridge.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 # Default signing is ad hoc for build validation only. A stable, trusted signing
