@@ -1,237 +1,583 @@
 import AppKit
 import EventKit
 
-// All credential and grant changes are explicit local UI actions. Secret
-// material is saved to private files, never shown or copied to the clipboard.
+// This window edits policy, not EventKit items. Credentials are written directly
+// to a private file and are never placed in a text field or on the clipboard.
 @MainActor
 final class ClientManagerUI {
+    private struct Collection {
+        let resource: ClientResource
+        let calendar: EKCalendar
+        var id: String { calendar.calendarIdentifier }
+        var name: String { calendar.title }
+        var account: String { calendar.source.title }
+        var writable: Bool { calendar.allowsContentModifications }
+    }
+
+    private struct GrantRow {
+        let collection: Collection
+        let controls: [(bit: Int, button: NSButton)]
+    }
+
     private let registry: ClientRegistry
     private let store: EKEventStore
     private let credentialFiles = ClientCredentialFiles()
+    private var window: NSWindow?
+    private var activityWindow: NSWindow?
+    private var clientList = NSStackView()
+    private var detail = NSStackView()
+    private var bridgeLabel = NSTextField(labelWithString: "")
+    private var clients = [ClientView]()
+    private var selectedID: String?
+    private var rows = [GrantRow]()
+    private var dirty = false
+    private var saveButton: NSButton?
+    private var discardButton: NSButton?
+    private var bridgeIsActive: () -> Bool = { false }
+    private var enableBridge: () -> Bool = { false }
+    private var disableBridge: () -> Void = {}
 
     init(registry: ClientRegistry, store: EKEventStore) {
         self.registry = registry
         self.store = store
     }
 
-    func show() {
-        guard let clients = registry.clients() else {
-            notice("Client policy store is unavailable. No clients can be used.")
+    func show(bridgeIsActive: @escaping () -> Bool,
+              enableBridge: @escaping () -> Bool,
+              disableBridge: @escaping () -> Void) {
+        self.bridgeIsActive = bridgeIsActive
+        self.enableBridge = enableBridge
+        self.disableBridge = disableBridge
+        if window == nil { makeWindow() }
+        if window?.isVisible == true {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let alert = NSAlert()
-        alert.messageText = "Manage local clients"
-        let summary = clients.map { client in
-            "\(client.name) [\(client.id)] — \(client.revoked ? "revoked" : "active"), \(client.grants.count) collection grants"
-        }.joined(separator: "\n")
-        alert.informativeText = (summary.isEmpty ? "No clients. New clients start with no permissions." : summary) +
-            "\n\nThe app saves signing credentials in private files (mode 0600). Other processes running as this macOS user can read them."
-        for title in ["New Client", "Edit Grants", "Rotate Key", "Revoke Client", "Activity", "Cancel"] {
-            alert.addButton(withTitle: title)
-        }
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: create()
-        case .alertSecondButtonReturn: editGrants()
-        case .alertThirdButtonReturn: rotate()
-        case NSApplication.ModalResponse(rawValue: 1003): revoke()
-        case NSApplication.ModalResponse(rawValue: 1004): activity()
-        default: break
-        }
+        reload()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func create() {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 390, height: 24))
-        field.placeholderString = "Client name"
-        let alert = NSAlert()
-        alert.messageText = "Create a client"
-        alert.informativeText = "The client starts with no grants. Its signing credential will be saved privately in Application Support. Cancel makes no changes."
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Create and Save")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        switch registry.createClient(name: field.stringValue) {
-        case .success(let issued):
-            switch credentialFiles.saveNew(clientID: issued.id, key: issued.key) {
-            case .success(let url):
-                notice("Client created with no grants. Signing credential saved at \(url.path). Keep this file private.")
-            case .failure(let error):
-                let revoked = registry.revoke(clientID: issued.id)
-                let cleanup = credentialFiles.remove(clientID: issued.id)
-                let status = Self.cleanupStatus(revoked: revoked, file: cleanup)
-                notice("Credential save failed (\(error.rawValue)). \(status)")
-            }
-        case .failure(let error): notice("Client creation failed: \(error.rawValue)")
-        }
+    private func makeWindow() {
+        let root = NSStackView()
+        root.orientation = .vertical
+        root.spacing = 0
+        root.translatesAutoresizingMaskIntoConstraints = false
+
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 16
+        header.edgeInsets = NSEdgeInsets(top: 18, left: 22, bottom: 18, right: 22)
+        let heading = NSTextField(labelWithString: "Clients & permissions")
+        heading.font = .boldSystemFont(ofSize: 21)
+        header.addArrangedSubview(heading)
+        let spacer = NSView()
+        header.addArrangedSubview(spacer)
+        let create = button("New client", #selector(createClient))
+        create.bezelStyle = .rounded
+        header.addArrangedSubview(create)
+        root.addArrangedSubview(header)
+
+        let divider = NSBox()
+        divider.boxType = .separator
+        root.addArrangedSubview(divider)
+
+        let body = NSStackView()
+        body.orientation = .horizontal
+        body.alignment = .top
+        body.spacing = 0
+        root.addArrangedSubview(body)
+
+        let sidebar = NSStackView()
+        sidebar.orientation = .vertical
+        sidebar.alignment = .leading
+        sidebar.spacing = 12
+        sidebar.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        let clientsHeading = sectionTitle("LOCAL CLIENTS")
+        sidebar.addArrangedSubview(clientsHeading)
+        clientList.orientation = .vertical
+        clientList.alignment = .leading
+        clientList.spacing = 5
+        sidebar.addArrangedSubview(clientList)
+        let sideSpacer = NSView()
+        sidebar.addArrangedSubview(sideSpacer)
+        sidebar.addArrangedSubview(label(
+            "A client starts with no access. Each grant is limited to one calendar or reminder list.",
+            secondary: true))
+        sidebar.widthAnchor.constraint(equalToConstant: 245).isActive = true
+        body.addArrangedSubview(sidebar)
+
+        let verticalDivider = NSBox()
+        verticalDivider.boxType = .separator
+        verticalDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        body.addArrangedSubview(verticalDivider)
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
+        let document = NSView()
+        detail.orientation = .vertical
+        detail.alignment = .leading
+        detail.spacing = 12
+        detail.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 26, right: 24)
+        detail.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(detail)
+        NSLayoutConstraint.activate([
+            detail.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            detail.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            detail.topAnchor.constraint(equalTo: document.topAnchor),
+            detail.bottomAnchor.constraint(equalTo: document.bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+        ])
+        scroll.documentView = document
+        body.addArrangedSubview(scroll)
+
+        let content = NSView()
+        content.addSubview(root)
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            root.topAnchor.constraint(equalTo: content.topAnchor),
+            root.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            header.widthAnchor.constraint(equalTo: root.widthAnchor),
+            body.widthAnchor.constraint(equalTo: root.widthAnchor),
+            body.heightAnchor.constraint(greaterThanOrEqualToConstant: 400),
+            scroll.heightAnchor.constraint(equalTo: body.heightAnchor),
+            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 690),
+        ])
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 730),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "Clients & Permissions — EventKit Bridge"
+        window.minSize = NSSize(width: 990, height: 540)
+        window.contentView = content
+        window.center()
+        self.window = window
     }
 
-    private func rotate() {
-        guard let client = selectClient("Rotate which client's key?") else { return }
-        let destination: URL
-        switch credentialFiles.canReplace(clientID: client.id) {
-        case .success(let url): destination = url
-        case .failure(let error):
-            notice("Cannot rotate: credential file is missing or unsafe (\(error.rawValue)). Revoke this client and create a new one if needed.")
+    private func reload() {
+        guard let current = registry.clients() else {
+            clients = []
+            clear(clientList)
+            clear(detail)
+            detail.addArrangedSubview(label("Client policy is unavailable. Disable the bridge and inspect the local policy store.", secondary: false))
             return
         }
-        let confirm = NSAlert()
-        confirm.messageText = "Rotate key for \(client.name)?"
-        confirm.informativeText = "The old key stops working immediately. Its private file at \(destination.path) will be replaced atomically. Cancel makes no changes."
-        confirm.addButton(withTitle: "Rotate and Replace")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-        switch registry.rotateKey(clientID: client.id) {
-        case .success(let key):
-            switch credentialFiles.replace(clientID: client.id, key: key) {
-            case .success(let url): notice("Key rotated. Private credential replaced at \(url.path).")
-            case .failure(let error):
-                let revoked = registry.revoke(clientID: client.id)
-                let cleanup = credentialFiles.remove(clientID: client.id)
-                let status = Self.cleanupStatus(revoked: revoked, file: cleanup)
-                notice("Credential replacement failed (\(error.rawValue)). \(status)")
-            }
-        case .failure(let error): notice("Key rotation failed: \(error.rawValue)")
+        clients = current
+        if !clients.contains(where: { $0.id == selectedID && !$0.revoked }) {
+            selectedID = clients.first(where: { !$0.revoked })?.id
+        }
+        dirty = false
+        renderClients()
+        renderDetail()
+    }
+
+    private func renderClients() {
+        clear(clientList)
+        let active = clients.filter { !$0.revoked }
+        if active.isEmpty {
+            clientList.addArrangedSubview(label("No active clients", secondary: true))
+        }
+        for (index, client) in active.enumerated() {
+            let selected = client.id == selectedID
+            let title = "\(selected ? "●" : "○")  \(client.name)"
+            let choice = button(title, #selector(selectClient(_:)))
+            choice.tag = index
+            choice.alignment = .left
+            choice.font = selected ? .boldSystemFont(ofSize: 13) : .systemFont(ofSize: 13)
+            choice.widthAnchor.constraint(equalToConstant: 205).isActive = true
+            clientList.addArrangedSubview(choice)
+        }
+        let revokedCount = clients.filter(\.revoked).count
+        if revokedCount > 0 {
+            clientList.addArrangedSubview(label("\(revokedCount) revoked", secondary: true))
         }
     }
 
-    private func revoke() {
-        guard let client = selectClient("Revoke which client?") else { return }
-        let confirm = NSAlert()
-        confirm.messageText = "Revoke \(client.name)?"
-        confirm.informativeText = "Its key and every collection grant stop working immediately."
-        confirm.addButton(withTitle: "Revoke")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-        switch registry.revoke(clientID: client.id) {
-        case .success:
-            switch credentialFiles.remove(clientID: client.id) {
-            case .success: notice("Client revoked and its local credential file removed.")
-            case .failure(let error):
-                notice("Client revoked, but credential file removal failed (\(error.rawValue)). Remove the file at \(credentialFiles.url(for: client.id)?.path ?? "the displayed client path") after checking it.")
-            }
-        case .failure(let error): notice("Revocation failed: \(error.rawValue)")
+    private func renderDetail() {
+        clear(detail)
+        rows = []
+        guard let client = clients.first(where: { $0.id == selectedID && !$0.revoked }) else {
+            detail.addArrangedSubview(title("Choose a client"))
+            detail.addArrangedSubview(label("Create a client to grant access to selected calendars and reminder lists.", secondary: true))
+            renderBridge()
+            return
         }
+
+        let top = NSStackView()
+        top.orientation = .horizontal
+        top.alignment = .centerY
+        top.spacing = 12
+        top.addArrangedSubview(title(client.name))
+        top.addArrangedSubview(NSView())
+        top.addArrangedSubview(button("Activity…", #selector(showActivity)))
+        top.addArrangedSubview(button("Rotate key…", #selector(rotateKey)))
+        top.addArrangedSubview(button("Revoke…", #selector(revokeClient)))
+        detail.addArrangedSubview(top)
+        top.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
+
+        detail.addArrangedSubview(label("Client ID: \(client.id)", secondary: true, monospaced: true))
+        detail.addArrangedSubview(label(
+            "The credential is saved privately on this Mac. Other processes running as your macOS user can read its file.",
+            secondary: true))
+        sectionGap()
+        detail.addArrangedSubview(sectionTitle("COLLECTION PERMISSIONS"))
+        detail.addArrangedSubview(label(
+            "Choose exactly what this client may do. Saved grants continue to work while the bridge is active until you change or revoke them.",
+            secondary: true))
+
+        let visible = availableCollections()
+        for resource in [ClientResource.calendar, .reminderList] {
+            let group = visible.filter { $0.resource == resource }
+            detail.addArrangedSubview(subtitle(resource == .calendar ? "Calendars" : "Reminder lists"))
+            if group.isEmpty {
+                let access = EKEventStore.authorizationStatus(for: resource == .calendar ? .event : .reminder)
+                detail.addArrangedSubview(label(
+                    access == .fullAccess ? "No collections found." : "Full Access is needed to show these collections. Existing grants are preserved.",
+                    secondary: true))
+            }
+            for collection in group {
+                addGrantRow(collection, client: client)
+            }
+            sectionGap()
+        }
+
+        let visibleKeys = Set(visible.map { "\($0.resource.rawValue):\($0.id)" })
+        let unavailable = client.grants.filter {
+            !visibleKeys.contains("\($0.resource.rawValue):\($0.targetID)")
+        }
+        if !unavailable.isEmpty {
+            detail.addArrangedSubview(label(
+                "\(unavailable.count) saved grant(s) are not currently listed by EventKit. They will be preserved when you save. Restore Full Access or reconnect the account to edit them.",
+                secondary: true))
+        }
+
+        let actions = NSStackView()
+        actions.orientation = .horizontal
+        actions.spacing = 10
+        let save = button("Save permissions", #selector(saveGrants))
+        let discard = button("Discard changes", #selector(discardChanges))
+        save.isEnabled = dirty
+        discard.isEnabled = dirty
+        saveButton = save
+        discardButton = discard
+        actions.addArrangedSubview(save)
+        actions.addArrangedSubview(discard)
+        detail.addArrangedSubview(actions)
+        detail.addArrangedSubview(label(
+            "Read-only collections cannot be granted write actions. Clearing every box removes a collection grant.",
+            secondary: true))
+        sectionGap()
+        renderBridge()
     }
 
-    private func editGrants() {
-        guard let client = selectClient("Edit grants for which client?") else { return }
-        var targets = [(resource: ClientResource, calendar: EKCalendar)]()
+    private func availableCollections() -> [Collection] {
+        var collections = [Collection]()
         if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
-            targets += store.calendars(for: .event).map { (.calendar, $0) }
+            collections += store.calendars(for: .event).map { Collection(resource: .calendar, calendar: $0) }
         }
         if EKEventStore.authorizationStatus(for: .reminder) == .fullAccess {
-            targets += store.calendars(for: .reminder).map { (.reminderList, $0) }
+            collections += store.calendars(for: .reminder).map { Collection(resource: .reminderList, calendar: $0) }
         }
-        guard !targets.isEmpty else {
-            notice("Grant Calendar or Reminders Full Access before selecting a collection.")
-            return
+        return collections.sorted {
+            if $0.resource != $1.resource { return $0.resource == .calendar }
+            if $0.account != $1.account { return $0.account.localizedStandardCompare($1.account) == .orderedAscending }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 550, height: 28))
-        for target in targets {
-            let kind = target.resource == .calendar ? "Calendar" : "Reminder list"
-            picker.addItem(withTitle: "\(kind): \(target.calendar.title) [\(target.calendar.calendarIdentifier)]")
-        }
-        let choose = NSAlert()
-        choose.messageText = "Choose one collection"
-        choose.informativeText = "Repeat this action to add or change other collection grants."
-        choose.accessoryView = picker
-        choose.addButton(withTitle: "Continue")
-        choose.addButton(withTitle: "Cancel")
-        guard choose.runModal() == .alertFirstButtonReturn,
-              targets.indices.contains(picker.indexOfSelectedItem) else { return }
-        let selected = targets[picker.indexOfSelectedItem]
-        let kind = selected.resource == .calendar ? "Calendar" : "Reminder list"
-        let writable = selected.calendar.allowsContentModifications
+    }
+
+    private func addGrantRow(_ collection: Collection, client: ClientView) {
         let old = client.grants.first {
-            $0.resource == selected.resource &&
-                $0.targetID == selected.calendar.calendarIdentifier
+            $0.resource == collection.resource && $0.targetID == collection.id
         }
-        let permissions: [(String, Int)] = selected.resource == .calendar
+        let container = NSBox()
+        container.boxType = .custom
+        container.borderColor = .separatorColor
+        container.borderWidth = 1
+        container.cornerRadius = 8
+        container.contentViewMargins = NSSize(width: 12, height: 10)
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        container.contentView = stack
+        let name = subtitle(collection.name)
+        stack.addArrangedSubview(name)
+        let access = collection.writable ? "Writable" : "Read only"
+        stack.addArrangedSubview(label("\(collection.account) · \(access) · ID \(collection.id)",
+                                       secondary: true, monospaced: false))
+        if !collection.writable, (old?.mask ?? 0) & ~ClientGrant.read != 0 {
+            stack.addArrangedSubview(label(
+                "Previously saved write actions will be removed when you save while this collection is read only.",
+                secondary: true))
+        }
+        let choices = NSStackView()
+        choices.orientation = .horizontal
+        choices.spacing = 15
+        let options: [(String, Int)] = collection.resource == .calendar
             ? [("Read", ClientGrant.read), ("Create", ClientGrant.create),
                ("Edit", ClientGrant.edit), ("Delete", ClientGrant.delete)]
             : [("Read", ClientGrant.read), ("Create", ClientGrant.create),
                ("Edit", ClientGrant.edit), ("Delete", ClientGrant.delete),
                ("Complete", ClientGrant.complete)]
-        let controls = permissions.map { title, bit -> NSButton in
-            let check = NSButton(checkboxWithTitle: title, target: nil, action: nil)
-            check.isEnabled = bit == ClientGrant.read || writable
-            check.state = check.isEnabled && ((old?.mask ?? 0) & bit) != 0 ? .on : .off
-            return check
+        let controls = options.map { name, bit -> (bit: Int, button: NSButton) in
+            let check = NSButton(checkboxWithTitle: name, target: self,
+                                 action: #selector(grantChanged))
+            check.isEnabled = bit == ClientGrant.read || collection.writable
+            check.state = (old?.mask ?? 0) & bit != 0 ? .on : .off
+            choices.addArrangedSubview(check)
+            return (bit, check)
         }
-        // NSAlert measures an accessory view by its frame. A bare NSStackView
-        // has no initial frame, so AppKit can lay the checkboxes over the
-        // informative text and leave them impossible to click.
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 480,
-                                             height: CGFloat(controls.count) * 30))
-        let stack = NSStackView(views: controls)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.distribution = .fillEqually
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        accessory.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: accessory.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
-        ])
-        let edit = NSAlert()
-        edit.messageText = "Permissions for \(client.name)"
-        edit.informativeText = "\(kind): \(selected.calendar.title)\nID: \(selected.calendar.calendarIdentifier)\n" +
-            (writable ? "" : "EventKit reports this collection as read-only.\n") +
-            "Checked actions remain authorized until changed or revoked. Clear all to remove this grant."
-        edit.accessoryView = accessory
-        edit.addButton(withTitle: "Save Grants")
-        edit.addButton(withTitle: "Cancel")
-        guard edit.runModal() == .alertFirstButtonReturn else { return }
-        let mask = zip(controls, permissions).reduce(0) { result, pair in
-            result | (pair.0.state == .on ? pair.1.1 : 0)
+        stack.addArrangedSubview(choices)
+        container.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
+        detail.addArrangedSubview(container)
+        rows.append(GrantRow(collection: collection, controls: controls))
+    }
+
+    private func renderBridge() {
+        detail.addArrangedSubview(sectionTitle("LOCAL BRIDGE"))
+        let active = bridgeIsActive()
+        bridgeLabel.stringValue = active ? "Active · enrolled clients can use their saved grants" : "Off · client requests are unavailable"
+        bridgeLabel.textColor = active ? .systemGreen : .secondaryLabelColor
+        detail.addArrangedSubview(bridgeLabel)
+        detail.addArrangedSubview(button(active ? "Turn bridge off" : "Turn bridge on",
+                                         #selector(toggleBridge)))
+        detail.addArrangedSubview(label(
+            "Turning it on is saved across launches. Turning it off stops all client requests without changing grants.",
+            secondary: true))
+    }
+
+    @objc private func selectClient(_ sender: NSButton) {
+        let active = clients.filter { !$0.revoked }
+        guard active.indices.contains(sender.tag), confirmDiscardIfNeeded() else { return }
+        selectedID = active[sender.tag].id
+        dirty = false
+        renderClients()
+        renderDetail()
+    }
+
+    @objc private func grantChanged(_ sender: NSButton) {
+        dirty = true
+        saveButton?.isEnabled = true
+        discardButton?.isEnabled = true
+    }
+
+    @objc private func discardChanges(_ sender: Any?) {
+        guard confirmDiscardIfNeeded() else { return }
+        dirty = false
+        renderDetail()
+    }
+
+    @objc private func saveGrants(_ sender: Any?) {
+        guard let client = clients.first(where: { $0.id == selectedID && !$0.revoked }) else { return }
+        var grants = client.grants
+        for row in rows {
+            let mask = row.controls.reduce(0) { $0 | ($1.button.state == .on ? $1.bit : 0) }
+            grants = ClientGrantEditing.replacing(
+                grants, resource: row.collection.resource, targetID: row.collection.id,
+                requestedMask: mask, writable: row.collection.writable)
         }
-        let grants = ClientGrantEditing.replacing(
-            client.grants, resource: selected.resource,
-            targetID: selected.calendar.calendarIdentifier,
-            requestedMask: mask, writable: writable)
         switch registry.replaceGrants(clientID: client.id, grants: grants) {
-        case .success: notice("Grants saved. Any in-progress request must be sent again.")
-        case .failure(let error): notice("Grant update failed: \(error.rawValue)")
+        case .success:
+            reload()
+            message("Permissions saved", "Changes take effect now. Requests already in progress must be sent again.")
+        case .failure(let error):
+            message("Could not save permissions", "No new permissions were applied. \(error.rawValue)")
         }
     }
 
-    private func activity() {
-        guard let rows = registry.activity() else {
-            notice("Activity history is unavailable.")
+    @objc private func createClient(_ sender: Any?) {
+        guard confirmDiscardIfNeeded() else { return }
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 26))
+        field.placeholderString = "For example, My local task"
+        let alert = NSAlert()
+        alert.messageText = "New local client"
+        alert.informativeText = "Name the app or task that will connect. It starts with no permissions; you can grant collections after creation."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Create client")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        switch registry.createClient(name: field.stringValue) {
+        case .success(let issued):
+            switch credentialFiles.saveNew(clientID: issued.id, key: issued.key) {
+            case .success:
+                selectedID = issued.id
+                reload()
+                message("Client created", "Its signing credential was saved privately. It has no collection permissions yet.")
+            case .failure(let error):
+                let revoked = registry.revoke(clientID: issued.id)
+                let cleanup = credentialFiles.remove(clientID: issued.id)
+                reload()
+                message("Could not save credential", "\(error.rawValue). \(Self.cleanupStatus(revoked: revoked, file: cleanup))")
+            }
+        case .failure(let error):
+            message("Could not create client", error.rawValue)
+        }
+    }
+
+    @objc private func rotateKey(_ sender: Any?) {
+        guard let client = selectedClient(), confirmDiscardIfNeeded() else { return }
+        switch credentialFiles.canReplace(clientID: client.id) {
+        case .failure(let error):
+            message("Cannot rotate key", "The saved credential is missing or unsafe (\(error.rawValue)). Revoke this client and create a new one if needed.")
+            return
+        case .success: break
+        }
+        guard confirm("Rotate \(client.name)’s key?",
+                      "Its old key stops working immediately. The app will replace its private credential file. Any running client request may need to be sent again.",
+                      action: "Rotate key") else { return }
+        switch registry.rotateKey(clientID: client.id) {
+        case .success(let key):
+            switch credentialFiles.replace(clientID: client.id, key: key) {
+            case .success:
+                reload()
+                message("Key rotated", "The old key no longer works. The private credential file was replaced.")
+            case .failure(let error):
+                let revoked = registry.revoke(clientID: client.id)
+                let cleanup = credentialFiles.remove(clientID: client.id)
+                reload()
+                message("Credential replacement failed", "\(error.rawValue). \(Self.cleanupStatus(revoked: revoked, file: cleanup))")
+            }
+        case .failure(let error): message("Could not rotate key", error.rawValue)
+        }
+    }
+
+    @objc private func revokeClient(_ sender: Any?) {
+        guard let client = selectedClient(), confirmDiscardIfNeeded() else { return }
+        guard confirm("Revoke \(client.name)?",
+                      "This permanently stops its credential and removes every saved collection permission. To use it again, create a new client.",
+                      action: "Revoke client") else { return }
+        switch registry.revoke(clientID: client.id) {
+        case .success:
+            let removed = credentialFiles.remove(clientID: client.id)
+            selectedID = nil
+            reload()
+            switch removed {
+            case .success: message("Client revoked", "Its local credential file was removed.")
+            case .failure(let error):
+                message("Client revoked", "Its key no longer works, but the private credential file could not be removed (\(error.rawValue)). Check the file before continuing.")
+            }
+        case .failure(let error): message("Could not revoke client", error.rawValue)
+        }
+    }
+
+    @objc private func toggleBridge(_ sender: Any?) {
+        guard confirmDiscardIfNeeded() else { return }
+        dirty = false
+        if bridgeIsActive() {
+            disableBridge()
+        } else if !enableBridge() {
+            message("Bridge did not start", "Open Controls to see the local bridge error. Permissions were not changed.")
+        }
+        renderDetail()
+    }
+
+    @objc private func showActivity(_ sender: Any?) {
+        guard let activity = registry.activity() else {
+            message("Activity unavailable", "The local activity history could not be read.")
             return
         }
         let formatter = ISO8601DateFormatter()
-        let body = rows.prefix(100).map { row in
+        let body = activity.prefix(100).map { row in
             "\(formatter.string(from: row.at))  \(row.clientID ?? "unknown")  \(row.command)  \(row.outcome)"
         }.joined(separator: "\n")
-        let alert = NSAlert()
-        alert.messageText = "Recent bridge activity"
-        alert.informativeText = "Only time, client ID, command and result are stored. Item titles and key material are omitted."
-        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 720, height: 300))
-        text.string = body.isEmpty ? "No activity yet." : body
+        let text = NSTextView()
         text.isEditable = false
         text.isSelectable = true
-        alert.accessoryView = text
-        alert.addButton(withTitle: "Close")
+        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        text.string = body.isEmpty ? "No activity yet." : body
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.documentView = text
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 360),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = "Recent Bridge Activity"
+        window.contentView = scroll
+        window.center()
+        activityWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func selectedClient() -> ClientView? {
+        clients.first(where: { $0.id == selectedID && !$0.revoked })
+    }
+
+    private func confirmDiscardIfNeeded() -> Bool {
+        !dirty || confirm("Discard unsaved permissions?",
+                          "The checkbox changes you made have not been saved.",
+                          action: "Discard changes")
+    }
+
+    private func confirm(_ title: String, _ detail: String, action: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: action)
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func message(_ title: String, _ detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
         alert.runModal()
     }
 
-    private func selectClient(_ title: String) -> ClientView? {
-        guard let clients = registry.clients()?.filter({ !$0.revoked }), !clients.isEmpty else {
-            notice("No active clients.")
-            return nil
+    private func clear(_ stack: NSStackView) {
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
         }
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 460, height: 28))
-        for client in clients { picker.addItem(withTitle: "\(client.name) [\(client.id)]") }
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.accessoryView = picker
-        alert.addButton(withTitle: "Continue")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn,
-              clients.indices.contains(picker.indexOfSelectedItem) else { return nil }
-        return clients[picker.indexOfSelectedItem]
+    }
+
+    private func button(_ title: String, _ action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.bezelStyle = .rounded
+        return button
+    }
+
+    private func title(_ string: String) -> NSTextField {
+        let field = NSTextField(labelWithString: string)
+        field.font = .boldSystemFont(ofSize: 22)
+        return field
+    }
+
+    private func subtitle(_ string: String) -> NSTextField {
+        let field = NSTextField(labelWithString: string)
+        field.font = .systemFont(ofSize: 14, weight: .semibold)
+        return field
+    }
+
+    private func sectionTitle(_ string: String) -> NSTextField {
+        let field = NSTextField(labelWithString: string)
+        field.font = .boldSystemFont(ofSize: 11)
+        field.textColor = .secondaryLabelColor
+        return field
+    }
+
+    private func label(_ string: String, secondary: Bool, monospaced: Bool = false) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: string)
+        field.maximumNumberOfLines = 0
+        field.font = monospaced ? .monospacedSystemFont(ofSize: 11, weight: .regular)
+                                : .systemFont(ofSize: 12)
+        if secondary { field.textColor = .secondaryLabelColor }
+        field.widthAnchor.constraint(lessThanOrEqualToConstant: 690).isActive = true
+        return field
+    }
+
+    private func sectionGap() {
+        let gap = NSView()
+        gap.heightAnchor.constraint(equalToConstant: 10).isActive = true
+        detail.addArrangedSubview(gap)
     }
 
     private static func cleanupStatus(
@@ -243,12 +589,5 @@ final class ClientManagerUI {
         if case .success = file { fileOK = true } else { fileOK = false }
         if revokedOK && fileOK { return "The client was revoked and its file removed." }
         return "Cleanup was incomplete. Disable the bridge and inspect this client's record and private file before continuing."
-    }
-
-    private func notice(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
     }
 }

@@ -184,10 +184,21 @@ final class EventKitCommands {
             let reminder = EKReminder(eventStore: store)
             reminder.calendar = list
             reminder.title = p["title"] as? String
+            guard let dueChange = ReminderDueChange.parse(parameters: p),
+                  let recurrenceChange = ReminderRecurrenceChange.parse(parameters: p) else {
+                completion(["error": "invalid_schedule"]); return
+            }
+            if let error = ReminderSchedule.validate(dueChange, recurrenceChange,
+                                                     for: reminder, creating: true) {
+                completion(["error": error]); return
+            }
             guard reserveWrite(request, completion) else { return }
+            ReminderSchedule.apply(dueChange, recurrenceChange, to: reminder)
             do {
                 try store.save(reminder, commit: true)
-                finishWrite(["item": reminderReceipt(reminder)], request, completion)
+                let saved = store.calendarItem(withIdentifier: reminder.calendarItemIdentifier)
+                    as? EKReminder ?? reminder
+                finishWrite(["item": reminderReceipt(saved)], request, completion)
             } catch { completion(["error": "save_failed"]) }
         case .updateReminder, .completeReminder, .deleteReminder:
             guard writableCalendar(p["listID"], .reminder) != nil,
@@ -195,15 +206,34 @@ final class EventKitCommands {
                   reminder.calendar.calendarIdentifier == p["listID"] as? String else {
                 completion(["error": "item_unavailable"]); return
             }
-            if let error = MutationPolicy.reminderError(
-                recurring: reminder.hasRecurrenceRules,
-                completed: reminder.isCompleted,
-                completing: command == .completeReminder
-            ) {
-                completion(["error": error]); return
+            if command != .updateReminder {
+                if let error = MutationPolicy.reminderError(
+                    recurring: reminder.hasRecurrenceRules,
+                    completed: reminder.isCompleted,
+                    completing: command == .completeReminder
+                ) {
+                    completion(["error": error]); return
+                }
             }
             guard matchesVersion(reminder.lastModifiedDate, p["expectedVersion"]) else {
                 completion(["error": "conflict"]); return
+            }
+            let dueChange: ReminderDueChange
+            let recurrenceChange: ReminderRecurrenceChange
+            if command == .updateReminder {
+                guard let due = ReminderDueChange.parse(parameters: p),
+                      let recurrence = ReminderRecurrenceChange.parse(parameters: p) else {
+                    completion(["error": "invalid_schedule"]); return
+                }
+                dueChange = due
+                recurrenceChange = recurrence
+                if let error = ReminderSchedule.validate(due, recurrence,
+                                                         for: reminder, creating: false) {
+                    completion(["error": error]); return
+                }
+            } else {
+                dueChange = .keep
+                recurrenceChange = .keep
             }
             guard reserveWrite(request, completion) else { return }
             do {
@@ -215,9 +245,12 @@ final class EventKitCommands {
                         reminder.isCompleted = true
                     } else {
                         reminder.title = p["title"] as? String
+                        ReminderSchedule.apply(dueChange, recurrenceChange, to: reminder)
                     }
                     try store.save(reminder, commit: true)
-                    finishWrite(["item": reminderReceipt(reminder)], request, completion)
+                    let saved = store.calendarItem(withIdentifier: reminder.calendarItemIdentifier)
+                        as? EKReminder ?? reminder
+                    finishWrite(["item": reminderReceipt(saved)], request, completion)
                 }
             } catch { completion(["error": "save_failed"]) }
         }
@@ -260,6 +293,7 @@ final class EventKitCommands {
             "completed": reminder.isCompleted,
             "recurring": reminder.hasRecurrenceRules,
         ]
+        row.merge(ReminderSchedule.describe(reminder)) { _, new in new }
         if let version = version(reminder.lastModifiedDate) { row["version"] = version }
         return row
     }
@@ -274,7 +308,11 @@ final class EventKitCommands {
         return (String(decoding: bytes.prefix(200), as: UTF8.self), true)
     }
     private func reminderReceipt(_ reminder: EKReminder) -> [String: Any] {
-        var receipt: [String: Any] = ["id": reminder.calendarItemIdentifier]
+        var receipt: [String: Any] = [
+            "id": reminder.calendarItemIdentifier,
+            "title": boundedTitle(reminder.title).0,
+        ]
+        receipt.merge(ReminderSchedule.describe(reminder)) { _, new in new }
         if let version = version(reminder.lastModifiedDate) { receipt["version"] = version }
         return receipt
     }

@@ -57,15 +57,22 @@ enum CommandPolicy {
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .createReminder:
-            guard keys(p, ["listID", "title", "idempotencyKey"]),
+            guard keys(p, required: ["listID", "title", "idempotencyKey"],
+                       optional: ["due", "recurrence"]),
                   target(p, "listID", scope.reminderListID),
-                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
+                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil,
+                  let due = ReminderDueChange.parse(parameters: p),
+                  let recurrence = ReminderRecurrenceChange.parse(parameters: p),
+                  validReminderCreation(due: due, recurrence: recurrence)
             else { return "invalid_parameters_or_target" }
         case .updateReminder:
-            guard keys(p, ["listID", "itemID", "expectedVersion", "title", "idempotencyKey"]),
+            guard keys(p, required: ["listID", "itemID", "expectedVersion", "title", "idempotencyKey"],
+                       optional: ["due", "recurrence"]),
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
-                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
+                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil,
+                  ReminderDueChange.parse(parameters: p) != nil,
+                  ReminderRecurrenceChange.parse(parameters: p) != nil
             else { return "invalid_parameters_or_target" }
         case .completeReminder, .deleteReminder:
             guard keys(p, ["listID", "itemID", "expectedVersion", "idempotencyKey"]),
@@ -79,6 +86,19 @@ enum CommandPolicy {
 
     private static func keys(_ p: [String: Any], _ expected: Set<String>) -> Bool {
         Set(p.keys) == expected
+    }
+    private static func keys(_ p: [String: Any], required: Set<String>,
+                             optional: Set<String>) -> Bool {
+        let actual = Set(p.keys)
+        return required.isSubset(of: actual) && actual.isSubset(of: required.union(optional))
+    }
+    private static func validReminderCreation(due: ReminderDueChange,
+                                              recurrence: ReminderRecurrenceChange) -> Bool {
+        if case .set = recurrence {
+            if case .set = due { return true }
+            return false
+        }
+        return true
     }
     private static func target(_ p: [String: Any], _ key: String, _ allowed: String?) -> Bool {
         guard let allowed, !allowed.isEmpty else { return false }

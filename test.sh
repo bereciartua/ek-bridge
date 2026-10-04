@@ -17,11 +17,39 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/BridgeProtocolTests.swift" \
+    -framework EventKit \
     -o "$project_dir/build/bridge-protocol-tests"
 "$project_dir/build/bridge-protocol-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Tests/ReminderDueTests.swift" \
+    -o "$project_dir/build/reminder-due-tests"
+"$project_dir/build/reminder-due-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Tests/ReminderRecurrenceTests.swift" \
+    -o "$project_dir/build/reminder-recurrence-tests"
+"$project_dir/build/reminder-recurrence-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/ReminderSchedule.swift" \
+    "$project_dir/Tests/ReminderScheduleTests.swift" \
+    -o "$project_dir/build/reminder-schedule-tests"
+"$project_dir/build/reminder-schedule-tests"
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
@@ -36,10 +64,13 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/ClientRegistryTests.swift" \
+    -framework EventKit \
     -o "$project_dir/build/client-registry-tests"
 "$project_dir/build/client-registry-tests"
 xcrun swiftc -parse-as-library \

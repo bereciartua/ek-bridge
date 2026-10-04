@@ -33,52 +33,80 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
+        let page = NSScrollView()
+        page.hasVerticalScroller = true
+        page.drawsBackground = false
+        page.translatesAutoresizingMaskIntoConstraints = false
+        let document = NSView()
+        document.addSubview(stack)
+        page.documentView = document
+        content.addSubview(page)
 
         let title = NSTextField(labelWithString: "EventKit Bridge")
-        title.font = .boldSystemFont(ofSize: 19)
+        title.font = .boldSystemFont(ofSize: 23)
         stack.addArrangedSubview(title)
 
         let explanation = NSTextField(wrappingLabelWithString:
-            "Create named local clients and grant actions on individual calendars and reminder lists. Saved grants authorize those actions until changed or revoked. Enable the local bridge to accept signed client requests while this app runs.")
-        explanation.maximumNumberOfLines = 3
+            "Control which local clients can access your calendars and reminders. Permissions are saved per collection and can be changed or revoked at any time.")
+        explanation.maximumNumberOfLines = 2
+        explanation.textColor = .secondaryLabelColor
         stack.addArrangedSubview(explanation)
 
-        stack.addArrangedSubview(eventStatus)
+        let bridgeTitle = NSTextField(labelWithString: "Local bridge")
+        bridgeTitle.font = .boldSystemFont(ofSize: 15)
+        bridgeStatus.font = .systemFont(ofSize: 14, weight: .medium)
         eventRequestButton = button("Request Calendar Access", #selector(requestEvents))
         eventListButton = button("List Calendars", #selector(listEvents))
-        stack.addArrangedSubview(NSStackView(views: [eventRequestButton, eventListButton]))
-
-        stack.addArrangedSubview(reminderStatus)
         reminderRequestButton = button("Request Reminders Access", #selector(requestReminders))
         reminderListButton = button("List Reminder Lists", #selector(listReminders))
-        stack.addArrangedSubview(NSStackView(views: [reminderRequestButton, reminderListButton]))
-
-        let bridgeTitle = NSTextField(labelWithString: "Local bridge")
-        bridgeTitle.font = .boldSystemFont(ofSize: 14)
-        stack.addArrangedSubview(bridgeTitle)
-        stack.addArrangedSubview(bridgeStatus)
         bridgeEnableButton = button("Enable Local Bridge", #selector(enableBridge))
         bridgeDisableButton = button("Disable", #selector(disableBridge))
-        stack.addArrangedSubview(NSStackView(views: [bridgeEnableButton, bridgeDisableButton]))
-        stack.addArrangedSubview(button("Manage Clients…", #selector(manageClients)))
-        stack.addArrangedSubview(NSStackView(views: [
+
+        let bridgeActions = NSStackView(views: [bridgeEnableButton, bridgeDisableButton])
+        bridgeActions.spacing = 10
+        let bridgeHint = NSTextField(wrappingLabelWithString:
+            "While active, enrolled clients can use only their saved permissions. The on/off choice is retained across app launches.")
+        bridgeHint.textColor = .secondaryLabelColor
+        bridgeHint.maximumNumberOfLines = 2
+        stack.addArrangedSubview(card([bridgeTitle, bridgeStatus, bridgeActions, bridgeHint], width: 800))
+
+        let clientsTitle = NSTextField(labelWithString: "Clients and permissions")
+        clientsTitle.font = .boldSystemFont(ofSize: 15)
+        let clientsHint = NSTextField(wrappingLabelWithString:
+            "Review each client's calendars, reminder lists and allowed actions. Create a client, rotate its key or revoke it here.")
+        clientsHint.textColor = .secondaryLabelColor
+        clientsHint.maximumNumberOfLines = 2
+        let manageButton = button("Open Clients & Permissions…", #selector(manageClients))
+        stack.addArrangedSubview(card([clientsTitle, clientsHint, manageButton], width: 800))
+
+        let accessTitle = NSTextField(labelWithString: "macOS access")
+        accessTitle.font = .boldSystemFont(ofSize: 15)
+        let eventActions = NSStackView(views: [eventRequestButton, eventListButton])
+        eventActions.spacing = 10
+        let reminderActions = NSStackView(views: [reminderRequestButton, reminderListButton])
+        reminderActions.spacing = 10
+        stack.addArrangedSubview(card([accessTitle, eventStatus, eventActions,
+                                       reminderStatus, reminderActions], width: 800))
+
+        let diagnosticsTitle = NSTextField(labelWithString: "Test collections")
+        diagnosticsTitle.font = .boldSystemFont(ofSize: 15)
+        let diagnosticsHint = NSTextField(wrappingLabelWithString:
+            "These tools work only with the app's own temporary test calendar and reminder list.")
+        diagnosticsHint.textColor = .secondaryLabelColor
+        let diagnosticsActions = NSStackView(views: [
             button("Check Test Sources", #selector(checkTestSources)),
             button("Create Test Collections", #selector(createTestCollections)),
             button("Remove Empty Test Collections", #selector(removeTestCollections)),
-        ]))
-        let hint = NSTextField(wrappingLabelWithString:
-            "Local only. Enabling the bridge is saved across app launches. Granted clients can act without further app prompts while it runs. Disable here or change/revoke client grants to stop access.")
-        hint.textColor = .secondaryLabelColor
-        hint.maximumNumberOfLines = 3
-        stack.addArrangedSubview(hint)
+        ])
+        diagnosticsActions.spacing = 8
+        stack.addArrangedSubview(card([diagnosticsTitle, diagnosticsHint, diagnosticsActions], width: 800))
 
         output.isEditable = false
         output.isSelectable = true
         output.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        output.string = "Choose a List button after granting access."
+        output.string = "Collection details and test results appear here."
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
@@ -86,17 +114,22 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         stack.addArrangedSubview(scroll)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+            page.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            page.topAnchor.constraint(equalTo: content.topAnchor),
+            page.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            document.widthAnchor.constraint(equalTo: page.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -20),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 105),
         ])
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 850, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -123,6 +156,22 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let button = NSButton(title: title, target: self, action: action)
         button.bezelStyle = .rounded
         return button
+    }
+
+    private func card(_ views: [NSView], width: CGFloat) -> NSBox {
+        let box = NSBox()
+        box.boxType = .custom
+        box.borderColor = .separatorColor
+        box.borderWidth = 1
+        box.cornerRadius = 9
+        box.contentViewMargins = NSSize(width: 16, height: 13)
+        let contents = NSStackView(views: views)
+        contents.orientation = .vertical
+        contents.alignment = .leading
+        contents.spacing = 9
+        box.contentView = contents
+        box.widthAnchor.constraint(equalToConstant: width).isActive = true
+        return box
     }
 
     private func refreshStatus() {
@@ -235,7 +284,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func manageClients(_ sender: Any?) {
-        clientManager.show()
+        clientManager.show(
+            bridgeIsActive: { [weak self] in self?.localBridge?.active == true },
+            enableBridge: { [weak self] in
+                self?.enableBridge(nil)
+                return self?.localBridge?.active == true
+            },
+            disableBridge: { [weak self] in self?.disableBridge(nil) })
     }
 
     private func handleClient(_ envelope: ClientBridgeEnvelope,

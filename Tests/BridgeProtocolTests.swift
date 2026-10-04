@@ -135,6 +135,28 @@ struct BridgeProtocolTests {
         let write = request(.createReminder, [
             "listID": "approved-list", "title": "Test", "idempotencyKey": key
         ])
+        let due: [String: Any] = ["kind": "timed", "at": 1_893_456_000,
+                                   "timeZone": "America/New_York"]
+        let repeatRule: [String: Any] = ["kind": "rule", "frequency": "daily", "interval": 1]
+        let scheduled = request(.createReminder, [
+            "listID": "approved-list", "title": "Scheduled", "idempotencyKey":
+                WriteIdempotencyKey.make(), "due": due, "recurrence": repeatRule,
+        ])
+        precondition(CommandPolicy.validate(scheduled, scope: scope) == nil)
+        precondition(CommandPolicy.validate(request(.createReminder, [
+            "listID": "approved-list", "title": "No anchor", "idempotencyKey":
+                WriteIdempotencyKey.make(), "recurrence": repeatRule,
+        ]), scope: scope) != nil)
+        precondition(CommandPolicy.validate(request(.updateReminder, [
+            "listID": "approved-list", "itemID": "synthetic", "expectedVersion": "1",
+            "title": "Changed", "idempotencyKey": WriteIdempotencyKey.make(),
+            "due": ["kind": "none"], "recurrence": ["kind": "none"],
+        ]), scope: scope) == nil)
+        precondition(CommandPolicy.validate(request(.updateReminder, [
+            "listID": "approved-list", "itemID": "synthetic", "expectedVersion": "1",
+            "title": "Changed", "idempotencyKey": WriteIdempotencyKey.make(),
+            "recurrence": ["kind": "rule", "frequency": "weekly", "interval": 0],
+        ]), scope: scope) != nil)
         let first = WriteJournal(directory: temporary)
         guard case .execute = first.inspect(write) else { preconditionFailure("inspect") }
         let stillEmpty = WriteJournal(directory: temporary)
