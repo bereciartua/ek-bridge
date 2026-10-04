@@ -2,6 +2,14 @@ import AppKit
 import EventKit
 import ServiceManagement
 
+final class FlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+final class FlippedStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 @MainActor
 final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
@@ -29,8 +37,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.button?.title = "◷"
         refreshMenu()
-        let content = NSView()
-        let stack = NSStackView()
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 850, height: 680))
+        let stack = FlippedStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -39,19 +47,22 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         page.hasVerticalScroller = true
         page.drawsBackground = false
         page.translatesAutoresizingMaskIntoConstraints = false
-        let document = NSView()
+        let document = FlippedDocumentView()
+        document.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(stack)
         page.documentView = document
         content.addSubview(page)
 
         let title = NSTextField(labelWithString: "EventKit Bridge")
         title.font = .boldSystemFont(ofSize: 23)
+        title.heightAnchor.constraint(equalToConstant: 30).isActive = true
         stack.addArrangedSubview(title)
 
         let explanation = NSTextField(wrappingLabelWithString:
             "Control which local clients can access your calendars and reminders. Permissions are saved per collection and can be changed or revoked at any time.")
         explanation.maximumNumberOfLines = 2
         explanation.textColor = .secondaryLabelColor
+        explanation.heightAnchor.constraint(equalToConstant: 46).isActive = true
         stack.addArrangedSubview(explanation)
 
         let bridgeTitle = NSTextField(labelWithString: "Local bridge")
@@ -70,7 +81,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             "While active, enrolled clients can use only their saved permissions. The on/off choice is retained across app launches.")
         bridgeHint.textColor = .secondaryLabelColor
         bridgeHint.maximumNumberOfLines = 2
-        stack.addArrangedSubview(card([bridgeTitle, bridgeStatus, bridgeActions, bridgeHint], width: 800))
+        stack.addArrangedSubview(card([bridgeTitle, bridgeStatus, bridgeActions, bridgeHint], width: 800, height: 170))
 
         let clientsTitle = NSTextField(labelWithString: "Clients and permissions")
         clientsTitle.font = .boldSystemFont(ofSize: 15)
@@ -79,7 +90,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         clientsHint.textColor = .secondaryLabelColor
         clientsHint.maximumNumberOfLines = 2
         let manageButton = button("Open Clients & Permissions…", #selector(manageClients))
-        stack.addArrangedSubview(card([clientsTitle, clientsHint, manageButton], width: 800))
+        stack.addArrangedSubview(card([clientsTitle, clientsHint, manageButton], width: 800, height: 145))
 
         let accessTitle = NSTextField(labelWithString: "macOS access")
         accessTitle.font = .boldSystemFont(ofSize: 15)
@@ -88,7 +99,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let reminderActions = NSStackView(views: [reminderRequestButton, reminderListButton])
         reminderActions.spacing = 10
         stack.addArrangedSubview(card([accessTitle, eventStatus, eventActions,
-                                       reminderStatus, reminderActions], width: 800))
+                                       reminderStatus, reminderActions], width: 800, height: 185))
 
         let diagnosticsTitle = NSTextField(labelWithString: "Test collections")
         diagnosticsTitle.font = .boldSystemFont(ofSize: 15)
@@ -101,7 +112,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             button("Remove Empty Test Collections", #selector(removeTestCollections)),
         ])
         diagnosticsActions.spacing = 8
-        stack.addArrangedSubview(card([diagnosticsTitle, diagnosticsHint, diagnosticsActions], width: 800))
+        stack.addArrangedSubview(card([diagnosticsTitle, diagnosticsHint, diagnosticsActions], width: 800, height: 145))
 
         output.isEditable = false
         output.isSelectable = true
@@ -118,14 +129,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             page.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             page.topAnchor.constraint(equalTo: content.topAnchor),
             page.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            content.widthAnchor.constraint(greaterThanOrEqualToConstant: 850),
+            page.widthAnchor.constraint(greaterThanOrEqualToConstant: 850),
             document.widthAnchor.constraint(equalTo: page.contentView.widthAnchor),
+            document.heightAnchor.constraint(equalToConstant: 1040),
             stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -20),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: document.bottomAnchor, constant: -20),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 105),
+            scroll.heightAnchor.constraint(equalToConstant: 160),
         ])
 
         let window = NSWindow(
@@ -136,6 +150,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         )
         window.title = "EventKit Bridge"
         window.contentView = content
+        window.setContentSize(NSSize(width: 850, height: 680))
+        window.minSize = NSSize(width: 850, height: 540)
         window.center()
         self.window = window
         refreshStatus()
@@ -158,20 +174,23 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         return button
     }
 
-    private func card(_ views: [NSView], width: CGFloat) -> NSBox {
-        let box = NSBox()
-        box.boxType = .custom
-        box.borderColor = .separatorColor
-        box.borderWidth = 1
-        box.cornerRadius = 9
-        box.contentViewMargins = NSSize(width: 16, height: 13)
-        let contents = NSStackView(views: views)
-        contents.orientation = .vertical
-        contents.alignment = .leading
-        contents.spacing = 9
-        box.contentView = contents
-        box.widthAnchor.constraint(equalToConstant: width).isActive = true
-        return box
+    private func card(_ views: [NSView], width: CGFloat, height: CGFloat) -> NSStackView {
+        let card = NSStackView(views: views)
+        card.orientation = .vertical
+        card.alignment = .leading
+        card.distribution = .fill
+        card.spacing = 9
+        card.edgeInsets = NSEdgeInsets(top: 13, left: 16, bottom: 13, right: 16)
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 9
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+        card.widthAnchor.constraint(equalToConstant: width).isActive = true
+        card.heightAnchor.constraint(equalToConstant: height).isActive = true
+        for view in views {
+            view.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
+        return card
     }
 
     private func refreshStatus() {

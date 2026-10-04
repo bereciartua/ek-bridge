@@ -25,7 +25,7 @@ final class ClientManagerUI {
     private var window: NSWindow?
     private var activityWindow: NSWindow?
     private var clientList = NSStackView()
-    private var detail = NSStackView()
+    private var detail = FlippedStackView()
     private var bridgeLabel = NSTextField(labelWithString: "")
     private var clients = [ClientView]()
     private var selectedID: String?
@@ -62,6 +62,7 @@ final class ClientManagerUI {
     private func makeWindow() {
         let root = NSStackView()
         root.orientation = .vertical
+        root.distribution = .fill
         root.spacing = 0
         root.translatesAutoresizingMaskIntoConstraints = false
 
@@ -110,44 +111,50 @@ final class ClientManagerUI {
         sidebar.widthAnchor.constraint(equalToConstant: 245).isActive = true
         body.addArrangedSubview(sidebar)
 
-        let verticalDivider = NSBox()
-        verticalDivider.boxType = .separator
+        let verticalDivider = NSView()
+        verticalDivider.wantsLayer = true
+        verticalDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
         verticalDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
         body.addArrangedSubview(verticalDivider)
+        verticalDivider.heightAnchor.constraint(equalTo: body.heightAnchor).isActive = true
 
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
         scroll.drawsBackground = false
-        let document = NSView()
+        let document = FlippedDocumentView()
+        document.translatesAutoresizingMaskIntoConstraints = false
         detail.orientation = .vertical
         detail.alignment = .leading
         detail.spacing = 12
         detail.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 26, right: 24)
         detail.translatesAutoresizingMaskIntoConstraints = false
+        detail.setContentCompressionResistancePriority(.required, for: .vertical)
         document.addSubview(detail)
+        scroll.documentView = document
         NSLayoutConstraint.activate([
             detail.leadingAnchor.constraint(equalTo: document.leadingAnchor),
             detail.trailingAnchor.constraint(equalTo: document.trailingAnchor),
             detail.topAnchor.constraint(equalTo: document.topAnchor),
             detail.bottomAnchor.constraint(equalTo: document.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
         ])
-        scroll.documentView = document
         body.addArrangedSubview(scroll)
 
-        let content = NSView()
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 1080, height: 730))
         content.addSubview(root)
         NSLayoutConstraint.activate([
             root.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             root.topAnchor.constraint(equalTo: content.topAnchor),
             root.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            content.widthAnchor.constraint(greaterThanOrEqualToConstant: 990),
             header.widthAnchor.constraint(equalTo: root.widthAnchor),
             body.widthAnchor.constraint(equalTo: root.widthAnchor),
             body.heightAnchor.constraint(greaterThanOrEqualToConstant: 400),
             scroll.heightAnchor.constraint(equalTo: body.heightAnchor),
-            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 690),
+            scroll.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -246),
         ])
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 730),
@@ -156,6 +163,7 @@ final class ClientManagerUI {
         window.title = "Clients & Permissions — EventKit Bridge"
         window.minSize = NSSize(width: 990, height: 540)
         window.contentView = content
+        window.setContentSize(NSSize(width: 1080, height: 730))
         window.center()
         self.window = window
     }
@@ -295,17 +303,15 @@ final class ClientManagerUI {
         let old = client.grants.first {
             $0.resource == collection.resource && $0.targetID == collection.id
         }
-        let container = NSBox()
-        container.boxType = .custom
-        container.borderColor = .separatorColor
-        container.borderWidth = 1
-        container.cornerRadius = 8
-        container.contentViewMargins = NSSize(width: 12, height: 10)
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
-        container.contentView = stack
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        stack.wantsLayer = true
+        stack.layer?.cornerRadius = 8
+        stack.layer?.borderWidth = 1
+        stack.layer?.borderColor = NSColor.separatorColor.cgColor
         let name = subtitle(collection.name)
         stack.addArrangedSubview(name)
         let access = collection.writable ? "Writable" : "Read only"
@@ -334,8 +340,8 @@ final class ClientManagerUI {
             return (bit, check)
         }
         stack.addArrangedSubview(choices)
-        container.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
-        detail.addArrangedSubview(container)
+        stack.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
+        detail.addArrangedSubview(stack)
         rows.append(GrantRow(collection: collection, controls: controls))
     }
 

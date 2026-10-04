@@ -42,10 +42,12 @@ enum SyntheticTestMode {
             report("full_access_required"); return
         }
         let registry = ClientRegistry()
-        guard let clients = registry.clients(), clients.allSatisfy(\.revoked),
+        guard let clients = registry.clients(),
+              !clients.contains(where: { !$0.revoked && $0.name == clientName }),
               UserDefaults.standard.string(forKey: clientIDKey) == nil,
-              !BridgeEnablement().isEnabled else {
-            report("setup_requires_bridge_off_and_no_active_clients"); return
+              !FileManager.default.fileExists(atPath:
+                "/tmp/eventkit-bridge-\(getuid())/current.json") else {
+            report("setup_requires_stopped_bridge_and_no_test_client"); return
         }
         let collections = TestCollections(store: EKEventStore())
         let creation = collections.create()
@@ -82,7 +84,6 @@ enum SyntheticTestMode {
             _ = credentials.remove(clientID: issued.id)
             report("test_state_save_failed"); return
         }
-        BridgeEnablement().setEnabled(true)
         report("setup_complete", [
             "calendarID": calendarID, "reminderListID": listID,
             "clientID": issued.id, "credentialPath": credentialURL.path,
@@ -90,7 +91,6 @@ enum SyntheticTestMode {
     }
 
     private static func cleanup() {
-        BridgeEnablement().setEnabled(false)
         let collections = TestCollections(store: EKEventStore())
         guard !FileManager.default.fileExists(atPath:
             "/tmp/eventkit-bridge-\(getuid())/current.json") else {
