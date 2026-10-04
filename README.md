@@ -40,6 +40,13 @@ second pair of synthetic iCloud test collections and their items was removed,
 writes disarmed, and the bridge disabled. No locked item test was completed
 in this run.
 
+The source now routes the poll timer through a small common-mode scheduling
+helper. An offline regression test drives a synthetic tracking run-loop mode:
+the helper's timer fires there while a default-mode timer stays queued. This
+matches [Apple's run-loop guidance](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Multithreading/RunLoopManagement/RunLoopManagement.html):
+Cocoa common modes include modal and event tracking modes, and timers in other
+modes wait. The helper refactor has not been installed or tested live.
+
 ## Build and tests
 
 This Mac has Command Line Tools with a working macOS 26.5 SDK:
@@ -200,6 +207,36 @@ bounds. The supported route demonstrated so far is `client.py` in a **local
 task on Air**. Cloud tasks do not directly reach localhost, and an offline or
 sleeping Mac cannot be assumed to run a local task.
 
+### Proposed daily access policy (not implemented or approved)
+
+The smallest useful extension is a remembered **read-only** scope: Martin
+chooses one calendar and/or one reminder list in the app, approves exactly
+which bounded fields and time windows the local task may read, and chooses
+whether read availability starts after login and resumes after wake. The app
+would display that state and provide an immediate off switch. It should mint
+a fresh session token after each launch or wake rather than store a durable
+credential. This still grants any process running as the same macOS user the
+ability to copy the private `/tmp` token and read the selected scope while it
+is active. Token rotation limits lifetime; it does not identify the caller.
+If that same-user exposure is unacceptable, use a signed client with XPC peer
+verification before enabling remembered reads. The current unsigned Python
+client cannot be safely allowlisted by code signature.
+
+For writes, replace the broad session-wide arm switch in a daily mode with
+an approval for each fully parsed operation (or an explicitly approved small
+batch). The app should show the target, action, title/time or current item,
+and proposed change; hold the exact request in memory; expire approval
+quickly; and execute it once. A chat request does not prove which same-user
+process submitted a bridge command. Existing target checks, idempotency keys,
+and expected versions should remain, but they do not substitute for this
+approval boundary. No write approval should survive a restart or wake.
+
+Enabling remembered reads requires new, explicit authorization for the
+selected collections, returned fields, availability schedule, and same-user
+token risk. The earlier approval for a supervised 15-minute test and Launch
+at Login does not cover that expansion. Approval for each real write must
+also be tied to its exact action and target.
+
 ## Boundaries and next live steps
 
 The `/tmp/eventkit-bridge-<uid>` exchange is mode 0700 with mode 0600 files.
@@ -209,14 +246,25 @@ isolation from same-user software. An XPC or peer-verified socket design
 would need a stable signed client and its own local-task connectivity test.
 
 The local signing identity, stable-path installation, permission grant,
-grant-persistence check, and login registration are complete. The next live
-checks are local read/write flow while locked and awake, sleep/wake, and
-logout/relogin as separate cases. Keep the bridge off after login until the
-everyday access policy is explicitly approved. Martin must perform any lock,
-sleep, logout, Keychain, and macOS privacy approvals. Resolve the observed
-local bridge polling failure before relying on locked or unattended behavior;
-the next signed build responded while awake, but the stall's cause is not
-conclusively established.
+grant-persistence check, and login registration are complete. When Martin is
+available for another supervised session, test these cases separately:
+
+1. Open and hold the status menu while an authorized local read-only request
+   is queued; confirm the revised poll timer answers it and the 15-minute
+   expiry still closes the session.
+2. Create only synthetic items in app-created iCloud test collections, then
+   have Martin lock the awake Mac. From a local task, read and perform the
+   specifically approved synthetic edit/completion; unlock, delete the items
+   and collections, and disable the bridge.
+3. Have Martin sleep and wake the Mac; verify session expiration or rotation,
+   permission state, and whether the local task route is available after wake.
+4. Have Martin log out and back in; verify the login item starts, Calendar and
+   Reminders grants persist, and bridge, targets, and writes start off.
+
+Keep the bridge off after login until the everyday access policy is explicitly
+approved. Martin must perform any lock, sleep, logout, Keychain, and macOS
+privacy approvals. The signed build with the timer change responded while
+awake, but the earlier stall's cause is not conclusively established.
 
 Cloud tasks cannot call this bridge directly, and an offline, sleeping, or
 logged-out Mac cannot be assumed reachable.
