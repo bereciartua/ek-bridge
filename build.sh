@@ -14,9 +14,12 @@ xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
-    -framework AppKit -framework EventKit -framework Security \
+    -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventKitCommands.swift" \
+    "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
