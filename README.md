@@ -36,7 +36,8 @@ signing identity across versions. Do not treat an ad hoc rebuild as retaining
 the prior macOS permission grant.
 The default build rejects every write command and disables the write arm
 control. Only a separately reviewed build with `EVENTKIT_LIVE_WRITES=1`
-permits live writes; that build has not been made or launched.
+permits live writes. That variant was compiled for a static check only; it
+has not been launched or used.
 
 ## App controls
 
