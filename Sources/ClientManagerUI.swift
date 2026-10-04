@@ -1,12 +1,13 @@
 import AppKit
 import EventKit
 
-// All credential and grant changes are explicit local UI actions. The app
-// never writes a client secret to disk or copies it to the clipboard.
+// All credential and grant changes are explicit local UI actions. Secret
+// material is saved to private files, never shown or copied to the clipboard.
 @MainActor
 final class ClientManagerUI {
     private let registry: ClientRegistry
     private let store: EKEventStore
+    private let credentialFiles = ClientCredentialFiles()
 
     init(registry: ClientRegistry, store: EKEventStore) {
         self.registry = registry
@@ -24,7 +25,7 @@ final class ClientManagerUI {
             "\(client.name) [\(client.id)] — \(client.revoked ? "revoked" : "active"), \(client.grants.count) collection grants"
         }.joined(separator: "\n")
         alert.informativeText = (summary.isEmpty ? "No clients. New clients start with no permissions." : summary) +
-            "\n\nA key is shown once. Keep its credentials file private (mode 0600). Other processes running as this macOS user can read that file."
+            "\n\nThe app saves signing credentials in private files (mode 0600). Other processes running as this macOS user can read them."
         for title in ["New Client", "Edit Grants", "Rotate Key", "Revoke Client", "Activity", "Cancel"] {
             alert.addButton(withTitle: title)
         }
@@ -43,27 +44,51 @@ final class ClientManagerUI {
         field.placeholderString = "Client name"
         let alert = NSAlert()
         alert.messageText = "Create a client"
-        alert.informativeText = "The client will have no collection permissions until you add grants."
+        alert.informativeText = "The client starts with no grants. Its signing credential will be saved privately in Application Support. Cancel makes no changes."
         alert.accessoryView = field
-        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Create and Save")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         switch registry.createClient(name: field.stringValue) {
-        case .success(let issued): showKey(clientID: issued.id, key: issued.key)
+        case .success(let issued):
+            switch credentialFiles.saveNew(clientID: issued.id, key: issued.key) {
+            case .success(let url):
+                notice("Client created with no grants. Signing credential saved at \(url.path). Keep this file private.")
+            case .failure(let error):
+                let revoked = registry.revoke(clientID: issued.id)
+                let cleanup = credentialFiles.remove(clientID: issued.id)
+                let status = Self.cleanupStatus(revoked: revoked, file: cleanup)
+                notice("Credential save failed (\(error.rawValue)). \(status)")
+            }
         case .failure(let error): notice("Client creation failed: \(error.rawValue)")
         }
     }
 
     private func rotate() {
         guard let client = selectClient("Rotate which client's key?") else { return }
+        let destination: URL
+        switch credentialFiles.canReplace(clientID: client.id) {
+        case .success(let url): destination = url
+        case .failure(let error):
+            notice("Cannot rotate: credential file is missing or unsafe (\(error.rawValue)). Revoke this client and create a new one if needed.")
+            return
+        }
         let confirm = NSAlert()
         confirm.messageText = "Rotate key for \(client.name)?"
-        confirm.informativeText = "The old key stops working immediately. An in-progress request loses authorization."
-        confirm.addButton(withTitle: "Rotate")
+        confirm.informativeText = "The old key stops working immediately. Its private file at \(destination.path) will be replaced atomically. Cancel makes no changes."
+        confirm.addButton(withTitle: "Rotate and Replace")
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
         switch registry.rotateKey(clientID: client.id) {
-        case .success(let key): showKey(clientID: client.id, key: key)
+        case .success(let key):
+            switch credentialFiles.replace(clientID: client.id, key: key) {
+            case .success(let url): notice("Key rotated. Private credential replaced at \(url.path).")
+            case .failure(let error):
+                let revoked = registry.revoke(clientID: client.id)
+                let cleanup = credentialFiles.remove(clientID: client.id)
+                let status = Self.cleanupStatus(revoked: revoked, file: cleanup)
+                notice("Credential replacement failed (\(error.rawValue)). \(status)")
+            }
         case .failure(let error): notice("Key rotation failed: \(error.rawValue)")
         }
     }
@@ -77,7 +102,12 @@ final class ClientManagerUI {
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
         switch registry.revoke(clientID: client.id) {
-        case .success: notice("Client revoked.")
+        case .success:
+            switch credentialFiles.remove(clientID: client.id) {
+            case .success: notice("Client revoked and its local credential file removed.")
+            case .failure(let error):
+                notice("Client revoked, but credential file removal failed (\(error.rawValue)). Remove the file at \(credentialFiles.url(for: client.id)?.path ?? "the displayed client path") after checking it.")
+            }
         case .failure(let error): notice("Revocation failed: \(error.rawValue)")
         }
     }
@@ -190,19 +220,15 @@ final class ClientManagerUI {
         return clients[picker.indexOfSelectedItem]
     }
 
-    private func showKey(clientID: String, key: String) {
-        let alert = NSAlert()
-        alert.messageText = "Save this key now"
-        alert.informativeText = "It will not be shown again. Store this exact JSON in a private mode-0600 file for the local client. A same-user process can read that file."
-        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 700, height: 90))
-        text.string = "{\"clientID\":\"\(clientID)\",\"key\":\"\(key)\"}"
-        text.isEditable = false
-        text.isSelectable = true
-        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        alert.accessoryView = text
-        alert.addButton(withTitle: "Done")
-        alert.runModal()
-        text.string = ""
+    private static func cleanupStatus(
+        revoked: Result<Void, ClientRegistryError>,
+        file: Result<Void, CredentialFileError>) -> String {
+        let revokedOK: Bool
+        if case .success = revoked { revokedOK = true } else { revokedOK = false }
+        let fileOK: Bool
+        if case .success = file { fileOK = true } else { fileOK = false }
+        if revokedOK && fileOK { return "The client was revoked and its file removed." }
+        return "Cleanup was incomplete. Disable the bridge and inspect this client's record and private file before continuing."
     }
 
     private func notice(_ message: String) {

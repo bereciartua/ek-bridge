@@ -24,6 +24,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientManagerUI.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
