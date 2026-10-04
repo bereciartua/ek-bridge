@@ -159,7 +159,7 @@ final class ClientManagerUI {
         stack.alignment = .leading
         let edit = NSAlert()
         edit.messageText = "Permissions for \(selected.calendar.title)"
-        edit.informativeText = "Every unchecked action is denied. Clear all boxes to remove this grant. Each write also needs exact on-screen approval."
+        edit.informativeText = "Every checked action stays authorized for this client until you change or revoke the grant. Clear all boxes to remove it. No further app approval appears for individual writes."
         edit.accessoryView = stack
         edit.addButton(withTitle: "Save Grants")
         edit.addButton(withTitle: "Cancel")

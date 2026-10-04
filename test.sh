@@ -7,10 +7,18 @@ mkdir -p "$project_dir/build" "$cache_dir"
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeEnablement.swift" \
+    "$project_dir/Tests/BridgeEnablementTests.swift" \
+    -o "$project_dir/build/bridge-enablement-tests"
+"$project_dir/build/bridge-enablement-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/BridgeProtocolTests.swift" \
     -o "$project_dir/build/bridge-protocol-tests"
 "$project_dir/build/bridge-protocol-tests"
@@ -18,8 +26,19 @@ xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Tests/WriteJournalRetentionTests.swift" \
+    -o "$project_dir/build/write-journal-retention-tests"
+"$project_dir/build/write-journal-retention-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/ClientRegistryTests.swift" \
     -o "$project_dir/build/client-registry-tests"
 "$project_dir/build/client-registry-tests"
@@ -37,23 +56,6 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/BridgePollingTimerTests.swift" \
     -o "$project_dir/build/bridge-polling-timer-tests"
 "$project_dir/build/bridge-polling-timer-tests"
-xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
-    -module-cache-path "$cache_dir" \
-    "$project_dir/Sources/BridgeProtocol.swift" \
-    "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/ExactActionApproval.swift" \
-    "$project_dir/Tests/ExactActionApprovalTests.swift" \
-    -o "$project_dir/build/exact-action-approval-tests"
-"$project_dir/build/exact-action-approval-tests"
-xcrun swiftc -typecheck -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
-    -module-cache-path "$cache_dir" \
-    -framework AppKit \
-    "$project_dir/Sources/BridgeProtocol.swift" \
-    "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/ExactActionApproval.swift" \
-    "$project_dir/Sources/ExactActionApprovalUI.swift"
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \

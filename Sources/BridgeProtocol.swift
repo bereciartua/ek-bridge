@@ -41,13 +41,7 @@ enum BridgeRequestError: String, Error {
 enum BridgeProtocol {
     static let maxRequestBytes = 8_192
     static let maxResponseBytes = 65_536
-    static let sessionLifetime: TimeInterval = 15 * 60
     static let requestLifetime: TimeInterval = 30
-
-    static func sessionIsActive(now: TimeInterval, expiresAt: TimeInterval,
-                                uptime: TimeInterval, expiresUptime: TimeInterval) -> Bool {
-        now < expiresAt && uptime < expiresUptime
-    }
 
     static func validate(
         _ data: Data,

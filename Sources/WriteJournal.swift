@@ -16,30 +16,48 @@ final class WriteJournal {
         let digest: String
         var result: Data?
     }
+    private struct State: Codable {
+        var version = 3
+        var highWater: TimeInterval
+        var entries: [String: Entry]
+    }
 
     private let directory: URL
     private let file: URL
-    private var entries: [String: Entry]?
+    private let now: () -> TimeInterval
+    private let maxEntries: Int
+    private var state: State?
 
-    init(directory override: URL? = nil) {
+    init(directory override: URL? = nil,
+         maxEntries: Int = 1_000,
+         now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
         directory = override ?? support.appendingPathComponent("EventKitBridge", isDirectory: true)
         file = directory.appendingPathComponent("write-journal.json")
+        self.maxEntries = maxEntries
+        self.now = now
     }
 
     func inspect(_ request: BridgeRequest) -> Decision {
         guard let key = request.parameters["idempotencyKey"] as? String,
+              WriteIdempotencyKey.timestamp(key) != nil,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
         guard load() else { return .reject("journal_unavailable") }
-        if let entry = entries?[key] {
+        let current = now()
+        guard current.isFinite, current + WriteIdempotencyKey.futureSkew >= state!.highWater
+        else { return .reject("journal_clock_rollback") }
+        guard WriteIdempotencyKey.isCurrent(key, now: current)
+        else { return .reject("idempotency_expired") }
+        pruneCompletedExpired(now: current)
+        if let entry = state!.entries[key] {
             guard entry.digest == digest else { return .reject("idempotency_conflict") }
             guard let data = entry.result,
                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { return .reject("idempotency_pending_review") }
             return .repeatResult(result)
         }
-        guard (entries?.count ?? 0) < 1_000 else { return .reject("journal_full") }
+        guard state!.entries.count < maxEntries else { return .reject("journal_full") }
         return .execute
     }
 
@@ -51,7 +69,8 @@ final class WriteJournal {
         }
         guard let key = request.parameters["idempotencyKey"] as? String,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
-        entries?[key] = Entry(digest: digest, result: nil)
+        state!.entries[key] = Entry(digest: digest, result: nil)
+        state!.highWater = max(state!.highWater, now())
         guard persist() else { return .reject("journal_unavailable") }
         return .execute
     }
@@ -59,13 +78,29 @@ final class WriteJournal {
     func finish(_ request: BridgeRequest, result: [String: Any]) -> Bool {
         guard let key = request.parameters["idempotencyKey"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
-              entries?[key] != nil else { return false }
-        entries?[key]?.result = data
+              state?.entries[key] != nil else { return false }
+        state!.entries[key]?.result = data
+        state!.highWater = max(state!.highWater, now())
         guard persist() else {
-            entries?[key]?.result = nil
+            state!.entries[key]?.result = nil
             return false
         }
         return true
+    }
+
+    private func pruneCompletedExpired(now current: TimeInterval) {
+        let previousCount = state!.entries.count
+        state!.entries = state!.entries.filter { key, entry in
+            guard entry.result != nil,
+                  let issued = WriteIdempotencyKey.timestamp(key) else { return true }
+            return current - issued <= WriteIdempotencyKey.lifetime +
+                WriteIdempotencyKey.futureSkew
+        }
+        // If the clock jumps forward then back before the next disk write,
+        // the in-memory high-water mark still blocks reuse of pruned keys.
+        if state!.entries.count != previousCount {
+            state!.highWater = max(state!.highWater, current)
+        }
     }
 
     private func digest(_ request: BridgeRequest) -> String? {
@@ -79,7 +114,7 @@ final class WriteJournal {
     }
 
     private func load() -> Bool {
-        if entries != nil { return true }
+        if state != nil { return true }
         do {
             let existed = FileManager.default.fileExists(atPath: directory.path)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -98,7 +133,7 @@ final class WriteJournal {
                 guard synced else { return false }
             }
             if !FileManager.default.fileExists(atPath: file.path) {
-                entries = [:]
+                state = State(highWater: now(), entries: [:])
                 return true
             }
             let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
@@ -110,13 +145,25 @@ final class WriteJournal {
                   info.st_mode & 0o077 == 0, info.st_size <= 1_000_000 else { return false }
             let data = try FileHandle(fileDescriptor: fd, closeOnDealloc: false)
                 .read(upToCount: 1_000_001) ?? Data()
-            entries = try JSONDecoder().decode([String: Entry].self, from: data)
+            if let decoded = try? JSONDecoder().decode(State.self, from: data) {
+                guard decoded.version == 3, decoded.highWater.isFinite,
+                      decoded.highWater >= 0, decoded.entries.count <= maxEntries
+                else { return false }
+                state = decoded
+            } else {
+                // Version 2 stored only a dictionary. Keep its entries as
+                // tombstones: old UUID keys cannot pass the new request shape,
+                // and pending legacy writes must never be retried silently.
+                let legacy = try JSONDecoder().decode([String: Entry].self, from: data)
+                guard legacy.count <= maxEntries else { return false }
+                state = State(highWater: now(), entries: legacy)
+            }
             return true
         } catch { return false }
     }
 
     private func persist() -> Bool {
-        guard let entries, let data = try? JSONEncoder().encode(entries),
+        guard let state, let data = try? JSONEncoder().encode(state),
               data.count <= 1_000_000 else { return false }
         let temporary = directory.appendingPathComponent(".tmp-\(UUID().uuidString)")
         let fd = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)

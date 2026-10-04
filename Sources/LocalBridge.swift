@@ -5,16 +5,15 @@ import Foundation
 final class LocalBridge {
     private let root: URL
     private let session: URL
-    private let expiresAt: Date
-    private let expiresUptime: TimeInterval
     private let handle: (ClientBridgeEnvelope, @escaping ([String: Any]) -> Void) -> Void
     private let onStop: () -> Void
     private var timer: Timer?
-    private var usedIDs = Set<String>()
+    // A request timestamp is valid for at most 30 seconds (with five seconds
+    // of future skew). Keep replay IDs slightly longer, then bound memory.
+    private var usedIDs = [String: TimeInterval]()
     private var lockFD: Int32 = -1
 
-    var expiration: Date { expiresAt }
-    var active: Bool { timer != nil && isActive }
+    var active: Bool { timer != nil }
 
     init(
         handle: @escaping (ClientBridgeEnvelope, @escaping ([String: Any]) -> Void) -> Void,
@@ -24,8 +23,6 @@ final class LocalBridge {
         self.onStop = onStop
         root = URL(fileURLWithPath: "/tmp/eventkit-bridge-\(getuid())", isDirectory: true)
         session = root.appendingPathComponent("session-\(UUID().uuidString)", isDirectory: true)
-        expiresAt = Date().addingTimeInterval(BridgeProtocol.sessionLifetime)
-        expiresUptime = ProcessInfo.processInfo.systemUptime + BridgeProtocol.sessionLifetime
 
         try Self.ensureDirectory(root)
         let lockPath = root.appendingPathComponent("lock").path
@@ -44,7 +41,6 @@ final class LocalBridge {
             let descriptor: [String: Any] = [
                 "version": 2,
                 "session": session.lastPathComponent,
-                "expiresAt": expiresAt.timeIntervalSince1970,
             ]
             let data = try JSONSerialization.data(withJSONObject: descriptor)
             try Self.writeAtomically(data, to: root.appendingPathComponent("current.json"))
@@ -75,10 +71,8 @@ final class LocalBridge {
     }
 
     private func poll() {
-        guard isActive else {
-            stop()
-            return
-        }
+        let now = Date().timeIntervalSince1970
+        usedIDs = usedIDs.filter { now - $0.value < 40 }
         let requests = session.appendingPathComponent("requests", isDirectory: true)
         let responses = session.appendingPathComponent("responses", isDirectory: true)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: requests.path) else { return }
@@ -93,13 +87,13 @@ final class LocalBridge {
             let result = data.map {
                 ClientBridgeProtocol.validate(
                     $0, session: session.lastPathComponent,
-                    now: Date().timeIntervalSince1970, usedIDs: usedIDs)
+                    now: now, usedIDs: Set(usedIDs.keys))
             } ?? .failure(.invalid)
             switch result {
             case .success(let envelope) where envelope.request.id == id.lowercased():
-                usedIDs.insert(envelope.request.id)
+                usedIDs[envelope.request.id] = now
                 handle(envelope) { [weak self] value in
-                    guard let self, self.isActive, self.timer != nil else { return }
+                    guard let self, self.timer != nil else { return }
                     self.reply(value, id: id, to: responses.appendingPathComponent(name))
                 }
             case .success:
@@ -112,12 +106,6 @@ final class LocalBridge {
             unlink(requestURL.path)
         }
     }
-    private var isActive: Bool {
-        BridgeProtocol.sessionIsActive(
-            now: Date().timeIntervalSince1970, expiresAt: expiresAt.timeIntervalSince1970,
-            uptime: ProcessInfo.processInfo.systemUptime, expiresUptime: expiresUptime)
-    }
-
     private func reply(_ value: [String: Any], id: String, to url: URL) {
         var envelope: [String: Any] = ["version": 2, "id": id]
         if let error = value["error"] as? String {

@@ -52,6 +52,36 @@ struct ClientRegistryTests {
                                                signedPayload: first.signedPayload,
                                                request: first.request))
         precondition(registry.stillAuthorized(allowed))
+        let createWire = try wire(session: session, id: id, key: key,
+                                  command: "create_event", parameters: [
+                                    "calendarID": "synthetic-calendar", "title": "Synthetic",
+                                    "start": 1_800_000_000.0, "end": 1_800_003_600.0,
+                                    "idempotencyKey": WriteIdempotencyKey.make()], now: now)
+        let create = parsed(createWire, session: session, now: now)
+        let grantedWrite = value(registry.authorize(clientID: create.clientID,
+                                                    signature: create.signature,
+                                                    signedPayload: create.signedPayload,
+                                                    request: create.request))
+        precondition(registry.stillAuthorized(grantedWrite))
+        precondition(CommandPolicy.validate(create.request,
+            scope: BridgeScope(calendarID: grantedWrite.targetID,
+                               generation: grantedWrite.revision)) == nil)
+        let restarted = ClientRegistry(directory: directory)
+        let persistedWrite = value(restarted.authorize(clientID: create.clientID,
+                                                       signature: create.signature,
+                                                       signedPayload: create.signedPayload,
+                                                       request: create.request))
+        precondition(restarted.stillAuthorized(persistedWrite))
+        let editWire = try wire(session: session, id: id, key: key,
+                                command: "update_event", parameters: [
+                                    "calendarID": "synthetic-calendar", "itemID": "synthetic-item",
+                                    "expectedVersion": "1", "title": "Synthetic edit",
+                                    "start": 1_800_000_000.0, "end": 1_800_003_600.0,
+                                    "idempotencyKey": WriteIdempotencyKey.make()], now: now)
+        let edit = parsed(editWire, session: session, now: now)
+        failure(registry.authorize(clientID: edit.clientID, signature: edit.signature,
+                                   signedPayload: edit.signedPayload,
+                                   request: edit.request), .forbidden)
 
         var tampered = try JSONSerialization.jsonObject(with: firstWire) as! [String: Any]
         tampered["parameters"] = ["calendarID": "another-calendar", "start": 1_800_000_000.0,
@@ -78,7 +108,7 @@ struct ClientRegistryTests {
                                        command: "complete_reminder", parameters: [
                                         "listID": "synthetic-calendar",
                                         "itemID": "synthetic-item", "expectedVersion": "v1",
-                                        "idempotencyKey": UUID().uuidString], now: now)
+                                        "idempotencyKey": WriteIdempotencyKey.make()], now: now)
         let wrongAction = parsed(wrongActionWire, session: session, now: now)
         failure(registry.authorize(clientID: wrongAction.clientID,
                                    signature: wrongAction.signature,
@@ -87,6 +117,7 @@ struct ClientRegistryTests {
 
         success(registry.replaceGrants(clientID: id, grants: [grants[1]]))
         precondition(!registry.stillAuthorized(allowed))
+        precondition(!registry.stillAuthorized(grantedWrite))
         let newKey = value(registry.rotateKey(clientID: id))
         failure(registry.authorize(clientID: first.clientID, signature: first.signature,
                                    signedPayload: first.signedPayload,
@@ -119,7 +150,7 @@ struct ClientRegistryTests {
         let reloaded = ClientRegistry(directory: directory)
         precondition(reloaded.clients()?.first(where: { $0.id == id })?.revoked == true)
         precondition(reloaded.clients()?.first(where: { $0.id == second.id })?.revoked == false)
-        print("Client registry: default deny, scopes, signatures, replay, rotation, revocation passed")
+        print("Client registry: default deny, durable scoped writes, signatures, replay, rotation, revocation passed")
     }
 
     static func wire(session: String, id: String, key: String, command: String,

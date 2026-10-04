@@ -16,17 +16,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var bridgeEnableButton: NSButton!
     private var bridgeDisableButton: NSButton!
     private let bridgeStatus = NSTextField(labelWithString: "Local bridge: off")
-    private let targetStatus = NSTextField(labelWithString: "Item targets: none selected")
-    private var armWritesButton: NSButton!
     private var localBridge: LocalBridge?
+    private let bridgeEnablement = BridgeEnablement()
     private var requestInFlight = false
     private lazy var store = EKEventStore()
     private lazy var commands = EventKitCommands(store: store)
     private lazy var testCollections = TestCollections(store: store)
     private lazy var clientRegistry = ClientRegistry()
     private lazy var clientManager = ClientManagerUI(registry: clientRegistry, store: store)
-    private let approvalGate = ExactActionApproval()
-    private let approvalUI = ExactActionApprovalUI()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -45,7 +42,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         stack.addArrangedSubview(title)
 
         let explanation = NSTextField(wrappingLabelWithString:
-            "Create named local clients and grant actions on individual calendars and reminder lists. The bridge is off until enabled here. Every write needs an exact on-screen approval.")
+            "Create named local clients and grant actions on individual calendars and reminder lists. Saved grants authorize those actions until changed or revoked. Enable the local bridge to accept signed client requests while this app runs.")
         explanation.maximumNumberOfLines = 3
         stack.addArrangedSubview(explanation)
 
@@ -59,11 +56,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         reminderListButton = button("List Reminder Lists", #selector(listReminders))
         stack.addArrangedSubview(NSStackView(views: [reminderRequestButton, reminderListButton]))
 
-        let bridgeTitle = NSTextField(labelWithString: "Temporary local bridge")
+        let bridgeTitle = NSTextField(labelWithString: "Local bridge")
         bridgeTitle.font = .boldSystemFont(ofSize: 14)
         stack.addArrangedSubview(bridgeTitle)
         stack.addArrangedSubview(bridgeStatus)
-        bridgeEnableButton = button("Enable for 15 Minutes", #selector(enableBridge))
+        bridgeEnableButton = button("Enable Local Bridge", #selector(enableBridge))
         bridgeDisableButton = button("Disable", #selector(disableBridge))
         stack.addArrangedSubview(NSStackView(views: [bridgeEnableButton, bridgeDisableButton]))
         stack.addArrangedSubview(button("Manage Clients…", #selector(manageClients)))
@@ -72,11 +69,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             button("Create Test Collections", #selector(createTestCollections)),
             button("Remove Empty Test Collections", #selector(removeTestCollections)),
         ]))
-        armWritesButton = NSButton(checkboxWithTitle: "Per-action approval", target: nil, action: nil)
-        armWritesButton.isEnabled = false
-
         let hint = NSTextField(wrappingLabelWithString:
-            "Local only. Sessions expire after 15 minutes. A login launch starts with bridge off. Stored client grants do not turn the bridge on; writes need individual approval.")
+            "Local only. Enabling the bridge is saved across app launches. Granted clients can act without further app prompts while it runs. Disable here or change/revoke client grants to stop access.")
         hint.textColor = .secondaryLabelColor
         hint.maximumNumberOfLines = 3
         stack.addArrangedSubview(hint)
@@ -113,7 +107,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         refreshStatus()
         refreshBridgeStatus()
-        refreshTargetStatus()
+        if bridgeEnablement.isEnabled { startBridge() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -121,7 +115,6 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        approvalGate.cancelAll()
         localBridge?.stop()
         localBridge = nil
     }
@@ -212,6 +205,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func enableBridge(_ sender: Any?) {
+        startBridge()
+        if localBridge != nil { bridgeEnablement.setEnabled(true) }
+    }
+
+    private func startBridge() {
         guard localBridge == nil else { return }
         guard clientRegistry.clients() != nil else {
             bridgeStatus.stringValue = "Local bridge: client policy store unavailable"
@@ -223,10 +221,6 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                 self.handleClient(envelope, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
-                self?.approvalGate.cancelAll()
-                self?.commands.scope.writesArmed = false
-                self?.commands.scope.generation += 1
-                self?.armWritesButton.state = .off
                 self?.refreshBridgeStatus()
             })
             refreshBridgeStatus()
@@ -236,7 +230,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func disableBridge(_ sender: Any?) {
-        approvalGate.cancelAll()
+        bridgeEnablement.setEnabled(false)
         localBridge?.stop()
     }
 
@@ -260,8 +254,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let selected = BridgeScope(
             calendarID: call.grant?.resource == .calendar ? call.targetID : nil,
             reminderListID: call.grant?.resource == .reminderList ? call.targetID : nil,
-            writesArmed: false, generation: call.revision)
-        if let error = CommandPolicy.validateShapeAndTarget(request, scope: selected) {
+            generation: call.revision)
+        if let error = CommandPolicy.validate(request, scope: selected) {
             finishClient(call, ["error": error], completion)
             return
         }
@@ -304,85 +298,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                 self?.finishClient(call, value, completion)
             }
         default:
-            if request.command.isWrite {
-                reviewWrite(request, call: call, selected: selected, completion: completion)
-            } else {
-                commands.runAuthorized(request, selected: selected,
-                                       stillAuthorized: { [weak self] in
-                    guard let self else { return false }
-                    return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
-                }) { [weak self] value in
-                    self?.finishClient(call, value, completion)
-                }
+            commands.runAuthorized(request, selected: selected,
+                                   stillAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
+            }) { [weak self] value in
+                self?.finishClient(call, value, completion)
             }
         }
-    }
-
-    private func reviewWrite(_ request: BridgeRequest, call: AuthorizedClientCall,
-                             selected: BridgeScope,
-                             completion: @escaping ([String: Any]) -> Void) {
-        #if !EVENTKIT_LIVE_WRITES
-        finishClient(call, ["error": "writes_not_built"], completion)
-        #else
-        guard let window, let targetName = commands.targetName(for: request) else {
-            finishClient(call, ["error": "target_unavailable"], completion)
-            return
-        }
-        let existing = commands.existingDescription(for: request)
-        if request.parameters["itemID"] != nil && existing == nil {
-            finishClient(call, ["error": "item_unavailable"], completion)
-            return
-        }
-        let proposalFields: [String: Any] = [
-            "version": 2, "epoch": approvalGate.epoch, "id": request.id,
-            "command": request.command.rawValue,
-            "issuedAt": Date().timeIntervalSince1970,
-            "parameters": request.parameters,
-        ]
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: proposalFields, options: [.sortedKeys]) else {
-            finishClient(call, ["error": "invalid_request"], completion)
-            return
-        }
-        switch approvalGate.propose(
-            data, peerVerified: true, scope: selected,
-            now: Date().timeIntervalSince1970,
-            uptime: ProcessInfo.processInfo.systemUptime) {
-        case .failure(let error):
-            finishClient(call, ["error": error.rawValue], completion)
-        case .success(let proposal):
-            approvalUI.review(
-                proposal, clientName: call.clientName,
-                targetName: targetName, existingItemDescription: existing,
-                in: window, gate: approvalGate,
-                currentScope: { [weak self] in
-                    guard let self, self.clientRegistry.stillAuthorized(call),
-                          self.localBridge?.active == true else { return BridgeScope() }
-                    return selected
-                }) { [weak self] result in
-                    guard let self else { return }
-                    switch result {
-                    case .failure(let error):
-                        self.finishClient(call, ["error": error.rawValue], completion)
-                    case .success(let approved):
-                        guard self.clientRegistry.stillAuthorized(call),
-                              self.localBridge?.active == true else {
-                            self.finishClient(call, ["error": "scope_changed"], completion)
-                            return
-                        }
-                        self.commands.runAuthorized(
-                            approved.request, selected: selected,
-                            stillAuthorized: { [weak self] in
-                                guard let self else { return false }
-                                return self.clientRegistry.stillAuthorized(call) &&
-                                    self.localBridge?.active == true
-                            }) { [weak self] value in
-                                self?.finishClient(call, value, completion)
-                            }
-                    }
-                }
-        }
-        #endif
     }
 
     private func finishClient(_ call: AuthorizedClientCall, _ value: [String: Any],
@@ -396,16 +319,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshBridgeStatus() {
-        if let localBridge {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            bridgeStatus.stringValue = "Local bridge: active until \(formatter.string(from: localBridge.expiration))"
-        } else {
-            bridgeStatus.stringValue = "Local bridge: off"
-        }
+        bridgeStatus.stringValue = localBridge == nil ? "Local bridge: off" : "Local bridge: active"
         bridgeEnableButton.isEnabled = localBridge == nil
         bridgeDisableButton.isEnabled = localBridge != nil
-        refreshWriteControl()
         refreshMenu()
     }
 
@@ -414,14 +330,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let calendar = name(EKEventStore.authorizationStatus(for: .event))
         let reminders = name(EKEventStore.authorizationStatus(for: .reminder))
-        let bridgeLine: String
-        if let localBridge {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            bridgeLine = "Bridge: active until \(formatter.string(from: localBridge.expiration))"
-        } else {
-            bridgeLine = "Bridge: off"
-        }
+        let bridgeLine = localBridge == nil ? "Bridge: off" : "Bridge: active"
         let loginStatus: String
         switch SMAppService.mainApp.status {
         case .enabled: loginStatus = "enabled"
@@ -430,23 +339,18 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         case .notRegistered: loginStatus = "off"
         @unknown default: loginStatus = "unknown"
         }
-        #if EVENTKIT_LIVE_WRITES
-        let writeStatus = "exact on-screen approval required"
-        #else
-        let writeStatus = "disabled in this build"
-        #endif
         let clientCount = clientRegistry.clients()?.filter { !$0.revoked }.count
         for line in ["Calendar: \(calendar)", "Reminders: \(reminders)",
                      bridgeLine,
                      "Active clients: \(clientCount.map(String.init) ?? "policy unavailable")",
-                     "Writes: \(writeStatus)", "Login: \(loginStatus)"] {
+                     "Actions: saved client grants", "Login: \(loginStatus)"] {
             let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Open Controls…", action: #selector(openControls), keyEquivalent: "o"))
-        menu.addItem(NSMenuItem(title: localBridge == nil ? "Enable for 15 Minutes" : "Disable Bridge",
+        menu.addItem(NSMenuItem(title: localBridge == nil ? "Enable Local Bridge" : "Disable Bridge",
                                 action: localBridge == nil ? #selector(enableBridge) : #selector(disableBridge),
                                 keyEquivalent: ""))
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
@@ -461,99 +365,27 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    private func refreshTargetStatus() {
-        targetStatus.stringValue = "Calendar: \(commands.scope.calendarID == nil ? "none" : "selected") · Reminders: \(commands.scope.reminderListID == nil ? "none" : "selected")"
-        refreshWriteControl()
-        refreshMenu()
-    }
     private var installedLocation: Bool {
         let path = Bundle.main.bundleURL.standardizedFileURL.path
         let userApps = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Applications", isDirectory: true).path
         return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
     }
-    private func refreshWriteControl() {
-        #if EVENTKIT_LIVE_WRITES
-        armWritesButton.isEnabled = localBridge != nil &&
-            (commands.scope.calendarID != nil || commands.scope.reminderListID != nil)
-        #else
-        armWritesButton.isEnabled = false
-        #endif
-    }
-    private func disarmWrites() {
-        commands.scope.writesArmed = false
-        armWritesButton.state = .off
-    }
     @objc private func openControls(_ sender: Any?) {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-    @objc private func chooseCalendar(_ sender: Any?) { chooseTarget(.event) }
-    @objc private func chooseReminderList(_ sender: Any?) { chooseTarget(.reminder) }
-    private func chooseTarget(_ type: EKEntityType) {
-        guard EKEventStore.authorizationStatus(for: type) == .fullAccess else { return }
-        let calendars = store.calendars(for: type)
-        guard !calendars.isEmpty else { return }
-        let picker = NSPopUpButton()
-        for calendar in calendars {
-            picker.addItem(withTitle: "\(calendar.title) [\(calendar.calendarIdentifier)]")
-        }
-        let alert = NSAlert()
-        alert.messageText = type == .event ? "Choose calendar target" : "Choose reminder list target"
-        alert.informativeText = "Only this target will be accessible through the local bridge during this app session."
-        alert.accessoryView = picker
-        alert.addButton(withTitle: "Select")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard calendars.indices.contains(picker.indexOfSelectedItem) else { return }
-        let id = calendars[picker.indexOfSelectedItem].calendarIdentifier
-        disarmWrites()
-        if type == .event { commands.scope.calendarID = id }
-        else { commands.scope.reminderListID = id }
-        commands.scope.generation += 1
-        refreshTargetStatus()
-    }
-    @objc private func clearTargets(_ sender: Any?) {
-        commands.scope.calendarID = nil
-        commands.scope.reminderListID = nil
-        disarmWrites()
-        commands.scope.generation += 1
-        refreshTargetStatus()
     }
     @objc private func checkTestSources(_ sender: Any?) {
         output.string = testCollections.sourcePreview()
     }
     @objc private func createTestCollections(_ sender: Any?) {
         output.string = testCollections.create()
-        disarmWrites()
-        if let id = testCollections.calendarID { commands.scope.calendarID = id }
-        if let id = testCollections.reminderListID { commands.scope.reminderListID = id }
-        commands.scope.generation += 1
-        refreshTargetStatus()
     }
     @objc private func removeTestCollections(_ sender: Any?) {
-        disarmWrites()
-        commands.scope.generation += 1
-        refreshMenu()
-        let calendarID = testCollections.calendarID
-        let listID = testCollections.reminderListID
         testCollections.removeEmpty { [weak self] message in
             guard let self else { return }
             self.output.string = message
-            self.disarmWrites()
-            if self.testCollections.calendarID == nil && self.commands.scope.calendarID == calendarID {
-                self.commands.scope.calendarID = nil
-            }
-            if self.testCollections.reminderListID == nil && self.commands.scope.reminderListID == listID {
-                self.commands.scope.reminderListID = nil
-            }
-            self.commands.scope.generation += 1
-            self.refreshTargetStatus()
         }
-    }
-    @objc private func toggleWrites(_ sender: Any?) {
-        commands.scope.writesArmed = armWritesButton.state == .on
-        refreshMenu()
     }
     @objc private func toggleLoginItem(_ sender: Any?) {
         guard installedLocation else {

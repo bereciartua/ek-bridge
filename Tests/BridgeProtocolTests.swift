@@ -64,12 +64,6 @@ struct BridgeProtocolTests {
                                        now: now, usedIDs: []), error: .invalid)
         expect(BridgeProtocol.validate(Data(repeating: 65, count: 8_193), token: token,
                                        now: now, usedIDs: []), error: .tooLarge)
-        precondition(BridgeProtocol.sessionIsActive(now: 9, expiresAt: 10,
-            uptime: 99, expiresUptime: 100))
-        precondition(!BridgeProtocol.sessionIsActive(now: 10, expiresAt: 10,
-            uptime: 99, expiresUptime: 100))
-        precondition(!BridgeProtocol.sessionIsActive(now: 9, expiresAt: 10,
-            uptime: 100, expiresUptime: 100))
         let scope = BridgeScope(calendarID: "approved", reminderListID: "approved-list")
         func request(_ command: BridgeCommand, _ parameters: [String: Any]) -> BridgeRequest {
             BridgeRequest(id: id, command: command, parameters: parameters)
@@ -107,18 +101,20 @@ struct BridgeProtocolTests {
             scope: cleared, reminders: true))
         precondition(CommandPolicy.validate(request(.createEvent, [
             "calendarID": "approved", "title": "Test", "start": 1000, "end": 2000,
-            "idempotencyKey": UUID().uuidString,
-        ]), scope: scope) == "writes_disabled")
-        var armed = scope
-        armed.writesArmed = true
+            "idempotencyKey": WriteIdempotencyKey.make(),
+        ]), scope: scope) == nil)
+        precondition(CommandPolicy.validate(request(.createEvent, [
+            "calendarID": "other", "title": "Test", "start": 1000, "end": 2000,
+            "idempotencyKey": WriteIdempotencyKey.make(),
+        ]), scope: scope) != nil)
         precondition(CommandPolicy.validate(request(.createEvent, [
             "calendarID": "approved", "title": "Test", "start": 1000, "end": 2000,
             "idempotencyKey": UUID().uuidString,
-        ]), scope: armed) == nil)
+        ]), scope: scope) != nil)
         precondition(CommandPolicy.validate(request(.createEvent, [
             "calendarID": "approved", "title": "Test", "start": 1000, "end": 2000,
-            "idempotencyKey": UUID().uuidString, "recurrence": "daily"
-        ]), scope: armed) != nil)
+            "idempotencyKey": WriteIdempotencyKey.make(), "recurrence": "daily"
+        ]), scope: scope) != nil)
         precondition(MutationPolicy.eventError(recurring: true, allDay: false,
             hasAttendees: false, floatingTime: false, updating: true) == "recurrence_unsupported")
         precondition(MutationPolicy.eventError(recurring: false, allDay: true,
@@ -135,7 +131,7 @@ struct BridgeProtocolTests {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("eventkit-journal-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temporary) }
-        let key = UUID().uuidString
+        let key = WriteIdempotencyKey.make()
         let write = request(.createReminder, [
             "listID": "approved-list", "title": "Test", "idempotencyKey": key
         ])

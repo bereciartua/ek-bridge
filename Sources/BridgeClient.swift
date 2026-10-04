@@ -59,12 +59,10 @@ struct BridgeClientCLI {
         try ownedDirectory(root)
         let descriptorData = try ownedFile(root + "/current.json", maxBytes: 2_048)
         guard let descriptor = (try? JSONSerialization.jsonObject(with: descriptorData)) as? [String: Any],
-              Set(descriptor.keys) == Set(["version", "session", "expiresAt"]),
+              Set(descriptor.keys) == Set(["version", "session"]),
               descriptor["version"] as? Int == 2,
               let session = descriptor["session"] as? String,
-              session.hasPrefix("session-"), UUID(uuidString: String(session.dropFirst(8))) != nil,
-              let expiresAt = descriptor["expiresAt"] as? Double,
-              Date().timeIntervalSince1970 < expiresAt
+              session.hasPrefix("session-"), UUID(uuidString: String(session.dropFirst(8))) != nil
         else { throw ClientError.unavailable }
         let sessionPath = root + "/" + session
         let requests = sessionPath + "/requests"
@@ -85,7 +83,7 @@ struct BridgeClientCLI {
         guard request.count <= BridgeProtocol.maxRequestBytes else { throw ClientError.invalid }
         try atomicWrite(request, to: requests + "/" + requestID + ".json")
         let responsePath = responses + "/" + requestID + ".json"
-        let deadline = min(Date().timeIntervalSince1970 + (command.isWrite ? 360 : 10), expiresAt)
+        let deadline = Date().timeIntervalSince1970 + (command.isWrite ? 60 : 10)
         while Date().timeIntervalSince1970 < deadline {
             if let responseData = try? ownedFile(responsePath,
                                                  maxBytes: BridgeProtocol.maxResponseBytes) {

@@ -7,21 +7,17 @@ app_dir="$output_dir/EventKitBridge.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 sdk_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
-write_flag=""
-if [ "${EVENTKIT_LIVE_WRITES:-0}" = "1" ]; then
-    write_flag="-D EVENTKIT_LIVE_WRITES"
-fi
 
 mkdir -p "$contents_dir/MacOS" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
 xcrun swiftc -parse-as-library \
-    $write_flag \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
     -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/BridgeEnablement.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
@@ -31,10 +27,9 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/TestCollections.swift" \
     "$project_dir/Sources/EventKitCommands.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
-    "$project_dir/Sources/ExactActionApproval.swift" \
-    "$project_dir/Sources/ExactActionApprovalUI.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 xcrun swiftc -sdk "$sdk_dir" \

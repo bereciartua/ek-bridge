@@ -1,11 +1,10 @@
 import Foundation
 
-// Strict shape checks run before EventKit is touched. A session has at most one
-// explicitly selected target of each type; empty IDs mean deny all item access.
+// Strict shape checks run before EventKit is touched. The target comes from
+// the signed client's saved grant; empty IDs deny all item access.
 struct BridgeScope {
     var calendarID: String?
     var reminderListID: String?
-    var writesArmed = false
     var generation = 0
 }
 
@@ -17,13 +16,6 @@ enum CommandPolicy {
     }
 
     static func validate(_ request: BridgeRequest, scope: BridgeScope) -> String? {
-        if request.command.isWrite && !scope.writesArmed { return "writes_disabled" }
-        return validateShapeAndTarget(request, scope: scope)
-    }
-
-    // The proposed per-action approval path validates writes before any arm
-    // state exists. Only its in-app approval gate may call this directly.
-    static func validateShapeAndTarget(_ request: BridgeRequest, scope: BridgeScope) -> String? {
         let p = request.parameters
         let command = request.command
         switch command {
@@ -49,37 +41,37 @@ enum CommandPolicy {
                   target(p, "calendarID", scope.calendarID),
                   title(p["title"]),
                   dateRange(p["start"], p["end"]),
-                  uuid(p["idempotencyKey"])
+                  WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .updateEvent:
             guard keys(p, ["calendarID", "itemID", "expectedVersion", "title", "start", "end", "idempotencyKey"]),
                   target(p, "calendarID", scope.calendarID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   title(p["title"]), dateRange(p["start"], p["end"]),
-                  uuid(p["idempotencyKey"])
+                  WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .deleteEvent:
             guard keys(p, ["calendarID", "itemID", "expectedVersion", "idempotencyKey"]),
                   target(p, "calendarID", scope.calendarID),
                   item(p["itemID"]), version(p["expectedVersion"]),
-                  uuid(p["idempotencyKey"])
+                  WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .createReminder:
             guard keys(p, ["listID", "title", "idempotencyKey"]),
                   target(p, "listID", scope.reminderListID),
-                  title(p["title"]), uuid(p["idempotencyKey"])
+                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .updateReminder:
             guard keys(p, ["listID", "itemID", "expectedVersion", "title", "idempotencyKey"]),
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
-                  title(p["title"]), uuid(p["idempotencyKey"])
+                  title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .completeReminder, .deleteReminder:
             guard keys(p, ["listID", "itemID", "expectedVersion", "idempotencyKey"]),
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
-                  uuid(p["idempotencyKey"])
+                  WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         }
         return nil
