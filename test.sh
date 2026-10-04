@@ -14,5 +14,12 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/BridgeProtocolTests.swift" \
     -o "$project_dir/build/bridge-protocol-tests"
 "$project_dir/build/bridge-protocol-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgePollingTimer.swift" \
+    "$project_dir/Tests/BridgePollingTimerTests.swift" \
+    -o "$project_dir/build/bridge-polling-timer-tests"
+"$project_dir/build/bridge-polling-timer-tests"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/test_client.py"
