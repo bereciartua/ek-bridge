@@ -190,6 +190,12 @@ final class TestCollections {
             $0.sourceType == .local && !$0.isDelegate &&
                 !$0.calendars(for: entity).isEmpty
         }) { return local }
+        // Keep supervised test data in the previously approved iCloud account
+        // when the user's default calendar has changed to another account.
+        if let iCloud = store.sources.first(where: {
+            $0.title == "iCloud" && !$0.isDelegate &&
+                !$0.calendars(for: entity).isEmpty
+        }) { return iCloud }
         return entity == .event
             ? store.defaultCalendarForNewEvents?.source
             : store.defaultCalendarForNewReminders()?.source
