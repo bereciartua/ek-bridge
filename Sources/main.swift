@@ -324,6 +324,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         armWritesButton.isEnabled = false
         #endif
     }
+    private func disarmWrites() {
+        commands.scope.writesArmed = false
+        armWritesButton.state = .off
+    }
     @objc private func openControls(_ sender: Any?) {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -347,6 +351,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         guard calendars.indices.contains(picker.indexOfSelectedItem) else { return }
         let id = calendars[picker.indexOfSelectedItem].calendarIdentifier
+        disarmWrites()
         if type == .event { commands.scope.calendarID = id }
         else { commands.scope.reminderListID = id }
         commands.scope.generation += 1
@@ -355,9 +360,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func clearTargets(_ sender: Any?) {
         commands.scope.calendarID = nil
         commands.scope.reminderListID = nil
-        commands.scope.writesArmed = false
+        disarmWrites()
         commands.scope.generation += 1
-        armWritesButton.state = .off
         refreshTargetStatus()
     }
     @objc private func checkTestSources(_ sender: Any?) {
@@ -365,17 +369,22 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc private func createTestCollections(_ sender: Any?) {
         output.string = testCollections.create()
+        disarmWrites()
         if let id = testCollections.calendarID { commands.scope.calendarID = id }
         if let id = testCollections.reminderListID { commands.scope.reminderListID = id }
         commands.scope.generation += 1
         refreshTargetStatus()
     }
     @objc private func removeTestCollections(_ sender: Any?) {
+        disarmWrites()
+        commands.scope.generation += 1
+        refreshMenu()
         let calendarID = testCollections.calendarID
         let listID = testCollections.reminderListID
         testCollections.removeEmpty { [weak self] message in
             guard let self else { return }
             self.output.string = message
+            self.disarmWrites()
             if self.testCollections.calendarID == nil && self.commands.scope.calendarID == calendarID {
                 self.commands.scope.calendarID = nil
             }
