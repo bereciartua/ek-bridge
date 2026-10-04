@@ -42,6 +42,8 @@ struct BridgeProtocolTests {
 
         expect(BridgeProtocol.validate(try message(), token: token, now: now, usedIDs: []),
                command: .calendarCount)
+        expect(BridgeProtocol.validate(try message(command: "scope_status"), token: token,
+                                       now: now, usedIDs: []), command: .scopeStatus)
         expect(BridgeProtocol.validate(try message(suppliedToken: "wrong"), token: token,
                                        now: now, usedIDs: []), error: .unauthorized)
         expect(BridgeProtocol.validate(try message(command: "unlisted_command"), token: token,
@@ -168,6 +170,6 @@ struct BridgeProtocolTests {
         }
         guard case .reject("journal_unavailable") = WriteJournal(directory: link).begin(write)
         else { preconditionFailure("symlink journal directory") }
-        print("Bridge protocol/policy/journal: 39 positive/negative checks passed")
+        print("Bridge protocol/policy/journal: 40 positive/negative checks passed")
     }
 }
