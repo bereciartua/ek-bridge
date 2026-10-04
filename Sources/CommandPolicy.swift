@@ -21,7 +21,7 @@ enum CommandPolicy {
         let command = request.command
         if command.isWrite && !scope.writesArmed { return "writes_disabled" }
         switch command {
-        case .authorizationStatus, .calendarCount, .reminderListCount:
+        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
             return p.isEmpty ? nil : "invalid_parameters"
         case .readEvents:
             guard keys(p, ["calendarID", "start", "end", "limit"]),
