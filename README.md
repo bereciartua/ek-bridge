@@ -16,11 +16,29 @@ collections were removed. A one-off iCloud event exposed a false recurrence
 classification; the corrected build passed event edit/delete. The bridge was
 disabled and the app quit after testing. No existing user items were read.
 
-The latest source also disarms writes when targets change; it compiles and its
-isolated tests pass, but that final UI change has not been retested live.
-Sleep/wake, logout/relogin, login item startup, stable-signature TCC grants,
-sync conflicts, and live item commands while locked remain untested. The
-locked-awake count result does not establish those behaviors.
+The target-change disarm fix was also tested live: changing the selected test
+targets and removing the empty test collections each disarmed writes, and a
+synthetic event create was rejected with `writes_disabled`.
+
+A self-signed local code-signing identity in the login Keychain was used for
+four successive builds at the same installed path. Calendar and
+Reminders Full Access persisted after all three updates without another prompt.
+The installed app's menu reported `Login: enabled` after the user registered
+Launch at Login. This is a local development signature, not a Developer ID
+distribution signature; Gatekeeper assessment rejected it without any trust
+change. Actual login startup, sleep/wake, logout/relogin, sync conflicts, and
+live item commands while locked remain untested. The locked-awake count
+result does not establish those behaviors.
+
+During a signed-build diagnostic, the app remained active but its file bridge
+stopped answering client requests. The empty iCloud test collections were
+removed and the bridge disabled. The next signed build added the timer to
+common run-loop modes; its awake local read and synthetic create/delete
+checks passed, including after several minutes. The restart and timer change
+were not isolated, so the cause of the earlier stall remains uncertain. A
+second pair of synthetic iCloud test collections and their items was removed,
+writes disarmed, and the bridge disabled. No locked item test was completed
+in this run.
 
 ## Build and tests
 
@@ -36,20 +54,23 @@ The build uses ad hoc signing by default. A user-approved stable signing
 identity can be supplied through `EVENTKIT_SIGN_IDENTITY`; the script does
 not create or fetch a certificate. Preserve the bundle identifier and
 signing identity across versions. The test app's ad hoc designated requirement
-is a build-specific code hash, and each launched build needed fresh macOS
-Calendar and Reminders grants.
+was a build-specific code hash, and each launched build needed fresh macOS
+Calendar and Reminders grants. The installed pilot uses a self-signed identity
+kept in the login Keychain.
 The default build rejects every write command and disables the write arm
 control. Only a separately reviewed build with `EVENTKIT_LIVE_WRITES=1`
-permits live writes. A temporary write-enabled variant was used only for
-the approved synthetic test and then quit. No write build is installed.
+permits live writes. The installed supervised pilot was built with this flag;
+its bridge starts off and its write arm control starts off. It does not run
+an unattended write session at login.
 
 ## App controls
 
 The status menu shows Calendar and Reminders permission state, bridge state,
 selected targets, write state, login registration state, Open Controls,
 Enable/Disable Bridge, Launch at Login, and Quit. Launch at
-Login uses `SMAppService.mainApp` when the user clicks that menu item; it has
-not been enabled or tested. The menu disables registration until the app is
+Login uses `SMAppService.mainApp` when the user clicks that menu item; the
+installed app reports registration enabled, but relogin startup is untested.
+The menu disables registration until the app is
 in an Applications folder and distinguishes enabled from needing System
 Settings approval. The controls window requests each permission,
 lists calendar or list metadata, lets the user select at most one target of
@@ -61,8 +82,9 @@ Reminders account sources, create an empty calendar and list named
 `EventKit Bridge Test`, and remove only those app-created collections after
 they are verified empty. The app records their IDs to avoid deleting an
 unrelated collection with the same name. It prefers a local source when one
-already has collections of that type; otherwise it uses the default source,
-which may sync to an account. The supervised test used iCloud with approval.
+already has collections of that type; otherwise it prefers iCloud and then
+the default source, which may sync to another account. The supervised test
+used iCloud with approval.
 Login startup alone does not enable the bridge or restore targets. This is a
 deliberate attended prototype; it does not yet offer unattended access after
 restart or after session expiry.
@@ -133,27 +155,26 @@ synchronization.
 
 | Capability | State |
 | --- | --- |
-| Permission and count bridge while locked and awake | Tested on previous build |
-| Menu bar UI and target selection | Tested; final target-change disarm fix compiled only |
+| Permission and count bridge while locked and awake | Tested on previous build; signed-build locked item test pending |
+| Menu bar UI and target selection | Tested, including target-change write disarm |
 | App-created synthetic test collection controls | Tested with iCloud; collections removed |
-| Bounded item reads | Tested on synthetic collections only |
-| Calendar and Reminders mutations | Synthetic create/edit/delete and reminder completion passed; disabled in default build |
+| Bounded item reads | Tested on synthetic collections only, including installed signed build while awake |
+| Calendar and Reminders mutations | Synthetic operations passed while awake; disabled in default build |
 | Idempotency and stale-version checks | Isolated tests; no EventKit transaction guarantee |
-| Launch at login | UI path implemented; not registered or tested |
+| Launch at login | Registration reports enabled; actual login startup untested |
 | Persistent unattended access | Not implemented |
-| Stable signing identity | None available on this Mac |
+| Stable signing identity | Self-signed in login Keychain; TCC grants persisted across two changed builds |
 
 ## Signing and everyday operation
 
-This Mac has only Command Line Tools, no full Xcode, and
-`security find-identity -v -p codesigning` returns zero identities. The
-current app is ad hoc signed, with a designated requirement tied to its code
-hash. For a single-Mac pilot, the smallest no-fee route is a user-approved
-self-signed code-signing identity in the login Keychain, used consistently
-with the existing bundle identifier. Apple documents this for local code
-signing, but it is not a Developer ID distribution signature and TCC grant
-persistence across updates must be tested. Avoid changing system trust
-settings merely to test TCC. If Martin already has Apple Developer Program
+This Mac has only Command Line Tools, no full Xcode. The installed app is
+signed with `EventKit Bridge Local Signing`, a self-signed code-signing
+identity in the login Keychain, and keeps the same bundle identifier across
+updates. Apple documents self-signed identities for local code signing, but
+this is not a Developer ID distribution signature. On this Mac, TCC Full
+Access persisted across two changed signed builds at the stable installed
+path. Gatekeeper still rejects the self-signed bundle for distribution; no
+system trust settings were changed. If Martin already has Apple Developer Program
 membership, a Developer ID Application identity is the stronger distribution
 route; new membership is currently USD 99/year. Xcode Personal Team signing
 is free but needs Xcode and has periodic provisioning limits, so it is not the
@@ -161,9 +182,10 @@ smallest path on this Mac. See [Apple's code-signing technote](https://developer
 [account overview](https://developer.apple.com/help/account/basics/about-your-developer-account),
 and [membership pricing](https://developer.apple.com/programs/enroll/).
 
-The app already has an `SMAppService.mainApp` Launch at Login control, but
-it has not been registered. Apple says registration launches subject to user
-approval. The app's current policy still starts with no selected targets,
+The app has an `SMAppService.mainApp` Launch at Login control and currently
+reports registration enabled. Actual login startup has not been tested.
+Apple says registration launches subject to user approval. The app's current
+policy still starts with no selected targets,
 bridge off, and writes unarmed, and its 15-minute bridge expires. Signing and
 login registration alone therefore do not make it an everyday integration.
 See [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice).
@@ -186,14 +208,15 @@ process running as that user could read that token. This is **not** strong
 isolation from same-user software. An XPC or peer-verified socket design
 would need a stable signed client and its own local-task connectivity test.
 
-The next live pilot needs approval to create/use one local signing identity,
-install one reviewed build at a stable path in `~/Applications`, grant its
-Calendar and Reminders prompts, and optionally register Launch at Login.
-First check that grants survive a rebuild signed by the same identity. Then
-retest the target-change write disarm, local read/write flow while locked and
-awake, sleep/wake, and logout/relogin as separate cases. Keep the bridge off
-after login until the everyday access policy is explicitly approved. Martin
-must perform any lock, sleep, logout, Keychain, and macOS privacy approvals.
+The local signing identity, stable-path installation, permission grant,
+grant-persistence check, and login registration are complete. The next live
+checks are local read/write flow while locked and awake, sleep/wake, and
+logout/relogin as separate cases. Keep the bridge off after login until the
+everyday access policy is explicitly approved. Martin must perform any lock,
+sleep, logout, Keychain, and macOS privacy approvals. Resolve the observed
+local bridge polling failure before relying on locked or unattended behavior;
+the next signed build responded while awake, but the stall's cause is not
+conclusively established.
 
 Cloud tasks cannot call this bridge directly, and an offline, sleeping, or
 logged-out Mac cannot be assumed reachable.
