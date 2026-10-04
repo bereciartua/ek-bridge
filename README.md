@@ -34,6 +34,9 @@ identity can be supplied through `EVENTKIT_SIGN_IDENTITY`; the script does
 not create or fetch a certificate. Preserve the bundle identifier and
 signing identity across versions. Do not treat an ad hoc rebuild as retaining
 the prior macOS permission grant.
+The default build rejects every write command and disables the write arm
+control. Only a separately reviewed build with `EVENTKIT_LIVE_WRITES=1`
+permits live writes; that build has not been made or launched.
 
 ## App controls
 
