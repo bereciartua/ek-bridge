@@ -22,6 +22,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var requestInFlight = false
     private lazy var store = EKEventStore()
     private lazy var commands = EventKitCommands(store: store)
+    private lazy var testCollections = TestCollections(store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -67,6 +68,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             button("Choose Reminder List Target", #selector(chooseReminderList)),
             button("Clear Targets", #selector(clearTargets)),
         ]))
+        stack.addArrangedSubview(NSStackView(views: [
+            button("Check Test Sources", #selector(checkTestSources)),
+            button("Create Test Collections", #selector(createTestCollections)),
+            button("Remove Empty Test Collections", #selector(removeTestCollections)),
+        ]))
         armWritesButton = NSButton(checkboxWithTitle: "Arm writes for this app session", target: self,
                                    action: #selector(toggleWrites))
         #if !EVENTKIT_LIVE_WRITES
@@ -103,7 +109,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 510),
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 610),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -353,6 +359,32 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         commands.scope.generation += 1
         armWritesButton.state = .off
         refreshTargetStatus()
+    }
+    @objc private func checkTestSources(_ sender: Any?) {
+        output.string = testCollections.sourcePreview()
+    }
+    @objc private func createTestCollections(_ sender: Any?) {
+        output.string = testCollections.create()
+        if let id = testCollections.calendarID { commands.scope.calendarID = id }
+        if let id = testCollections.reminderListID { commands.scope.reminderListID = id }
+        commands.scope.generation += 1
+        refreshTargetStatus()
+    }
+    @objc private func removeTestCollections(_ sender: Any?) {
+        let calendarID = testCollections.calendarID
+        let listID = testCollections.reminderListID
+        testCollections.removeEmpty { [weak self] message in
+            guard let self else { return }
+            self.output.string = message
+            if self.testCollections.calendarID == nil && self.commands.scope.calendarID == calendarID {
+                self.commands.scope.calendarID = nil
+            }
+            if self.testCollections.reminderListID == nil && self.commands.scope.reminderListID == listID {
+                self.commands.scope.reminderListID = nil
+            }
+            self.commands.scope.generation += 1
+            self.refreshTargetStatus()
+        }
     }
     @objc private func toggleWrites(_ sender: Any?) {
         commands.scope.writesArmed = armWritesButton.state == .on
