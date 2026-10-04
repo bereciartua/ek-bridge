@@ -108,7 +108,7 @@ def send(command: str, parameters: Optional[dict] = None) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=(
-        "authorization_status", "calendar_count", "reminder_list_count",
+        "authorization_status", "calendar_count", "reminder_list_count", "scope_status",
         "read_events", "read_reminders", "create_event", "update_event",
         "delete_event", "create_reminder", "update_reminder",
         "complete_reminder", "delete_reminder"))
