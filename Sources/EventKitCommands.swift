@@ -16,6 +16,12 @@ final class EventKitCommands {
         }
         let p = request.parameters
         let command = request.command
+        #if !EVENTKIT_LIVE_WRITES
+        if command.isWrite {
+            completion(["error": "writes_not_built"])
+            return
+        }
+        #endif
         let entity: EKEntityType = {
             switch command {
             case .readReminders, .createReminder, .updateReminder, .completeReminder,
