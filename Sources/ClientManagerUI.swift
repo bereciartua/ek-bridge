@@ -139,6 +139,8 @@ final class ClientManagerUI {
         guard choose.runModal() == .alertFirstButtonReturn,
               targets.indices.contains(picker.indexOfSelectedItem) else { return }
         let selected = targets[picker.indexOfSelectedItem]
+        let kind = selected.resource == .calendar ? "Calendar" : "Reminder list"
+        let writable = selected.calendar.allowsContentModifications
         let old = client.grants.first {
             $0.resource == selected.resource &&
                 $0.targetID == selected.calendar.calendarIdentifier
@@ -151,15 +153,18 @@ final class ClientManagerUI {
                ("Complete", ClientGrant.complete)]
         let controls = permissions.map { title, bit -> NSButton in
             let check = NSButton(checkboxWithTitle: title, target: nil, action: nil)
-            check.state = ((old?.mask ?? 0) & bit) != 0 ? .on : .off
+            check.isEnabled = bit == ClientGrant.read || writable
+            check.state = check.isEnabled && ((old?.mask ?? 0) & bit) != 0 ? .on : .off
             return check
         }
         let stack = NSStackView(views: controls)
         stack.orientation = .vertical
         stack.alignment = .leading
         let edit = NSAlert()
-        edit.messageText = "Permissions for \(selected.calendar.title)"
-        edit.informativeText = "Every checked action stays authorized for this client until you change or revoke the grant. Clear all boxes to remove it. No further app approval appears for individual writes."
+        edit.messageText = "Permissions for \(client.name)"
+        edit.informativeText = "\(kind): \(selected.calendar.title) [\(selected.calendar.calendarIdentifier)]\n" +
+            (writable ? "" : "EventKit reports this collection as read-only, so write actions are unavailable.\n") +
+            "Checked actions stay authorized until changed or revoked. Clear all boxes to remove this grant. Individual writes do not ask for another app approval."
         edit.accessoryView = stack
         edit.addButton(withTitle: "Save Grants")
         edit.addButton(withTitle: "Cancel")
@@ -167,15 +172,10 @@ final class ClientManagerUI {
         let mask = zip(controls, permissions).reduce(0) { result, pair in
             result | (pair.0.state == .on ? pair.1.1 : 0)
         }
-        var grants = client.grants.filter {
-            $0.resource != selected.resource ||
-                $0.targetID != selected.calendar.calendarIdentifier
-        }
-        if mask > 0 {
-            grants.append(ClientGrant(resource: selected.resource,
-                                      targetID: selected.calendar.calendarIdentifier,
-                                      mask: mask))
-        }
+        let grants = ClientGrantEditing.replacing(
+            client.grants, resource: selected.resource,
+            targetID: selected.calendar.calendarIdentifier,
+            requestedMask: mask, writable: writable)
         switch registry.replaceGrants(clientID: client.id, grants: grants) {
         case .success: notice("Grants saved. Any in-progress request must be sent again.")
         case .failure(let error): notice("Grant update failed: \(error.rawValue)")

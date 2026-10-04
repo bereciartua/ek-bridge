@@ -45,6 +45,15 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Tests/ClientGrantEditingTests.swift" \
+    -o "$project_dir/build/client-grant-editing-tests"
+"$project_dir/build/client-grant-editing-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Tests/ClientCredentialFilesTests.swift" \
     -o "$project_dir/build/client-credential-files-tests"

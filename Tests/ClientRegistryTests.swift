@@ -40,6 +40,12 @@ struct ClientRegistryTests {
                         mask: ClientGrant.read | ClientGrant.complete),
         ]
         success(registry.replaceGrants(clientID: id, grants: grants))
+        failure(registry.replaceGrants(clientID: id, grants: [grants[0], grants[0]]),
+                .invalidGrants)
+        failure(registry.replaceGrants(clientID: id, grants: [
+            ClientGrant(resource: .calendar, targetID: "synthetic-calendar",
+                        mask: ClientGrant.complete)]), .invalidGrants)
+        precondition(registry.clients()?.first(where: { $0.id == id })?.grants == grants)
         let second = value(registry.createClient(name: "Another Synthetic Client"))
         success(registry.replaceGrants(clientID: second.id, grants: [
             ClientGrant(resource: .reminderList, targetID: "other-list",
@@ -133,6 +139,7 @@ struct ClientRegistryTests {
         precondition(registry.stillAuthorized(rotated))
         success(registry.revoke(clientID: id))
         precondition(!registry.stillAuthorized(rotated))
+        failure(registry.replaceGrants(clientID: id, grants: grants), .clientRevoked)
         failure(registry.authorize(clientID: newEnvelope.clientID,
                                    signature: newEnvelope.signature,
                                    signedPayload: newEnvelope.signedPayload,
