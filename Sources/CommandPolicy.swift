@@ -17,9 +17,15 @@ enum CommandPolicy {
     }
 
     static func validate(_ request: BridgeRequest, scope: BridgeScope) -> String? {
+        if request.command.isWrite && !scope.writesArmed { return "writes_disabled" }
+        return validateShapeAndTarget(request, scope: scope)
+    }
+
+    // The proposed per-action approval path validates writes before any arm
+    // state exists. Only its in-app approval gate may call this directly.
+    static func validateShapeAndTarget(_ request: BridgeRequest, scope: BridgeScope) -> String? {
         let p = request.parameters
         let command = request.command
-        if command.isWrite && !scope.writesArmed { return "writes_disabled" }
         switch command {
         case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
             return p.isEmpty ? nil : "invalid_parameters"
