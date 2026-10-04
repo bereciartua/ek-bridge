@@ -11,6 +11,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private var reminderRequestButton: NSButton!
     private var eventListButton: NSButton!
     private var reminderListButton: NSButton!
+    private var bridgeEnableButton: NSButton!
+    private var bridgeDisableButton: NSButton!
+    private let bridgeStatus = NSTextField(labelWithString: "Local counts bridge: off")
+    private var localBridge: LocalBridge?
     private var requestInFlight = false
     private lazy var store = EKEventStore()
 
@@ -42,7 +46,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         reminderListButton = button("List Reminder Lists", #selector(listReminders))
         stack.addArrangedSubview(NSStackView(views: [reminderRequestButton, reminderListButton]))
 
-        let hint = NSTextField(labelWithString: "List results stay in this window. No server, listener, or local task connection is running.")
+        let bridgeTitle = NSTextField(labelWithString: "Temporary local counts bridge")
+        bridgeTitle.font = .boldSystemFont(ofSize: 14)
+        stack.addArrangedSubview(bridgeTitle)
+        stack.addArrangedSubview(bridgeStatus)
+        bridgeEnableButton = button("Enable for 15 Minutes", #selector(enableBridge))
+        bridgeDisableButton = button("Disable", #selector(disableBridge))
+        stack.addArrangedSubview(NSStackView(views: [bridgeEnableButton, bridgeDisableButton]))
+
+        let hint = NSTextField(labelWithString: "The local bridge accepts only permission status and calendar/list counts. No network server or startup service runs.")
         hint.textColor = .secondaryLabelColor
         stack.addArrangedSubview(hint)
 
@@ -63,11 +75,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 220),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
         ])
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 510),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -79,10 +91,16 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
         refreshStatus()
+        refreshBridgeStatus()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        localBridge?.stop()
+        localBridge = nil
     }
 
     private func button(_ title: String, _ action: Selector) -> NSButton {
@@ -167,6 +185,57 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             return "\(String(reflecting: calendar.title))\t\(calendar.calendarIdentifier)\t\(writable)"
         }
         output.string = "\(label) (\(rows.count))\nTitle\tID\tAccess\n" + rows.joined(separator: "\n")
+    }
+
+    @objc private func enableBridge(_ sender: Any?) {
+        guard localBridge == nil else { return }
+        do {
+            localBridge = try LocalBridge(handle: { [weak self] command in
+                self?.bridgeResult(for: command) ?? ["error": "app_unavailable"]
+            }, onStop: { [weak self] in
+                self?.localBridge = nil
+                self?.refreshBridgeStatus()
+            })
+            refreshBridgeStatus()
+        } catch {
+            bridgeStatus.stringValue = "Local counts bridge: could not start (\(error))"
+        }
+    }
+
+    @objc private func disableBridge(_ sender: Any?) {
+        localBridge?.stop()
+    }
+
+    private func refreshBridgeStatus() {
+        if let localBridge {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            bridgeStatus.stringValue = "Local counts bridge: active until \(formatter.string(from: localBridge.expiration))"
+        } else {
+            bridgeStatus.stringValue = "Local counts bridge: off"
+        }
+        bridgeEnableButton.isEnabled = localBridge == nil
+        bridgeDisableButton.isEnabled = localBridge != nil
+    }
+
+    private func bridgeResult(for command: BridgeCommand) -> [String: Any] {
+        switch command {
+        case .authorizationStatus:
+            return [
+                "calendar": name(EKEventStore.authorizationStatus(for: .event)),
+                "reminders": name(EKEventStore.authorizationStatus(for: .reminder)),
+            ]
+        case .calendarCount:
+            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+                return ["error": "calendar_access_not_granted"]
+            }
+            return ["count": store.calendars(for: .event).count]
+        case .reminderListCount:
+            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+                return ["error": "reminders_access_not_granted"]
+            }
+            return ["count": store.calendars(for: .reminder).count]
+        }
     }
 }
 
