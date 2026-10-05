@@ -139,7 +139,9 @@ struct ConnectSection: View {
                 Divider().padding(.leading, 16)
                 ConnectRow(label: String(localized: "Try it")) {
                     VStack(alignment: .leading, spacing: 2) {
-                        MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients), truncation: .tail)
+                        MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients),
+                                 truncation: .tail, lines: 2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(String(localized: "Run it in Terminal, in the eventkit-bridge folder."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -195,7 +197,7 @@ struct AccessSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: String(localized: "Access"))
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 Picker(String(localized: "Type"), selection: Binding(
                     get: { tab }, set: { model.accessTab[client.id] = $0 })) {
                     Text(String(localized: "Calendars \(grantedCount(.calendar))")).tag(ClientResource.calendar)
@@ -207,9 +209,10 @@ struct AccessSection: View {
                 Spacer()
                 SearchField(text: $filter, prompt: String(localized: "Filter"),
                             accessibilityLabel: String(localized: "Filter calendars and lists"))
-                    .frame(width: 200)
+                    .frame(minWidth: 90, maxWidth: 200)
                 Toggle(String(localized: "Granted only"), isOn: $grantedOnly)
                     .toggleStyle(.checkbox)
+                    .fixedSize()
             }
             if model.status(tab) != .fullAccess {
                 Card {

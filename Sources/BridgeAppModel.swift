@@ -314,6 +314,11 @@ final class BridgeAppModel {
 
     func collection(_ key: GrantKey) -> CollectionInfo? { collections.named(key) }
 
+    /// Types EventKit can't list right now, because Full Access is missing.
+    var hiddenResources: Set<ClientResource> {
+        Set([ClientResource.calendar, .reminderList].filter { status($0) != .fullAccess })
+    }
+
     /// Saved grants that EventKit doesn't list right now, for types with Full Access.
     func unavailableGrants(_ client: ClientView, staged: Bool = true) -> [GrantKey] {
         var keys = client.grants.map { GrantKey(resource: $0.resource, targetID: $0.targetID) }

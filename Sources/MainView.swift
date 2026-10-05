@@ -87,13 +87,19 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            List(selection: selection) {
-                Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
-                    .tag(Route.settings)
+            let crowded = model.clients.count > 8
+            VStack(spacing: 0) {
+                Divider().opacity(crowded ? 1 : 0)
+                List(selection: selection) {
+                    Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
+                        .tag(Route.settings)
+                }
+                .listStyle(.sidebar)
+                .scrollDisabled(true)
+                .frame(height: 44)
             }
-            .listStyle(.sidebar)
-            .scrollDisabled(true)
-            .frame(height: 44)
+            // Clients scroll under this row, so it needs its own surface.
+            .background(crowded ? AnyShapeStyle(.bar) : AnyShapeStyle(.clear))
         }
     }
 }

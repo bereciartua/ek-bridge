@@ -61,7 +61,8 @@ enum AccessWords {
 enum AccessSummary {
     /// "Work: read, create, edit · Home: read". Collections with an identical
     /// mask are grouped. Unlisted grants read "1 unavailable calendar".
-    static func segments(grants: [ClientGrant], collections: [CollectionInfo]) -> [String] {
+    static func segments(grants: [ClientGrant], collections: [CollectionInfo],
+                         hidden: Set<ClientResource> = []) -> [String] {
         let sorted = collections.sortedForDisplay()
         var groups = [(resource: ClientResource, mask: Int, names: [String], unavailable: Int)]()
         func add(_ resource: ClientResource, _ mask: Int, name: String?) {
@@ -71,8 +72,15 @@ enum AccessSummary {
                 groups.append((resource, mask, name.map { [$0] } ?? [], name == nil ? 1 : 0))
             }
         }
+        var hiddenSegments = [String]()
         for resource in [ClientResource.calendar, .reminderList] {
             let typed = grants.filter { $0.resource == resource }
+            // Without Full Access nothing is listed; say why instead of
+            // calling every calendar unavailable.
+            if hidden.contains(resource) {
+                if !typed.isEmpty { hiddenSegments.append(hiddenText(resource, count: typed.count)) }
+                continue
+            }
             for collection in sorted where collection.resource == resource {
                 if let grant = typed.first(where: { $0.targetID == collection.id }) {
                     add(resource, grant.mask, name: collection.name)
@@ -89,6 +97,15 @@ enum AccessSummary {
                 parts.append(unavailableText(group.resource, count: group.unavailable))
             }
             return "\(parts.joined(separator: ", ")): \(AccessWords.words(group.mask))"
+        } + hiddenSegments
+    }
+
+    static func hiddenText(_ resource: ClientResource, count: Int) -> String {
+        switch (resource, count) {
+        case (.calendar, 1): String(localized: "1 calendar (no Calendar access)")
+        case (.calendar, _): String(localized: "\(count) calendars (no Calendar access)")
+        case (.reminderList, 1): String(localized: "1 list (no Reminders access)")
+        case (.reminderList, _): String(localized: "\(count) lists (no Reminders access)")
         }
     }
 
@@ -102,8 +119,8 @@ enum AccessSummary {
     }
 
     static func text(grants: [ClientGrant], collections: [CollectionInfo],
-                     maxGroups: Int = 4) -> String {
-        let all = segments(grants: grants, collections: collections)
+                     hidden: Set<ClientResource> = [], maxGroups: Int = 4) -> String {
+        let all = segments(grants: grants, collections: collections, hidden: hidden)
         guard !all.isEmpty else { return String(localized: "No access yet") }
         guard all.count > maxGroups else { return all.joined(separator: " · ") }
         return all.prefix(maxGroups).joined(separator: " · ") +

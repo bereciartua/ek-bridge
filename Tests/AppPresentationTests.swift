@@ -126,6 +126,8 @@ struct AppPresentationTests {
         precondition(AccessSummary.text(grants: grants, collections: collections, maxGroups: 1)
             == "Family, Home, 1 unavailable calendar: read · +2 more")
         precondition(AccessSummary.counts(grants) == "4 calendars, 1 list")
+        precondition(AccessSummary.text(grants: grants, collections: collections, hidden: [.calendar]) ==
+                     "Errands: read, create, edit, complete · 4 calendars (no Calendar access)")
         precondition(AccessSummary.counts([]) == "No access yet")
     }
 

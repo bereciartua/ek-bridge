@@ -194,7 +194,8 @@ struct OverviewClientRow: View {
             AvatarView(name: client.name, id: client.id, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.name).font(.body.weight(.medium)).lineLimit(1)
-                Text(AccessSummary.text(grants: client.grants, collections: model.collections))
+                Text(AccessSummary.text(grants: client.grants, collections: model.collections,
+                                        hidden: model.hiddenResources))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

@@ -374,11 +374,12 @@ struct SearchField: NSViewRepresentable {
 struct MonoText: View {
     let text: String
     var truncation: Text.TruncationMode = .middle
+    var lines = 1
 
     var body: some View {
         Text(text)
             .font(.system(.callout, design: .monospaced))
-            .lineLimit(1)
+            .lineLimit(lines)
             .truncationMode(truncation)
             .textSelection(.enabled)
             .help(text)
