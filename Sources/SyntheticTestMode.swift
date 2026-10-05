@@ -23,6 +23,7 @@ enum SyntheticTestMode {
         case "--synthetic-recurrence-cleanup": SyntheticRecurrenceProbe.cleanupOnly()
         case "--synthetic-phone-sync-stage": SyntheticPhoneSyncProbe.stage()
         case "--synthetic-phone-sync-complete": SyntheticPhoneSyncProbe.completeAfterPhoneObservation()
+        case "--synthetic-phone-sync-verify": SyntheticPhoneSyncProbe.verifyAfterCompletion()
         case "--synthetic-phone-sync-cleanup": SyntheticPhoneSyncProbe.cleanupAfterPhoneObservation()
         case "--synthetic-all-day-probe": SyntheticAllDayProbe.run()
         case "--synthetic-all-day-cleanup": SyntheticAllDayProbe.cleanupOnly()

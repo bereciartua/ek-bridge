@@ -113,6 +113,37 @@ enum SyntheticPhoneSyncProbe {
         }
     }
 
+    static func verifyAfterCompletion() {
+        guard ready(), let id = UserDefaults.standard.string(forKey: key),
+              let prior = UserDefaults.standard.dictionary(forKey: resultKey),
+              prior["outcome"] as? String == "awaiting_second_phone_observation",
+              let before = prior["before"] as? [[String: Any]],
+              let firstDueText = before.first?["dueUTC"] as? String,
+              let firstDue = ISO8601DateFormatter().date(from: firstDueText),
+              let nextDue = Calendar.current.date(byAdding: .day, value: 1, to: firstDue) else {
+            report("verify_precondition_failed"); return
+        }
+        let store = EKEventStore()
+        store.refreshSourcesIfNecessary()
+        guard let list = matchingList(store, id: id),
+              let rows = reminders(store, list) else {
+            report("verify_refetch_unavailable", ["listID": id]); return
+        }
+        let completed = rows.filter { $0.title == itemTitle && $0.isCompleted &&
+            !$0.hasRecurrenceRules &&
+            abs(($0.dueDateComponents?.date ?? .distantPast).timeIntervalSince(firstDue)) < 1 }
+        let advanced = rows.filter { $0.title == itemTitle && !$0.isCompleted &&
+            $0.hasRecurrenceRules &&
+            abs(($0.dueDateComponents?.date ?? .distantPast).timeIntervalSince(nextDue)) < 1 }
+        let verified = rows.count == 2 && completed.count == 1 && advanced.count == 1
+        report(verified ? "fresh_store_completion_verified" : "fresh_store_completion_mismatch", [
+            "listID": id, "rows": rows.map(snapshot),
+            "completedOriginalDueUTC": firstDueText,
+            "nextDueUTC": ISO8601DateFormatter().string(from: nextDue),
+            "completedCount": completed.count, "advancedCount": advanced.count,
+        ])
+    }
+
     static func cleanupAfterPhoneObservation() {
         guard ready(), let id = UserDefaults.standard.string(forKey: key) else {
             report("cleanup_precondition_failed"); return
