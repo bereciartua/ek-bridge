@@ -205,7 +205,7 @@ With **Ask me first**, every create, edit, complete or delete from the client wa
 ![The Ask before changes panel: Codex wants to add a weekly reminder to Groceries, with Deny and Allow buttons and a 15-minute allowance checkbox.](images/approval-panel-light.png)
 
 - The panel shows the client name (from the app, never from the agent), the calendar or list, and what would change, built from the request and a fresh read of the current item. For an edit it shows each changed field as before and after. The agent's own name is shown as reported. None of this is stored.
-- **Allow**, or **Deny**. For a delete the default button reads **Delete**. Return and Escape work only after you click into the panel; it never takes keyboard focus from the agent's terminal, so typing there can't approve anything.
+- **Allow**, or **Deny**. For a delete the default button reads **Delete**. Return and Escape work only after you click into the panel; it never takes keyboard focus from the agent's terminal, so typing there can't approve anything. When the change on screen switches (one expired, or you stepped through the queue), the buttons wait about half a second, so a click meant for one change can't approve another.
 - **Allow changes from … for 15 minutes** approves later changes from that client without asking, until the 15 minutes end, anything about the client changes (access, credentials or this setting), the bridge turns off, or the app quits.
 - Unanswered requests expire after **45 seconds** (`approval_timed_out`). Up to 3 changes per client can wait; more are refused with `rate_limited`. When several wait, the panel shows "1 of 3" with arrows. The menu bar shows **N changes waiting for approval**, which brings the panel forward.
 - Revoking the client, changing its access or turning the bridge off while a change waits refuses it (`scope_changed`). Quitting the app refuses it too.
@@ -344,7 +344,7 @@ The text the agent sees addresses the model and ends by saying whether to retry,
 | Limit | Value | When exceeded |
 | --- | --- | --- |
 | Tool calls per client | 120 per minute, bursts of 30 | `rate_limited` with the seconds to wait |
-| Writes per client | 20 per minute, bursts of 10, 250 per rolling 24 hours | `rate_limited` |
+| Writes per client | 20 per minute, bursts of 10; 250 per rolling 24 hours, counting only writes that were carried out (not refused, invalid or declined ones) | `rate_limited` |
 | Calls in progress per client | 8 | `rate_limited` |
 | Changes waiting for approval per client | 3; each waits up to 45 s | `rate_limited`; `approval_timed_out` |
 | Time to answer a tool call | 55 s | `timeout` (a change may still have happened) |

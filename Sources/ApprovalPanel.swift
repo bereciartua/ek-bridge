@@ -89,6 +89,10 @@ final class ApprovalPanelController {
 struct ApprovalPanelView: View {
     let center: ApprovalCenter
     @State private var allowWindow = false
+    /// The change the buttons may act on. When the shown change switches
+    /// (one expired, or the user stepped), they wait a moment so a click
+    /// meant for the old one can't approve the new one.
+    @State private var armedID: UUID?
 
     var body: some View {
         if let item = center.current {
@@ -126,7 +130,13 @@ struct ApprovalPanelView: View {
             }
             .frame(width: 400)
             .fixedSize(horizontal: false, vertical: true)
-            .onChange(of: item.id) { _, _ in allowWindow = false }
+            .onChange(of: item.id, initial: true) { _, id in
+                allowWindow = false
+                armedID = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if center.current?.id == id { armedID = id }
+                }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(item.summary.title)
         } else {
@@ -201,6 +211,7 @@ struct ApprovalPanelView: View {
             Spacer(minLength: 8)
             Button(String(localized: "Deny")) { center.deny(item.id) }
                 .keyboardShortcut(.cancelAction)
+                .disabled(armedID != item.id)
             if item.summary.isDelete {
                 Button(String(localized: "Delete"), role: .destructive) {
                     center.allow(item.id, forWindow: allowWindow)
@@ -208,10 +219,12 @@ struct ApprovalPanelView: View {
                 .keyboardShortcut(.defaultAction)
                 .tint(.red)
                 .buttonStyle(.borderedProminent)
+                .disabled(armedID != item.id)
             } else {
                 Button(String(localized: "Allow")) { center.allow(item.id, forWindow: allowWindow) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .disabled(armedID != item.id)
             }
         }
     }

@@ -8,6 +8,8 @@ enum MCPTimeError: Error, Equatable {
     // Offsets and instants are ordered earlier instant first.
     case ambiguousLocalTime(local: String, zone: String, offsets: [String], instants: [Int])
     case outOfRange(String)
+    /// An all-day date whose midnight in the zone falls outside the core's range.
+    case dateOutOfRange(String)
     case allDayTooLong
     case allDayEndBeforeStart
 }
@@ -38,6 +40,8 @@ extension MCPTimeError {
                 + "Add the offset you mean: \(offsets.joined(separator: " or "))."
         case .outOfRange(let text):
             return "expected a time between 1900-01-01 and 2100-01-01; got \(Self.quoted(text))"
+        case .dateOutOfRange(let text):
+            return "expected a date from 1900-01-02 to 2099-12-30; got \(Self.quoted(text))"
         case .allDayTooLong:
             return "an all-day event can span at most 7 days"
         case .allDayEndBeforeStart:
@@ -143,8 +147,8 @@ enum MCPTime {
         if days > 7 { return .failure(.allDayTooLong) }
         let start = startOfDay(year: first.year, month: first.month, day: first.day, zone: zone)
         let end = startOfDay(year: last.year, month: last.month, day: last.day, zone: zone, adding: 1)
-        guard inRange(start) else { return .failure(.outOfRange(startDate)) }
-        guard inRange(end) else { return .failure(.outOfRange(lastText)) }
+        guard inRange(start) else { return .failure(.dateOutOfRange(startDate)) }
+        guard inRange(end) else { return .failure(.dateOutOfRange(lastText)) }
         return .success((start, end))
     }
 

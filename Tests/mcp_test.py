@@ -521,7 +521,77 @@ def run_http_statuses(h):
     elapsed = time.time() - started
     check("slow loris 408", data.startswith(b"HTTP/1.1 408") and 9 <= elapsed <= 13, (data[:30], elapsed))
     raw.close()
+    run_hardening(h)
     c.close()
+
+
+def rss_kb(pid):
+    out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return int(out.strip() or 0)
+
+
+def run_hardening(h):
+    # A client that pipelines without reading replies can't grow memory:
+    # the server stops reading while a few requests wait.
+    before = rss_kb(h.proc.pid)
+    raw = socket.create_connection(("127.0.0.1", h.port))
+    raw.setblocking(False)
+    chunk = b"GET /x HTTP/1.1\r\nHost: a\r\n\r\n" * 2000
+    sent, deadline = 0, time.time() + 3
+    while time.time() < deadline:
+        try:
+            sent += raw.send(chunk)
+        except BlockingIOError:
+            time.sleep(0.01)
+    grown = rss_kb(h.proc.pid) - before
+    raw.close()
+    check("pipelined flood is bounded", grown < 50_000, f"sent {sent} bytes, RSS grew {grown} KB")
+    # A trickle of one byte every 3 s doesn't extend the 10 s header deadline.
+    raw = socket.create_connection(("127.0.0.1", h.port))
+    started = time.time()
+    data = b""
+    for byte in b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n":
+        try:
+            raw.sendall(bytes([byte]))
+        except OSError:
+            break
+        raw.settimeout(3)
+        try:
+            data = raw.recv(1024)
+            if data:
+                break
+        except socket.timeout:
+            pass
+    elapsed = time.time() - started
+    check("trickle cut off at 10 s", data.startswith(b"HTTP/1.1 408") and elapsed < 14, (data[:30], elapsed))
+    raw.close()
+    # A malformed request pipelined behind a good one is answered after it.
+    raw = socket.create_connection(("127.0.0.1", h.port))
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode()
+    good = (f"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{h.port}\r\nContent-Type: application/json\r\n"
+            f"Authorization: Bearer {h.token('agent')}\r\nContent-Length: {len(body)}\r\n\r\n").encode() + body
+    raw.sendall(good + b"BROKEN\r\n\r\n")
+    raw.settimeout(5)
+    data = b""
+    try:
+        while b"HTTP/1.1 400" not in data:
+            more = raw.recv(65536)
+            if not more:
+                break
+            data += more
+    except socket.timeout:
+        pass
+    check("errors answered in order", data.startswith(b"HTTP/1.1 200") and b"HTTP/1.1 400" in data, data[:60])
+    raw.close()
+    # A second instance that can't bind leaves the running one's endpoint file alone.
+    endpoint = os.path.join(h.dir, "mcp-endpoint.json")
+    second = subprocess.run([HARNESS], env=dict(os.environ, EVENTKIT_MCP_TEST_DIR=h.dir,
+                                                EVENTKIT_MCP_TEST_PORT=str(h.port)),
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+    with open(endpoint) as f:
+        owner = json.load(f)["pid"]
+    check("second instance keeps the endpoint file", second.returncode != 0 and owner == h.proc.pid,
+          (second.returncode, owner))
 
 
 def run_concurrency(h):
@@ -762,6 +832,7 @@ def wait_for(condition, seconds=10):
 
 
 if __name__ == "__main__":
+    HARNESS = sys.argv[1]
     with open(sys.argv[2]) as handle:
         _contract = json.load(handle)
     _shared = {k: v for k, v in _contract["$defs"].items() if k != "$comment"}

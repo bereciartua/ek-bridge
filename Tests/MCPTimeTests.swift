@@ -139,9 +139,12 @@ struct MCPTimeTests {
         expectDays("1900-01-01", nil, utc, MCPTime.minimumTimestamp, MCPTime.minimumTimestamp + 86_400)
         expectDays("2099-12-31", nil, kolkata, 4_102_338_600, 4_102_425_000)
         precondition(failure(MCPTime.allDayRange(startDate: "1900-01-01", endDate: nil, zone: kolkata))
-                     == .outOfRange("1900-01-01"))
+                     == .dateOutOfRange("1900-01-01"))
         precondition(failure(MCPTime.allDayRange(startDate: "2099-12-31", endDate: nil, zone: newYork))
-                     == .outOfRange("2099-12-31"))
+                     == .dateOutOfRange("2099-12-31"))
+        // The message is about the date, not an instant.
+        precondition(MCPTimeError.dateOutOfRange("2099-12-31").message
+                     == "expected a date from 1900-01-02 to 2099-12-30; got \"2099-12-31\"")
     }
 
     static func formatting() {

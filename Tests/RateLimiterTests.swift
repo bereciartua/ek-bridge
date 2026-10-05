@@ -69,9 +69,17 @@ struct RateLimiterTests {
         // stays inside 20/min).
         let start = clock + 86_400
         clock = start
+        // The daily cap is charged only for writes that are dispatched
+        // (recordWrite); refused or declined ones don't use it up.
         let daily = RateLimiter(now: { clock })
+        for _ in 0..<300 {
+            expect(daily.allow("d", write: true), .allowed, "undispatched writes don't count")
+            clock += 3
+        }
+        clock = start
         for index in 0..<250 {
             expect(daily.allow("d", write: true), .allowed, "daily write \(index)")
+            daily.recordWrite("d")
             clock += 3
         }
         expect(daily.allow("d", write: true), .limited(retryAfter: 86_400 - 750), "251st write")
@@ -80,6 +88,7 @@ struct RateLimiterTests {
         expect(daily.allow("d", write: true), .limited(retryAfter: 1), "one second before rollover")
         clock = start + 86_400
         expect(daily.allow("d", write: true), .allowed, "first write left the window")
+        daily.recordWrite("d")
         expect(daily.allow("d", write: true), .limited(retryAfter: 3), "250 in the window again")
         expect(daily.allow("e", write: true), .allowed, "other client's daily cap is separate")
 

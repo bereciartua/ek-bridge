@@ -91,7 +91,8 @@ struct ActivityView: View {
             let via = switch model.activityVia {
             case .all: true
             case .mcp: entry.via == "mcp"
-            case .cli: entry.via == "cli"
+            // Rows from before 0.4.0 have no via, and all came from the command line.
+            case .cli: entry.via != "mcp"
             }
             return client && via
         }

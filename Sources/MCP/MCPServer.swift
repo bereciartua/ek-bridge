@@ -154,7 +154,9 @@ final class MCPServer {
     private let now: () -> Date
     private let didConnect: (String, Connection) -> Void
     private var agents = [String: String]()
-    private var inFlight = [String: PipelineTicket]()
+    /// Keyed by client and JSON-RPC id. Two sessions of one client can reuse
+    /// an id, so each key holds a list.
+    private var inFlight = [String: [PipelineTicket]]()
 
     init(registry: ClientRegistry, pipeline: RequestPipeline, limiter: RateLimiter,
          counters: MCPTrafficCounters, zone: @escaping () -> TimeZone = { TimeZone.current },
@@ -170,9 +172,10 @@ final class MCPServer {
     }
 
     /// Called on the main actor for a request that passed `MCPHTTPGate`.
-    /// `whenClosed` registers work to run if the connection goes away first.
+    /// `whenClosed` registers work to run if the connection goes away first;
+    /// it returns a closure that unregisters it.
     func handle(_ request: HTTPRequest, token: String,
-                whenClosed: (@escaping @MainActor () -> Void) -> Void,
+                whenClosed: @escaping (@escaping @MainActor () -> Void) -> () -> Void,
                 reply: @escaping (Reply) -> Void) {
         let clientID: String
         switch registry.authenticateMCPToken(token) {
@@ -278,7 +281,7 @@ final class MCPServer {
             // Notifications: accepted and, apart from cancellation, ignored.
             if method == "notifications/cancelled",
                let target = params["requestId"].flatMap(JSONRPCID.init(json:)) {
-                inFlight[clientID + "|" + target.key]?.cancel()
+                inFlight[clientID + "|" + target.key]?.forEach { $0.cancel() }
             }
             reply(Reply(response: HTTPResponse(status: 202)))
             return
@@ -330,7 +333,7 @@ final class MCPServer {
     }
 
     private func callTool(id: JSONRPCID, params: [String: Any], clientID: String, agent: String?,
-                          whenClosed: (@escaping @MainActor () -> Void) -> Void,
+                          whenClosed: (@escaping @MainActor () -> Void) -> () -> Void,
                           finish: @escaping ([String: Any]) -> Void,
                           unknownTool: (String) -> Void) {
         // An unknown name is a protocol error; everything after is a tool error
@@ -371,24 +374,31 @@ final class MCPServer {
             return
         }
         var answered = false
+        var ticket: PipelineTicket?
+        var unregister: (() -> Void)?
         let key = clientID + "|" + id.key
         let answer: ([String: Any]) -> Void = { [weak self] result in
             guard !answered else { return }
             answered = true
-            self?.inFlight[key] = nil
+            unregister?()
+            if let self, let ticket {
+                self.inFlight[key]?.removeAll { $0 === ticket }
+                if self.inFlight[key]?.isEmpty == true { self.inFlight[key] = nil }
+            }
             finish(result)
         }
-        let ticket = pipeline.handle(request, clientID: clientID, origin: .mcp(agent: agent)) {
+        let started = pipeline.handle(request, clientID: clientID, origin: .mcp(agent: agent)) {
             [weak self] core in
             guard let self else { return }
             answer(MCPToolMapping.toolResult(tool: name, request: request, core: core,
                                              zone: zone, now: self.now()))
         }
         guard !answered else { return }
-        inFlight[key] = ticket
+        ticket = started
+        inFlight[key, default: []].append(started)
         // A disconnect cancels: before the journal reservation nothing happens;
         // after it, the write finishes and is recorded with nobody to tell.
-        whenClosed { [weak ticket] in ticket?.cancel() }
+        unregister = whenClosed { [weak started] in started?.cancel() }
         // Answer before the agent's own 60 s timeout, so it gets our words.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.toolCallTimeout) {
             answer(MCPToolMapping.errorResult(tool: name, code: "timeout", detail: nil,

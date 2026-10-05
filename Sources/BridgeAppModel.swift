@@ -1079,7 +1079,7 @@ final class BridgeAppModel {
         case .portInUse(let port):
             return String(localized: "Port \(String(port)) is in use by another app.")
         case .other(let reason):
-            return String(localized: "Couldn't start: \(reason)")
+            return reason
         }
     }
 
@@ -1512,6 +1512,17 @@ enum Pasteboard {
 
     /// Marks the copy concealed and transient so clipboard managers skip it,
     /// and clears it after `seconds` unless something else was copied since.
+    /// The pasteboard change a secret copy made, until it's cleared.
+    @MainActor private static var secretChange: Int?
+
+    /// Clears a copied secret that's still on the pasteboard (90 s passed, or
+    /// the app is quitting).
+    @MainActor static func clearSecret() {
+        guard let change = secretChange else { return }
+        secretChange = nil
+        if NSPasteboard.general.changeCount == change { NSPasteboard.general.clearContents() }
+    }
+
     @MainActor static func copySecret(_ text: String, clearAfter seconds: TimeInterval) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -1521,8 +1532,9 @@ enum Pasteboard {
         item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         pasteboard.writeObjects([item])
         let count = pasteboard.changeCount
+        secretChange = count
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
-            if NSPasteboard.general.changeCount == count { NSPasteboard.general.clearContents() }
+            if secretChange == count { clearSecret() }
         }
     }
 }

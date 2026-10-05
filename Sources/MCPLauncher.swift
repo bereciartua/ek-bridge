@@ -649,7 +649,6 @@ final class Relay: @unchecked Sendable {
     private let tokenPath: String
     private let lock = NSLock()
     private var token: String
-    private var verified: Endpoint?
     private var negotiatedVersion: String?
     private var pending = [String: Pending]()
     private var graceDeadline: Date?
@@ -770,8 +769,9 @@ final class Relay: @unchecked Sendable {
         }
     }
 
-    /// Reads the endpoint file and, when it changed or after a reconnect,
-    /// verifies the listener before the token may be sent.
+    /// Reads the endpoint file and verifies the listener before every send:
+    /// each request opens a new connection, and the app may have died and
+    /// another process taken the port since the last one (threat T9).
     private func prepare() -> Prepared {
         let endpoint: Endpoint
         switch EndpointFile.read() {
@@ -781,22 +781,16 @@ final class Relay: @unchecked Sendable {
             return .refused(RelayText.badEndpoint)
         case .success(let read): endpoint = read
         }
+        switch ListenerCheck.verify(endpoint) {
+        case .gone?: return .unavailable("process \(endpoint.pid) from the endpoint file isn't running")
+        case .mismatch(let reason)?:
+            Log.line("\(reason); the token wasn't sent.")
+            return .refused(RelayText.squatter)
+        case nil: break
+        }
         lock.lock()
-        let known = verified == endpoint
         let token = self.token
         lock.unlock()
-        if !known {
-            switch ListenerCheck.verify(endpoint) {
-            case .gone?: return .unavailable("process \(endpoint.pid) from the endpoint file isn't running")
-            case .mismatch(let reason)?:
-                Log.line("\(reason); the token wasn't sent.")
-                return .refused(RelayText.squatter)
-            case nil:
-                lock.lock()
-                verified = endpoint
-                lock.unlock()
-            }
-        }
         return .ready(endpoint, token)
     }
 
@@ -834,13 +828,11 @@ final class Relay: @unchecked Sendable {
         case .failure(.cancelled):
             return finish(message, entry, nil)
         case .failure(.refused):
-            forget(endpoint)
             return retryOrFail(message, entry, reason: "connection refused on port \(endpoint.port)")
         case .failure(.timedOut):
             Log.line("no response after 60 s to \(message.method ?? "a message").")
             return finish(message, entry, RPC.error(id: message.id, code: -32000, message: RelayText.timeout))
         case .failure(.lost):
-            forget(endpoint)
             Log.line("the connection closed before a reply to \(message.method ?? "a message").")
             return finish(message, entry, RPC.error(id: message.id, code: -32000, message: RelayText.lost))
         case .failure(.other(let code)):
@@ -896,13 +888,6 @@ final class Relay: @unchecked Sendable {
             finish(message, entry, RPC.error(id: message.id, code: -32603,
                                              message: RelayText.refused(reply.status, explanation)))
         }
-    }
-
-    /// After a failed connection the next one re-verifies the listener.
-    private func forget(_ endpoint: Endpoint) {
-        lock.lock()
-        if verified == endpoint { verified = nil }
-        lock.unlock()
     }
 
     private func finish(_ message: Message, _ entry: Pending, _ output: Data?) {

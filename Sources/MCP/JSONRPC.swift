@@ -26,15 +26,13 @@ enum JSONRPCID: Equatable, Hashable {
         if let text = value as? String {
             self = .string(text)
         } else if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
-            // Integers are read as integers, so large IDs echo exactly; a
-            // fraction or anything outside Int64 is refused.
-            if !CFNumberIsFloatType(number), number.stringValue == String(number.int64Value) {
-                self = .int(Int(number.int64Value))
-            } else if let whole = Int(exactly: number.doubleValue), abs(number.doubleValue) < 9.0e15 {
-                self = .int(whole)
-            } else {
-                return nil
-            }
+            // Integers are read as integers, so large IDs echo exactly;
+            // anything outside Int64 is refused.
+            // A number written with a fraction or exponent (1.0, 1e3) can't be
+            // echoed with its type, so it's refused like any non-integer.
+            guard !CFNumberIsFloatType(number), number.stringValue == String(number.int64Value)
+            else { return nil }
+            self = .int(Int(number.int64Value))
         } else {
             return nil
         }

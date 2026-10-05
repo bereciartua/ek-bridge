@@ -70,11 +70,19 @@ final class RateLimiter: @unchecked Sendable {
             }
             bucket.tokens -= 1
             writes[clientID] = bucket
-            dailyWrites[clientID] = day + [current]
         }
         call.tokens -= 1
         calls[clientID] = call
         return .allowed
+    }
+
+    /// Charges the daily write cap. The pipeline calls this when a write is
+    /// dispatched, so refused, invalid or declined writes don't use it up.
+    func recordWrite(_ clientID: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = now()
+        dailyWrites[clientID] = (dailyWrites[clientID] ?? []).filter { current - $0 < 86_400 } + [current]
     }
 
     /// Counts one failed authentication from any caller. Past the limit, every

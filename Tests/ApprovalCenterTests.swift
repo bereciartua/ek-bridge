@@ -58,11 +58,14 @@ struct ApprovalCenterTests {
         precondition(scheduled.count == 3 && scheduled.allSatisfy { $0.delay == ApprovalCenter.timeout })
         precondition(ApprovalCenter.timeout == 45)
         center.selection = 2
+        let shownID = center.pending[2].id
         let firstID = center.pending[0].id
         center.deny(firstID)
         precondition(recorder.only("a1") == .denied)
         precondition(center.pending.map(\.clientID) == ["B", "A"])
-        precondition(center.selection == 1, "selection clamps to the last item")
+        // Removing an earlier change keeps the panel on the one being shown,
+        // so a click can't land on a different change.
+        precondition(center.selection == 1 && center.current?.id == shownID)
         precondition(queueChanges == 4)
         center.deny(firstID)
         precondition(recorder.only("a1") == .denied && queueChanges == 4, "a second answer does nothing")

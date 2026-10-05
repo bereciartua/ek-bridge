@@ -239,7 +239,7 @@ enum MCPToolMapping {
         case .failure(let error):
             let field: String
             switch error {
-            case .invalidDate(let text), .outOfRange(let text):
+            case .invalidDate(let text), .outOfRange(let text), .dateOutOfRange(let text):
                 field = text == startDate ? "start_date" : "end_date"
             default: field = "end_date"
             }

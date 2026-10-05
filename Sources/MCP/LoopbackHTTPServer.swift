@@ -3,20 +3,33 @@ import Foundation
 import Network
 
 /// One accepted connection. Requests on it are answered strictly in order.
+///
+/// Reading pauses while `maxQueued` requests wait, so a client that pipelines
+/// without reading replies can't grow memory. Each phase has a fixed deadline
+/// that later bytes don't extend: the head within 10 s of its first byte,
+/// the body within 10 s of the head, and 30 s idle between requests.
 final class HTTPConnection: @unchecked Sendable {
     fileprivate let connection: NWConnection
     private let queue: DispatchQueue
     private var parser = HTTPParser()
+    private var handler: LoopbackHTTPServer.Handler?
     private var pending = [HTTPRequest]()
+    /// A parse error to answer once earlier requests have their replies.
+    private var failure: Int?
     private var busy = false
+    private var receiving = false
     private var closed = false
-    private var closeHandlers = [() -> Void]()
+    private var closeHandlers = [UUID: () -> Void]()
     private var timer: DispatchSourceTimer?
+    private var phase = Phase.idle
     fileprivate var onClose: (() -> Void)?
+
+    private enum Phase { case idle, head, body, busy }
 
     static let headerTimeout: TimeInterval = 10
     static let bodyTimeout: TimeInterval = 10
     static let idleTimeout: TimeInterval = 30
+    static let maxQueued = 4
 
     fileprivate init(_ connection: NWConnection, queue: DispatchQueue) {
         self.connection = connection
@@ -25,13 +38,18 @@ final class HTTPConnection: @unchecked Sendable {
 
     /// Runs `action` on the connection's queue when it closes (at once if it
     /// already has). A closed connection is how a client cancels a request.
-    func whenClosed(_ action: @escaping () -> Void) {
+    /// Call the returned closure once the action is no longer needed.
+    @discardableResult
+    func whenClosed(_ action: @escaping () -> Void) -> () -> Void {
+        let id = UUID()
         queue.async {
-            if self.closed { action() } else { self.closeHandlers.append(action) }
+            if self.closed { action() } else { self.closeHandlers[id] = action }
         }
+        return { [weak self] in self?.queue.async { self?.closeHandlers[id] = nil } }
     }
 
     fileprivate func start(handler: @escaping LoopbackHTTPServer.Handler) {
+        self.handler = handler
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed, .cancelled: self?.close()
@@ -39,61 +57,79 @@ final class HTTPConnection: @unchecked Sendable {
             }
         }
         connection.start(queue: queue)
-        armTimer()
-        receive(handler: handler)
+        updatePhase()
+        receive()
     }
 
-    private func receive(handler: @escaping LoopbackHTTPServer.Handler) {
+    private func receive() {
+        guard !closed, !receiving, failure == nil, pending.count < Self.maxQueued else { return }
+        receiving = true
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) {
             [weak self] data, _, isComplete, error in
             guard let self, !self.closed else { return }
-            if let data, !data.isEmpty { self.consume(data, handler: handler) }
+            self.receiving = false
+            if let data, !data.isEmpty { self.parse(data) }
             if isComplete || error != nil {
                 self.close()
-            } else if !self.closed {
-                self.receive(handler: handler)
+            } else {
+                self.receive()
             }
         }
     }
 
-    private func consume(_ data: Data, handler: @escaping LoopbackHTTPServer.Handler) {
+    /// Feeds bytes to the parser and queues complete requests, stopping when
+    /// the queue is full; the rest stays buffered in the parser until then.
+    private func parse(_ data: Data) {
         var input = data
-        while !closed {
+        while !closed && failure == nil && pending.count < Self.maxQueued {
             let result = parser.feed(input)
             input = Data()
             switch result {
             case .needMore:
-                armTimer()
+                updatePhase()
                 return
             case .expectContinue:
-                // Bodies are capped at 64 KiB, so there's little to save by
-                // judging the head first; let the client send it.
-                connection.send(content: HTTPResponse.continueBytes, completion: .contentProcessed { _ in })
+                // Only for the request that's next in line, so the interim
+                // reply can't land between another request's bytes.
+                if !busy && pending.isEmpty {
+                    connection.send(content: HTTPResponse.continueBytes, completion: .contentProcessed { _ in })
+                }
             case .request(let request):
                 pending.append(request)
-                next(handler: handler)
+                next()
             case .error(let status):
-                // Anything still queued is answered first, then the error.
-                pending.removeAll()
-                write(HTTPResponse(status: status), close: true)
+                failure = status
+                next()
                 return
             }
         }
     }
 
-    private func next(handler: @escaping LoopbackHTTPServer.Handler) {
-        guard !busy, !closed, !pending.isEmpty else { armTimer(); return }
+    private func next() {
+        guard !busy, !closed else { return }
+        guard !pending.isEmpty else {
+            if let failure {
+                write(HTTPResponse(status: failure), close: true)
+            } else {
+                updatePhase()
+            }
+            return
+        }
         busy = true
-        timer?.cancel()
+        setPhase(.busy)
         let request = pending.removeFirst()
-        handler(request, self) { [weak self] response, close in
+        handler?(request, self) { [weak self] response, close in
             guard let self else { return }
             self.queue.async {
                 guard !self.closed else { return }
                 self.busy = false
                 let closing = close || request.wantsClose
                 self.write(response, close: closing)
-                if !closing { self.next(handler: handler) }
+                guard !closing else { return }
+                // Requests already buffered first, then more reading.
+                self.parse(Data())
+                self.next()
+                self.receive()
             }
         }
     }
@@ -105,23 +141,34 @@ final class HTTPConnection: @unchecked Sendable {
         })
     }
 
-    /// One timer, re-armed for whichever limit applies: headers arriving,
-    /// the body arriving, or an idle keep-alive connection.
-    private func armTimer() {
+    private func updatePhase() {
+        guard !busy else { return }
+        if parser.isReadingBody { setPhase(.body) }
+        else if parser.hasBufferedBytes { setPhase(.head) }
+        else { setPhase(.idle) }
+    }
+
+    /// Starts a phase's deadline only when the phase changes.
+    private func setPhase(_ next: Phase) {
+        guard next != phase || timer == nil else { return }
+        phase = next
         timer?.cancel()
-        guard !busy, !closed else { return }
+        timer = nil
         let limit: TimeInterval
-        if parser.isReadingBody { limit = Self.bodyTimeout }
-        else if parser.hasBufferedBytes { limit = Self.headerTimeout }
-        else { limit = Self.idleTimeout }
+        switch next {
+        case .busy: return
+        case .idle: limit = Self.idleTimeout
+        case .head: limit = Self.headerTimeout
+        case .body: limit = Self.bodyTimeout
+        }
         let source = DispatchSource.makeTimerSource(queue: queue)
         source.schedule(deadline: .now() + limit)
         source.setEventHandler { [weak self] in
             guard let self, !self.busy, !self.closed else { return }
-            if self.parser.hasBufferedBytes {
-                self.write(HTTPResponse(status: 408), close: true)
-            } else {
+            if self.phase == .idle {
                 self.close()
+            } else {
+                self.write(HTTPResponse(status: 408), close: true)
             }
         }
         source.resume()
@@ -134,9 +181,10 @@ final class HTTPConnection: @unchecked Sendable {
         timer?.cancel()
         timer = nil
         connection.cancel()
-        let handlers = closeHandlers
+        let handlers = closeHandlers.values
         closeHandlers.removeAll()
         handlers.forEach { $0() }
+        handler = nil
         onClose?()
         onClose = nil
     }

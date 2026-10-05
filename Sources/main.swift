@@ -113,6 +113,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Pasteboard.clearSecret()
         #if !EVENTKIT_UI_REVIEW
         // Waiting changes are refused, and the endpoint file goes away.
         approvals.shutDown()
@@ -221,6 +222,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 self.handleClient(envelope, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
+                self?.approvals.withdrawAll()
                 self?.model.bridgeDidChange(.off)
             })
             return .on

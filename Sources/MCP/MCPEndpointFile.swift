@@ -27,7 +27,12 @@ struct MCPEndpointFile {
         return SafePath.atomicWrite(data, to: url.path)
     }
 
-    func remove() {
+    /// Removes the file only if this process wrote it, so a second copy of
+    /// the app can't break the running copy's launcher setups.
+    func remove(pid: Int32 = getpid()) {
+        guard let data = try? SafePath.readFile(url.path, maxBytes: 4_096),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["pid"] as? Int == Int(pid) else { return }
         unlink(url.path)
     }
 }

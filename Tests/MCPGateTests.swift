@@ -236,8 +236,11 @@ struct MCPGateTests {
             (#"{"jsonrpc":"2.0","id":"abc","method":"ping","params":{"a":1}}"#, .request(.string("abc"), "ping", 1)),
             (#"{"jsonrpc":"2.0","id":"","method":"ping"}"#, .request(.string(""), "ping", 0)),
             (#"{"jsonrpc":"2.0","id":-7,"method":"ping"}"#, .request(.int(-7), "ping", 0)),
-            (#"{"jsonrpc":"2.0","id":3.0,"method":"ping"}"#, .request(.int(3), "ping", 0)),
+            (#"{"jsonrpc":"2.0","id":3.0,"method":"ping"}"#, .failure(.invalidRequest)),
             (#"{"jsonrpc":"2.0","id":1.5,"method":"ping"}"#, .failure(.invalidRequest)),
+            // A float-typed id can't be echoed with its type (§8.5).
+            (#"{"jsonrpc":"2.0","id":1.0,"method":"ping"}"#, .failure(.invalidRequest)),
+            (#"{"jsonrpc":"2.0","id":1e3,"method":"ping"}"#, .failure(.invalidRequest)),
             (#"{"jsonrpc":"2.0","id":true,"method":"ping"}"#, .failure(.invalidRequest)),
             (#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#, .failure(.invalidRequest)),
             (#"{"jsonrpc":"2.0","id":{},"method":"ping"}"#, .failure(.invalidRequest)),

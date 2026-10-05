@@ -210,6 +210,7 @@ final class RequestPipeline {
             }
             finish(call, inline(request.command, grants: client.grants))
         default:
+            if request.command.isWrite { limiter?.recordWrite(call.clientID) }
             commands.runAuthorized(request, clientID: call.clientID, selected: selected,
                                    stillAuthorized: { [weak self] in self?.stillAllowed(call) ?? false },
                                    isCancelled: { ticket.isCancelled },

@@ -135,6 +135,8 @@ final class ApprovalCenter: ApprovalGate {
         revisions[id] = nil
         if let index = pending.firstIndex(where: { $0.id == id }) {
             pending.remove(at: index)
+            // Keep showing the same change when an earlier one goes away.
+            if index < selection { selection -= 1 }
             if selection >= pending.count { selection = max(0, pending.count - 1) }
         }
         queueChanged()
