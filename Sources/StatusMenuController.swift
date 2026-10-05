@@ -86,14 +86,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
         let problems = model.problems
         for problem in problems {
-            let title = item(problem.title, image: symbol("exclamationmark.triangle.fill", color: .systemOrange)) { [weak self] in
-                self?.fix(problem)
-            }
+            let title = item(problem.title) { [weak self] in self?.fix(problem) }
+            title.attributedTitle = iconTitle(symbol("exclamationmark.triangle.fill", color: .systemOrange),
+                                              problem.title)
             menu.addItem(title)
             let fixTitle = problem.opensPrivacySettings
                 ? String(localized: "Open Privacy Settings…")
                 : String(localized: "Open \(AppIdentity.displayName)…")
-            menu.addItem(item(fixTitle, image: blankImage()) { [weak self] in self?.fix(problem) })
+            let fixItem = item(fixTitle) { [weak self] in self?.fix(problem) }
+            // Indented to line up with the problem's text, after its icon.
+            fixItem.attributedTitle = iconTitle(nil, fixTitle)
+            menu.addItem(fixItem)
         }
         if !problems.isEmpty { menu.addItem(.separator()) }
 
@@ -101,7 +104,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         if !recent.isEmpty {
             menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Recent requests")))
             for entry in recent {
-                let row = item("", image: outcomeImage(entry.outcome.tone)) { [weak self] in
+                let row = item("") { [weak self] in
                     self?.model.openActivity(selecting: entry.id)
                 }
                 row.attributedTitle = recentTitle(entry)
@@ -145,17 +148,38 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
+    // Menu item images aren't shown on every macOS version, so status icons
+    // are drawn as text attachments inside the title.
+    private static let iconWidth: CGFloat = 16
+    private static let ageTab: CGFloat = 288
+
+    private func iconTitle(_ image: NSImage?, _ text: String, trailing: String? = nil) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.tabStops = [NSTextTab(textAlignment: .right, location: 310)]
-        let text = NSMutableAttributedString(
-            string: "\(model.clientName(entry.clientID)) · \(CommandPresentation.label(entry.command))",
-            attributes: [.font: NSFont.menuFont(ofSize: 0), .paragraphStyle: paragraph])
-        text.append(NSAttributedString(
-            string: "\t\(RelativeTime.short(entry.at, now: model.now))",
-            attributes: [.font: NSFont.menuFont(ofSize: 0), .paragraphStyle: paragraph,
-                         .foregroundColor: NSColor.secondaryLabelColor]))
-        return text
+        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: Self.iconWidth + 6),
+                              NSTextTab(textAlignment: .right, location: Self.ageTab)]
+        let font = NSFont.menuFont(ofSize: 0)
+        let result = NSMutableAttributedString()
+        if let image {
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: image.size.width,
+                                       height: image.size.height)
+            result.append(NSAttributedString(attachment: attachment))
+        }
+        result.append(NSAttributedString(string: "\t" + text))
+        if let trailing {
+            result.append(NSAttributedString(string: "\t" + trailing,
+                                             attributes: [.foregroundColor: NSColor.secondaryLabelColor]))
+        }
+        result.addAttributes([.font: font, .paragraphStyle: paragraph],
+                             range: NSRange(location: 0, length: result.length))
+        return result
+    }
+
+    private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
+        iconTitle(outcomeImage(entry.outcome.tone),
+                  "\(model.clientName(entry.clientID)) · \(CommandPresentation.label(entry.command))",
+                  trailing: RelativeTime.short(entry.at, now: model.now))
     }
 
     private func item(_ title: String, key: String = "", image: NSImage? = nil,
@@ -183,9 +207,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return image
     }
 
-    private func blankImage() -> NSImage {
-        NSImage(size: NSSize(width: 16, height: 16))
-    }
 }
 
 /// An NSMenuItem that runs a closure, so the menu needs no selector table.

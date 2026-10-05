@@ -245,8 +245,12 @@ final class UIReview {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { statusMenu.button?.performClick(nil) }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let frame = statusMenu.button?.window?.frame ?? .zero
+                let screen = NSScreen.screens.first?.frame ?? .zero
                 let result: [String: Any] = ["windowNumber": window.window?.windowNumber ?? 0,
-                                             "statusItemWindowNumber": statusMenu.button?.window?.windowNumber ?? 0]
+                                             "statusItemX": frame.minX,
+                                             "statusItemTop": screen.maxY - frame.maxY,
+                                             "screenWidth": screen.width]
                 if let data = try? JSONSerialization.data(withJSONObject: result) {
                     FileHandle.standardOutput.write(data + Data([10]))
                 }
@@ -352,6 +356,16 @@ final class BehaviorReview {
     private let family = GrantKey(resource: .calendar, targetID: "cal-family")
     private let work = GrantKey(resource: .calendar, targetID: "cal-work")
 
+    /// Sends ⌘<key> through the main menu, as a keyboard shortcut would.
+    private func key(_ character: String) -> Bool {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: character,
+            charactersIgnoringModifiers: character, isARepeat: false, keyCode: 0) else { return false }
+        window.makeKey()
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) == true
+    }
+
     private func answer(_ code: NSApplication.ModalResponse) -> Bool {
         guard let sheet = window.attachedSheet else { return false }
         window.endSheet(sheet, returnCode: code)
@@ -433,6 +447,29 @@ final class BehaviorReview {
         step("revert") {
             self.model.revertDraft()
             return !self.model.hasUnsavedChanges
+        }
+        step("⌘Z through the Edit menu") {
+            self.model.setAction(self.family, bit: ClientGrant.create, on: true)
+            // Undo goes to the key window; without one (a locked screen), send it there directly.
+            let sent = NSApp.keyWindow === self.window
+                ? self.key("z") : NSApp.sendAction(Selector(("undo:")), to: self.window, from: nil)
+            return sent && self.model.draft?.mask(self.family) == 1
+        }
+        step("⌘S saves") {
+            self.model.setAction(self.family, bit: ClientGrant.create, on: true)
+            return self.key("s") && !self.model.hasUnsavedChanges &&
+                self.model.client(claude)?.grants.contains(ClientGrant(resource: .calendar, targetID: "cal-family", mask: 3)) == true
+        }
+        step("⌘2 and ⌘1 switch panes") {
+            self.key("2") && self.model.route == .activity && self.key("1") && self.model.route == .overview
+        }
+        step("⌘N opens New Client") {
+            self.key("n") && self.model.sheet == .newClient
+        }
+        step("close the sheet") {
+            self.model.sheet = nil
+            self.model.navigate(to: .client(claude))
+            return self.model.route == .client(claude)
         }
         step("unavailable grant removal is staged") {
             let gone = GrantKey(resource: .calendar, targetID: "cal-signed-out")

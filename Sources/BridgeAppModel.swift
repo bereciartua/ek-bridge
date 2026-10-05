@@ -247,9 +247,8 @@ final class BridgeAppModel {
     }
 
     private func tick() {
-        let before = (calendarAccess, remindersAccess, loginItem)
+        let before = (calendarAccess, remindersAccess)
         updateAccess()
-        loginItem = services.loginItemStatus()
         if before.0 != calendarAccess || before.1 != remindersAccess {
             refresh()
         } else if Date().timeIntervalSince(now) >= 30 {

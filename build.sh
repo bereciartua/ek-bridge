@@ -15,8 +15,9 @@ if [ "${EVENTKIT_UI_REVIEW:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_UI_REVIEW"
 fi
 
-mkdir -p "$contents_dir/MacOS" "$cache_dir"
+mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
+cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 xcrun swiftc -parse-as-library \
     $test_flag \
     -sdk "$sdk_dir" \
