@@ -40,8 +40,13 @@ final class ClientManagerUI {
     private let registry: ClientRegistry
     private let store: EKEventStore
     private let credentialFiles = ClientCredentialFiles()
-    private var window: NSWindow?
-    private var activityWindow: NSWindow?
+    // AppKit's window controller retains each window and disables release on
+    // close, so a later menu action can safely present that same window.
+    private var windowController: NSWindowController?
+    private var activityWindowController: NSWindowController?
+    #if EVENTKIT_UI_REVIEW
+    var reviewWindow: NSWindow? { windowController?.window }
+    #endif
     private var clientList = NSStackView()
     private var detail = FlippedStackView()
     private var bridgeLabel = NSTextField(labelWithString: "")
@@ -66,14 +71,14 @@ final class ClientManagerUI {
         self.bridgeIsActive = bridgeIsActive
         self.enableBridge = enableBridge
         self.disableBridge = disableBridge
-        if window == nil { makeWindow() }
-        if window?.isVisible == true {
-            window?.makeKeyAndOrderFront(nil)
+        if windowController == nil { makeWindow() }
+        if windowController?.window?.isVisible == true {
+            windowController?.showWindow(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         reload()
-        window?.makeKeyAndOrderFront(nil)
+        windowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -183,7 +188,7 @@ final class ClientManagerUI {
         window.contentView = content
         window.setContentSize(NSSize(width: 1080, height: 730))
         window.center()
-        self.window = window
+        windowController = NSWindowController(window: window)
     }
 
     private func reload() {
@@ -533,8 +538,8 @@ final class ClientManagerUI {
         window.title = "Recent Bridge Activity"
         window.contentView = scroll
         window.center()
-        activityWindow = window
-        window.makeKeyAndOrderFront(nil)
+        activityWindowController = NSWindowController(window: window)
+        activityWindowController?.showWindow(nil)
     }
 
     private func selectedClient() -> ClientView? {

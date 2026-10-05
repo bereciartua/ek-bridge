@@ -12,7 +12,9 @@ final class FlippedStackView: NSStackView {
 
 @MainActor
 final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow?
+    // The controller owns the window across Close → Open Controls cycles.
+    // A bare programmatic NSWindow can release itself when closed.
+    private var controlsWindowController: NSWindowController?
     private var statusItem: NSStatusItem?
     private let eventStatus = NSTextField(labelWithString: "")
     private let reminderStatus = NSTextField(labelWithString: "")
@@ -30,7 +32,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var store = EKEventStore()
     private lazy var commands = EventKitCommands(store: store)
     private lazy var testCollections = TestCollections(store: store)
+    #if EVENTKIT_UI_REVIEW
+    private let reviewDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("eventkit-ui-review-\(UUID().uuidString)", isDirectory: true)
+    private lazy var clientRegistry = ClientRegistry(directory: reviewDirectory)
+    #else
     private lazy var clientRegistry = ClientRegistry()
+    #endif
     private lazy var clientManager = ClientManagerUI(registry: clientRegistry, store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -152,14 +160,33 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         window.setContentSize(NSSize(width: 850, height: 680))
         window.minSize = NSSize(width: 850, height: 540)
         window.center()
-        self.window = window
+        controlsWindowController = NSWindowController(window: window)
         refreshStatus()
         refreshBridgeStatus()
         #if EVENTKIT_UI_REVIEW
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        clientManager.show(bridgeIsActive: { false },
-                           enableBridge: { false }, disableBridge: {})
+        if let active = clientRegistry.clients(), active.isEmpty,
+           case .success(let fixture) = clientRegistry.createClient(name: "Window fixture") {
+            _ = clientRegistry.replaceGrants(clientID: fixture.id, grants: [
+                ClientGrant(resource: .calendar, targetID: "synthetic-0", mask: 15),
+                ClientGrant(resource: .reminderList, targetID: "synthetic-16", mask: 31),
+            ])
+        }
+        openControls(nil)
+        showReviewClients()
+        if CommandLine.arguments.contains("--ui-window-lifecycle-test") {
+            reviewWindowLifecycle(cycle: 1)
+        } else if CommandLine.arguments.contains("--ui-visual-review") {
+            let result: [String: Any] = [
+                "controlsWindowNumber": controlsWindowController?.window?.windowNumber ?? 0,
+                "clientsWindowNumber": clientManager.reviewWindow?.windowNumber ?? 0,
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: result) {
+                FileHandle.standardOutput.write(data + Data([10]))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+                NSApp.terminate(nil)
+            }
+        }
         #else
         if bridgeEnablement.isEnabled { startBridge() }
         #endif
@@ -172,6 +199,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         localBridge?.stop()
         localBridge = nil
+        #if EVENTKIT_UI_REVIEW
+        try? FileManager.default.removeItem(at: reviewDirectory)
+        #endif
     }
 
     private func button(_ title: String, _ action: Selector) -> NSButton {
@@ -465,9 +495,59 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
     }
     @objc private func openControls(_ sender: Any?) {
-        window?.makeKeyAndOrderFront(nil)
+        controlsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    #if EVENTKIT_UI_REVIEW
+    private func showReviewClients() {
+        clientManager.show(bridgeIsActive: { false },
+                           enableBridge: { false }, disableBridge: {})
+    }
+
+    private func reviewWindowLifecycle(cycle: Int) {
+        guard let controls = controlsWindowController?.window,
+              let clients = clientManager.reviewWindow,
+              controls.isVisible, clients.isVisible,
+              !controls.isReleasedWhenClosed, !clients.isReleasedWhenClosed else {
+            reportWindowReview("window_missing_or_released", cycle: cycle)
+            return
+        }
+        let controlsID = ObjectIdentifier(controls)
+        let clientsID = ObjectIdentifier(clients)
+        controls.close()
+        clients.close()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            self.openControls(nil)
+            self.showReviewClients()
+            guard let reopenedControls = self.controlsWindowController?.window,
+                  let reopenedClients = self.clientManager.reviewWindow,
+                  ObjectIdentifier(reopenedControls) == controlsID,
+                  ObjectIdentifier(reopenedClients) == clientsID,
+                  reopenedControls.isVisible, reopenedClients.isVisible,
+                  reopenedControls.frame.width >= 850,
+                  reopenedClients.frame.width >= 990 else {
+                self.reportWindowReview("reopen_failed", cycle: cycle)
+                return
+            }
+            if cycle == 8 {
+                self.reportWindowReview("passed", cycle: cycle)
+            } else {
+                self.reviewWindowLifecycle(cycle: cycle + 1)
+            }
+        }
+    }
+
+    private func reportWindowReview(_ outcome: String, cycle: Int) {
+        let result: [String: Any] = ["outcome": outcome, "cycles": cycle]
+        if let data = try? JSONSerialization.data(withJSONObject: result,
+                                                   options: [.sortedKeys]) {
+            FileHandle.standardOutput.write(data + Data([10]))
+        }
+        NSApp.terminate(nil)
+    }
+    #endif
     @objc private func checkTestSources(_ sender: Any?) {
         output.string = testCollections.sourcePreview()
     }
