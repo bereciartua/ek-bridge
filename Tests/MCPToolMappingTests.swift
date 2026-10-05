@@ -262,6 +262,9 @@ struct MCPToolMappingTests {
             ["code": "completed_reminder_due_unsupported", "tool": "update_reminder"],
             ["code": "recurrence_unsupported", "tool": "update_event"],
             ["code": "idempotency_pending_review", "tool": "create_event"],
+            // Journaled, so a same-key retry would only replay it: tell the user instead.
+            ["code": "all_day_readback_failed_cleanup_needed", "tool": "create_event",
+             "idempotency_key": fixedKey],
             ["code": "mystery_code", "tool": "read_events"],
         ]
         let codes = ["unauthorized", "bridge_off", "target_not_writable", "conflict", "occurrence_conflict",
@@ -292,6 +295,9 @@ struct MCPToolMappingTests {
                AgentOutcomeText.uncertainCodes.contains(code) {
                 check(text.contains("idempotency_key \"\(key)\"") && text.contains("Never retry with a new key"),
                       "uncertain text names the key: \(text)")
+            }
+            if code == "all_day_readback_failed_cleanup_needed" {
+                check(text.contains("don't retry") && !text.contains("idempotency_key"), "cleanup: \(text)")
             }
             check(AgentOutcomeText.isKnown(code) == (code != "mystery_code"), "isKnown \(code)")
             table.append(item.merging(["text": text]) { _, new in new })

@@ -254,6 +254,59 @@ struct BridgeProtocolTests {
         }
         guard case .reject("journal_unavailable") = WriteJournal(directory: link).begin(write)
         else { preconditionFailure("symlink journal directory") }
-        print("Bridge protocol/policy/journal: 40 positive/negative checks passed")
+
+        // list_collections: no parameters, client-level, read-only.
+        let listing = BridgeCommand.listCollections
+        precondition(listing.rawValue == "list_collections")
+        precondition(listing.parameterKeys.isEmpty && listing.parameterKeys == CommandParameterKeys(
+            required: [], optional: []))
+        precondition(listing.isClientLevel && !listing.isWrite)
+        precondition(listing.acceptsKeys(of: [:]) && !listing.acceptsKeys(of: ["calendarID": "approved"]))
+        precondition(CommandPolicy.validate(request(.listCollections, [:]), scope: BridgeScope()) == nil)
+        precondition(CommandPolicy.validate(request(.listCollections, [:]), scope: scope) == nil)
+        for extra in [["calendarID": "approved"], ["listID": "approved-list"], ["limit": 5],
+                      ["anything": NSNull()]] as [[String: Any]] {
+            precondition(CommandPolicy.validate(request(.listCollections, extra), scope: scope)
+                         == "invalid_parameters")
+        }
+        let listingWire = try message(command: "list_collections")
+        precondition(BridgeProtocol.validate(listingWire, token: token, now: now, usedIDs: [])
+                     .map(\.command) == .success(.listCollections))
+        precondition(BridgeCommand.allCases.filter(\.isClientLevel) == [
+            .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus, .listCollections])
+
+        // A one-day all-day event on the day Santiago's clocks skip midnight
+        // (2026-09-06 starts at 01:00 -03:00 and is 23 hours long).
+        let santiagoStart = 1_788_667_200.0
+        let santiagoEnd = 1_788_750_000.0
+        precondition(santiagoEnd - santiagoStart == 23 * 3_600)
+        var santiago: [String: Any] = [
+            "calendarID": "approved", "title": "Synthetic Santiago day", "start": santiagoStart,
+            "end": santiagoEnd, "allDay": true, "timeZone": "America/Santiago",
+            "idempotencyKey": WriteIdempotencyKey.make(),
+        ]
+        guard case .allDay(let santiagoZone, nil)? = EventCreationDetails.parse(santiago),
+              santiagoZone.identifier == "America/Santiago"
+        else { preconditionFailure("Santiago one-day all-day event") }
+        precondition(CommandPolicy.validate(request(.createEvent, santiago), scope: scope) == nil)
+        var chile = Calendar(identifier: .gregorian)
+        chile.timeZone = TimeZone(identifier: "America/Santiago")!
+        let sevenDays = chile.date(from: DateComponents(year: 2026, month: 9, day: 13))!
+        let eightDays = chile.date(from: DateComponents(year: 2026, month: 9, day: 14))!
+        precondition(chile.startOfDay(for: sevenDays) == sevenDays &&
+                     chile.startOfDay(for: eightDays) == eightDays)
+        santiago["end"] = sevenDays.timeIntervalSince1970
+        precondition(EventCreationDetails.parse(santiago) != nil, "7 days is the maximum")
+        santiago["end"] = eightDays.timeIntervalSince1970
+        precondition(EventCreationDetails.parse(santiago) == nil, "8 days")
+        precondition(CommandPolicy.validate(request(.createEvent, santiago), scope: scope) != nil)
+        santiago["end"] = santiagoStart
+        precondition(EventCreationDetails.parse(santiago) == nil, "0 days")
+        santiago["end"] = santiagoStart - 82_800
+        precondition(EventCreationDetails.parse(santiago) == nil, "end before start")
+        santiago["start"] = santiagoStart - 3_600 // the nominal midnight that doesn't exist
+        santiago["end"] = santiagoEnd
+        precondition(EventCreationDetails.parse(santiago) == nil, "not the start of the day")
+        print("Bridge protocol/policy/journal: 40 positive/negative checks, list_collections and Santiago all-day passed")
     }
 }

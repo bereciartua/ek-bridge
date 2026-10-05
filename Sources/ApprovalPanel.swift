@@ -9,6 +9,7 @@ import SwiftUI
 final class ApprovalPanelController {
     private let center: ApprovalCenter
     private var panel: NSPanel?
+    private var host: NSHostingController<ApprovalPanelView>?
     private var shownCount = 0
 
     init(center: ApprovalCenter) {
@@ -24,6 +25,16 @@ final class ApprovalPanelController {
         }
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        // Fit the content: rows and the queue stepper change its height. The
+        // top edge stays put.
+        if let host {
+            let size = host.sizeThatFits(in: NSSize(width: 400, height: 2_000))
+            if size.height > 1, size != panel.contentLayoutRect.size {
+                let top = panel.frame.maxY
+                panel.setContentSize(size)
+                if panel.isVisible { panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top)) }
+            }
+        }
         if !panel.isVisible {
             position(panel)
             panel.orderFrontRegardless()
@@ -58,9 +69,10 @@ final class ApprovalPanelController {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.title = String(localized: "Ask before changes")
-        let host = NSHostingView(rootView: ApprovalPanelView(center: center))
-        host.sizingOptions = [.preferredContentSize]
-        panel.contentView = host
+        let host = NSHostingController(rootView: ApprovalPanelView(center: center))
+        host.sizingOptions = []
+        panel.contentViewController = host
+        self.host = host
         return panel
     }
 
@@ -373,7 +385,11 @@ enum ApprovalSummaries {
         }
         var parts = [unit]
         if let days = recurrence["weekdays"] as? [String], !days.isEmpty {
-            parts.append(String(localized: "on \(days.joined(separator: ", "))"))
+            let codes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+            let names = days.compactMap { code in
+                codes.firstIndex(of: code).map { Calendar.current.weekdaySymbols[$0] }
+            }
+            parts.append(String(localized: "on \(names.formatted(.list(type: .and)))"))
         }
         if let day = recurrence["dayOfMonth"] as? NSNumber {
             parts.append(String(localized: "on day \(day.intValue)"))

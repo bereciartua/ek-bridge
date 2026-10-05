@@ -2,39 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>EKBridgeVerifiedICloudReminderSourceID</key>
-    <string></string>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>EventKitBridge</string>
-    <key>CFBundleIdentifier</key>
-    <string>dev.martin.dot.eventkitbridge</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>EventKit Bridge</string>
-    <key>CFBundleDisplayName</key>
-    <string>EventKit Bridge</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.3.0</string>
-    <key>CFBundleVersion</key>
-    <string>3</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Access the calendar you select for bounded local event reads and edits when you enable the bridge.</string>
-    <key>NSRemindersFullAccessUsageDescription</key>
-    <string>Access the reminder list you select for bounded local reads and edits when you enable the bridge.</string>
-    <key>NSCalendarsUsageDescription</key>
-    <string>List calendar names and IDs only when you request it.</string>
-    <key>NSRemindersUsageDescription</key>
-    <string>List Reminders list names and IDs only when you request it.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>EventKit Bridge</string>
+	<key>CFBundleExecutable</key>
+	<string>EventKitBridge</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.martin.dot.eventkitbridge</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>EventKit Bridge</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.4.0</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>EKBridgeVerifiedICloudReminderSourceID</key>
+	<string></string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Access the calendar you select for bounded local event reads and edits when you enable the bridge.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>List calendar names and IDs only when you request it.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Access the reminder list you select for bounded local reads and edits when you enable the bridge.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>List Reminders list names and IDs only when you request it.</string>
 </dict>
 </plist>

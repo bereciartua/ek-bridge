@@ -924,7 +924,7 @@ final class SnapshotReview {
             step("client-connect-server-off") {
                 self.model.navigate(to: .client(UIReview.cursorID))
                 self.review.mcpMode = "off"
-                self.model.setMCPServerEnabled(false)
+                self.model.setMCPServerEnabled(false, confirm: false)
                 return main
             }
             step("settings-mcp-listening") {

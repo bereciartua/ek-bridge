@@ -1,6 +1,6 @@
 # Local CLI and command reference
 
-`client.py` runs the matching Swift `build/bridge-client` on the **same Mac and macOS user** as the app. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. There is no HTTP endpoint, cloud-to-localhost route, or MCP tool in this repository.
+`client.py` runs the matching Swift `build/bridge-client` on the **same Mac and macOS user** as the app. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. AI agents use the same commands through the app's local MCP server instead; its tools, time formats and agent error texts are in [MCP](MCP.md). There is no cloud-to-localhost route.
 
 ```sh
 python3 client.py COMMAND --client 'NAME or ID' [--params-file '/private/path/parameters.json']
@@ -29,7 +29,7 @@ Only the response JSON goes to stdout. Errors go to stderr as `error: …`, some
 | 4 | missing or unsafe local file | `error: key file not found: …`, `error: … can be read by other users (mode 644).` |
 | 5 | no response in time | `error: no response after 60 s. The write may still have happened.` |
 
-The client can't tell "app not running" from "bridge off"; both print the exit 3 message. In this reference, a **grant** is what the app calls **access**, and a **collection** is a calendar or reminder list.
+The client can't tell "app not running" from "bridge off"; both print the exit 3 message. Outcome codes added in 0.4.0 are ordinary exit-1 results with a hint: `bridge_off` (the bridge turned off while the request was being handled), `rate_limited`, and `approval_denied` and `approval_timed_out` (the client is set to **Ask me first** and you declined or didn't answer within 45 seconds). The other new codes, `cancelled` and `timeout`, come only from MCP requests and show in Activity. A write from a client set to Ask me first waits for the approval panel, which fits inside the client's 60-second write wait. In this reference, a **grant** is what the app calls **access**, and a **collection** is a calendar or reminder list.
 
 ## Commands
 
@@ -39,6 +39,7 @@ All parameter keys are case-sensitive; unknown keys are rejected. `start`, `end`
 | --- | --- | --- |
 | `authorization_status` | none | enrolled client |
 | `scope_status` | none; returns this client's grants | enrolled client |
+| `list_collections` | none; returns this client's granted collections with their current names and macOS access | enrolled client |
 | `calendar_count`, `reminder_list_count` | none; count only granted collections visible to EventKit | enrolled client |
 | `read_events` | `calendarID`, `start`, `end`, `limit` | Calendar Read |
 | `read_reminders` | `listID`, `limit`; optional `afterID` | Reminder Read |
@@ -50,11 +51,21 @@ All parameter keys are case-sensitive; unknown keys are rejected. `start`, `end`
 | `complete_reminder` | `listID`, `itemID`, `expectedVersion`, `idempotencyKey`; narrow recurring completion adds `recurrenceScope`, `occurrenceDue`, `occurrenceFingerprint` | Reminder Complete |
 | `delete_reminder` | `listID`, `itemID`, `expectedVersion`, `idempotencyKey`; optional `recurrenceScope` | Reminder Delete |
 
-`read_events` accepts a positive window of at most 31 days and `limit` 1–100. It returns `items` with `id`, bounded `title`, `titleTruncated`, `start`, `end`, `recurring`, `allDay`, `timeZone`, and `version` when EventKit supplies one. If more than `limit` events match, it returns `too_many_events_narrow_range`; narrow the window rather than treating the partial scan as a complete result. `read_reminders` accepts `limit` 1–100 and returns `items`, `truncated`, and a `nextCursor` when more rows remain. `afterID` uses the previous cursor. Pages are not stable snapshots, and EventKit fetches the whole selected reminder list internally before this client pages it. Reminder rows include bounded title, `completed`, `recurring`, due, recurrence, alarm summary, and optional `version` and `completionCandidate`.
+`read_events` accepts a positive window of at most 31 days and `limit` 1–100. It returns `items` with `id`, bounded `title`, `titleTruncated`, `start`, `end`, `recurring`, `allDay`, `timeZone` (empty for a floating-time event), `hasAttendees`, and `version` when EventKit supplies one. An event can be updated or deleted here only when `recurring`, `allDay` and `hasAttendees` are false (and, for updates, `timeZone` isn't empty). If more than `limit` events match, it returns `too_many_events_narrow_range`; narrow the window rather than treating the partial scan as a complete result. `read_reminders` accepts `limit` 1–100 and returns `items`, `truncated`, and a `nextCursor` when more rows remain. `afterID` uses the previous cursor. Pages are not stable snapshots, and EventKit fetches the whole selected reminder list internally before this client pages it. Reminder rows include bounded title, `completed`, `recurring`, due, recurrence, alarm summary, and optional `version` and `completionCandidate`.
 
 `scope_status` returns `grants` rows with `resource` (`calendar` or `reminderList`), `targetID`, and integer `mask`. Mask bits are **Read=1, Create=2, Edit=4, Delete=8, Complete=16**; add the bits for the actions granted. Complete applies only to reminder lists. For example, mask 1 is read only; mask 3 is read plus create. These are this app's stored policy bits, not macOS TCC permission values.
 
-Writes require `idempotencyKey` in the form `ekb3_<current Unix seconds>_<lowercase UUID>`. Generate it once per intended write and reuse **the same key and exact parameters** for a retry. Keys expire seven days after their embedded timestamp (with five seconds of future skew). Edits, deletes, and completion require `expectedVersion` from a fresh read; a stale version returns `conflict`. A successful write returns an item receipt or `deleted:true`. A new write can remain pending if EventKit or journal persistence is uncertain; do not replace its key merely to force another attempt. See [troubleshooting](TESTING.md#troubleshooting).
+`list_collections` returns one row per grant, in grant order, and never lists collections the client has no grant on:
+
+```json
+{"calendarsAccess":"full","remindersAccess":"denied","collections":[{"resource":"calendar","id":"…","name":"Work","account":"iCloud","writable":true,"available":true,"mask":3}]}
+```
+
+The access values are `full`, `not_determined`, `denied`, `write_only` and `restricted`. `name`, `account` and `writable` come from EventKit when the type has Full Access and lists the collection; otherwise the row has `available:false`, `name` and `account` null, and `writable:false`. The command needs no Full Access, like `scope_status`.
+
+Writes require `idempotencyKey` in the form `ekb3_<current Unix seconds>_<lowercase UUID>`. Generate it once per intended write and reuse **the same key and exact parameters** for a retry. Keys expire seven days after their embedded timestamp (with five seconds of future skew). Edits, deletes, and completion require `expectedVersion` from a fresh read; a stale version returns `conflict`. A successful write returns an item receipt or `deleted:true`. Event receipts hold `id` and `version`; reminder receipts have the same shape as a `read_reminders` row (`id`, `title`, `completed`, `recurring`, schedule fields, `version`). A same-key retry of a completed write returns the recorded result with `"repeated":true`, so you can tell nothing was written twice. A new write can remain pending if EventKit or journal persistence is uncertain; do not replace its key merely to force another attempt. See [troubleshooting](TESTING.md#troubleshooting).
+
+The write journal holds up to 10,000 entries in all and 2,000 live entries per client (entries expire with their key after seven days). A client over its share gets `journal_full` while others keep writing. Every client, command line or MCP, is also limited to 120 requests a minute (bursts of 30), 20 writes a minute (bursts of 10), 250 writes a day and 8 requests in progress; past that, the result is `rate_limited`; wait before sending more. (The CLI envelope carries only the code; MCP agents are told how many seconds to wait.)
 
 ## Event schedules
 
@@ -114,7 +125,7 @@ Nonrecurring reminders can be completed or deleted with the appropriate grant an
 
 ## Synthetic example
 
-Use an **empty temporary reminder list you created**, grant a disposable client only the needed actions for that list, and replace the two placeholders below. The client credential path is derived from the UUID shown by the app as described in the [user guide](USAGE.md#enroll-a-client). The script writes a private parameters file and creates one synthetic reminder with no due date or alarm. The test item may sync to other devices. **Run the generator once. Keep the parameters file and its exact key until the write outcome and cleanup are confirmed. A timeout may mean the item was created; do not generate a new key or repeat this recipe blindly.**
+Use an **empty temporary reminder list you created**, grant a disposable client only the needed actions for that list, and replace the two placeholders below. The client credential path is derived from the UUID shown by the app as described in the [user guide](USAGE.md#local-key-and-token-files). The script writes a private parameters file and creates one synthetic reminder with no due date or alarm. The test item may sync to other devices. **Run the generator once. Keep the parameters file and its exact key until the write outcome and cleanup are confirmed. A timeout may mean the item was created; do not generate a new key or repeat this recipe blindly.**
 
 ```sh
 export EKB_TEST_LIST_ID='<ID of your empty temporary reminder list>'

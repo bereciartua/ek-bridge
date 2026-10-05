@@ -19,8 +19,7 @@ enum AgentOutcomeText {
 
     static let uncertainCodes: Set<String> = [
         "idempotency_pending_review", "write_committed_journal_pending_review",
-        "completion_pending_reconciliation", "completion_readback_uncertain",
-        "all_day_readback_failed_cleanup_needed", "timeout",
+        "completion_pending_reconciliation", "completion_readback_uncertain", "timeout",
     ]
 
     private struct Context {
@@ -165,6 +164,11 @@ enum AgentOutcomeText {
         case "scope_changed_after_write":
             return ("Access changed", "access changed after the change was saved. "
                 + "Read to confirm the result; don't repeat the change.")
+        case "all_day_readback_failed_cleanup_needed":
+            // The journal recorded this result, so a same-key retry only replays it.
+            return ("Needs review", "the event was saved but didn't read back as requested, and "
+                + "the bridge couldn't remove it. Tell the user to check the \(c.collection) in "
+                + "Calendar; don't retry.")
         case _ where uncertainCodes.contains(code):
             if code == "timeout" && !c.isWrite {
                 return ("No answer in time", "\(app) didn't answer in time. Try once more; "

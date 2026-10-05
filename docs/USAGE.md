@@ -1,64 +1,92 @@
 # Using the menu bar app
 
-The app runs in the current macOS user's graphical session. Its menu bar icon shows the bridge state: a calendar with a check mark when the bridge is on, a dimmed calendar when it's off, and an exclamation badge when something needs attention (macOS access missing for a type a client uses, client settings unreadable, or the bridge failed to start). The menu has a switch for the bridge, any problems with their fix, the three most recent requests, and **Open EventKit Bridge…** (⌘O) and **Settings…** (⌘,).
+The app runs in the current macOS user's graphical session. Its menu bar icon shows the bridge state: a calendar with a check mark when the bridge is on, a dimmed calendar when it's off, and an exclamation badge when something needs attention (macOS access missing for a type a client uses, client settings unreadable, the bridge failed to start, or the MCP server is on but couldn't start). The menu has a switch for the bridge, an **MCP server** line (port, off, or couldn't start; it opens Settings), **N changes waiting for approval** while an agent waits for you, any problems with their fix, the three most recent requests, and **Open EventKit Bridge…** (⌘O) and **Settings…** (⌘,). With the bridge off, the menu says **Off · requests are refused**.
 
-Everything else is in one window with a sidebar: **Overview**, **Activity**, each **client**, and **Settings**. The CLI runs locally on the same Mac; see [API and CLI](API.md). The app calls a grant **access** and a collection a **calendar** or **list**.
+Everything else is in one window with a sidebar: **Overview**, **Activity**, each **client**, and **Settings**. Overview's status card also shows the MCP server's state, and each client row has an **MCP**, **CLI** or **MCP + CLI** badge. The CLI runs locally on the same Mac; see [API and CLI](API.md). AI agents connect over MCP; see [MCP](MCP.md). The app calls a grant **access** and a collection a **calendar** or **list**.
 
 ## First run
 
 On first launch the window opens on a setup checklist. The steps can be done in any order, and each one updates as soon as it's done:
 
 - **Allow Calendar access** and **Allow Reminders access.** **Allow Access…** shows the macOS prompt. If access was turned off or is add-only, **Open Privacy Settings** goes straight to the right pane. You need only the one your tools use: once the other is done and a client exists, the step says it's optional and offers **Skip**.
-- **Create a client.** A client is one tool or script with its own key. Give each tool its own client so you can see and revoke it separately.
+- **Create a client.** A client is one tool, script or agent with its own credential. Give each tool its own client so you can see and revoke it separately.
 - **Choose what the client can use.** Opens the client's Access table.
 - **Turn on the bridge.** The choice is kept across launches.
-- **Send a test request.** **Copy Command** copies `python3 client.py scope_status --client "<name>"`; run it in Terminal in the repository folder. The step completes when the request arrives, and the checklist turns into the normal Overview.
+- **Turn on the MCP server.** Shown only when the client connects as an AI agent.
+- **Connect your tool.** For a command-line client, **Copy Command** copies `python3 client.py scope_status --client "<name>"`; run it in Terminal in the repository folder. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
 
 **Hide Setup** hides the checklist; **Help ▸ Show Setup Checklist** or Settings ▸ About brings it back.
 
 ## Clients and access
 
-Choose **New Client…** (⌘N, the **+** in the sidebar, or Overview). The name must be unique among active clients; it's shown in Activity and the menu bar. The app writes the client's key file and selects the new client. **A new client has no access.**
+Choose **New Client…** (⌘N, the **+** in the sidebar, or Overview). The name must be unique among active clients; it's shown in Activity and the menu bar. Under **Connects from**, choose:
+
+- **AI agent (MCP)** (the default): the app writes an MCP token file. What the agent reads is sent to its AI provider.
+- **Command line**: the app writes a key file for `client.py`.
+- **Both**: both credentials.
+
+**Ask me before each change** is preset from Settings for the chosen kind (on for agents, off for the command line). The app selects the new client. **A new client has no access.**
 
 A client's page has three parts:
 
-- **Connect:** the client ID, the key file path (**Show in Finder** selects the file, never opens it), and a ready-to-run command. Each has a copy button. The key itself is never shown, copied, or put in a tooltip. If the key file is missing, the page says so; **Rotate Key…** writes a new one.
+- **Connect**, with two tabs, **AI agent (MCP)** and **Command line**. The tab is remembered per client.
+  - **AI agent:** an **Agent** picker, a **Method** choice (the recommended one first), the setup to copy (**Copy Command**, **Copy**, or **Install in VS Code**), numbered steps, and **Show in Finder** for the config file's folder. **Status** says **Waiting for the agent…**, **Connected** with the agent's name (as reported) and when, or why the last request was refused, with **Show in Activity**. **Token** shows only that a token exists and when it was created, with **Copy Token…** (only for methods that need it) and **Reset…**. **Server** shows the URL. If the client has no token, the server is off or it couldn't start, the tab says so with a button to fix it. If the app isn't in Applications, it warns that launcher setups will break when you move it. Setups for each agent are in [MCP](MCP.md#set-up-your-agent).
+  - **Command line:** the client ID, the key file path (**Show in Finder** selects the file, never opens it), and a ready-to-run command. Each has a copy button. If the key file is missing, the page says so; **Rotate Key…** writes a new one. Without a key, **Add Command-Line Key** creates one.
+  - Neither the key nor the token is ever shown or put in a tooltip. **Copy Token…** asks first and clears the clipboard after 90 seconds.
 - **Access:** a table per type (**Calendars** and **Reminders**), grouped by account, with each calendar's color. Calendars offer Read, Create, Edit, Delete; lists add Complete. Read-only calendars show a lock and a dash instead of write boxes. Filter by name or account, or show **Granted only**. Right-click a row for **Read Only**, **Full Access**, **No Access** and **Copy Calendar ID**.
   - Checking a write action also checks **Read**. You can uncheck Read afterwards; the row then warns that the client can't look up the items it's allowed to change.
   - Edits are staged. A bar at the bottom shows the number of unsaved changes with **Revert** and **Save** (⌘S); ⌘Z undoes the last change. Switching client or pane, closing the window, turning the bridge on or off, or quitting with unsaved changes asks whether to save them.
   - Saved changes apply to the next request; a request already running may need to be sent again.
   - If EventKit doesn't list a calendar a client has access to (account signed out, Full Access off, calendar deleted), the access is kept and a banner says so. **Review…** lists those IDs; **Remove** stages their removal for the next Save. Write access saved on a calendar that has since become read only is dropped on the next Save, and the row warns about it first.
-- The **⋯** menu: **Rename…** (or double-click the name in the sidebar), **Rotate Key…**, **Show Key File in Finder**, and **Revoke Client…**.
+- **Changes:** next to the Access title, **Ask me first** or **Allow without asking**. See [Ask before changes](#ask-before-changes). It saves immediately and isn't part of the staged edits.
+- The **⋯** menu: **Rename…** (or double-click the name in the sidebar); under MCP Access, **Turn On MCP Access** or **Reset MCP Token…**, **Remove MCP Access…** and **Show Token File in Finder**; under Command Line, **Add Command-Line Key** or **Rotate Key…**, **Remove Command-Line Key…** and **Show Key File in Finder**; and **Revoke Client…**. Removing one credential leaves the other and all access in place.
 
-Renaming doesn't change the key, the ID or any access, so running tools keep working. Only commands that use `--client "<old name>"` need the new name.
+Renaming doesn't change the key, the token, the ID or any access, so running tools keep working. Only commands that use `--client "<old name>"` need the new name. Agent setups use the client ID.
 
 Only active clients count toward the limit of 32. Revoked clients stay in the sidebar under **Revoked**, read only, so Activity stays understandable; the app keeps up to 200 of them and drops the oldest first.
 
+## Ask before changes
+
+With **Changes: Ask me first**, every create, edit, complete or delete from that client waits for your answer in a small panel at the top right of the screen. Reads never ask. The panel names the client, the calendar or list, and what would change (before and after, for an edit); the agent's name is shown as reported.
+
+- **Allow** or **Deny** (for a delete, the default button reads **Delete**). Return and Escape work only after you click into the panel, so typing in the agent's terminal can't answer it.
+- **Allow changes from … for 15 minutes** skips the panel for that client until the time is up or its settings change.
+- After **45 seconds** without an answer the change is refused. Up to 3 changes per client can wait; the panel steps through them ("1 of 3"), and the menu bar's **changes waiting for approval** item brings it forward.
+- Revoking the client, changing its access, or turning off the bridge refuses whatever is waiting.
+
+Prompts are always your choice. Change them per client with **Changes:** on its page, set the defaults for new clients in Settings ▸ MCP Server, or use **Apply to All Clients…** there. Clients from before 0.4.0 start as *Allow without asking*. More in [MCP](MCP.md#ask-before-changes).
+
 ## Activity
 
-**Activity** lists recent requests, newest first (the registry keeps its last 500 rows; each request has a start row and a result row, so that's about 250 requests): time, client, request, calendar or list, and result. Filter by client, show only **Problems**, or search by client, request, result, code or calendar name. Select a row for the details: the exact code, why it happened, what to do, and a button that goes to the fix (for example **Open Claude Code ▸ Groceries** for a request that wasn't allowed). The sidebar and the menu header count problems you haven't seen yet.
+**Activity** lists recent requests, newest first (the registry keeps its last 500 rows; each request has a start row and a result row, so that's about 250 requests): time, how it came in, client, request, calendar or list, and result. The narrow **Via** column shows a sparkle for MCP and a terminal for the command line (rows from before 0.4.0 have none). Filter by client and by **Via** (All, MCP, Command line) from the same menu, show only **Problems**, or search by client, request, result, code, calendar name or agent name. Select a row for the details: the exact code, why it happened, what to do, and a button that goes to the fix (for example **Open Claude Code ▸ Groceries** for a request that wasn't allowed). For MCP rows the details add **Via** (*MCP (Claude Code 2.4.1, as reported)*), and for changes that needed approval, **Approval** (*You approved*, *You declined*, *No answer in 45 s*, or *Allowed by a 15-minute allowance*). The sidebar and the menu header count problems you haven't seen yet.
 
-Activity stores the time, client ID, command, result and the target calendar or list **ID**. It never stores titles, parameters, item content or keys; calendar names are looked up when shown.
+Requests refused because the bridge was off (**Bridge was off**) or because a client sent too many (**Too many requests**) are recorded too, so you can see that something tried. Failed MCP sign-ins appear as unauthorized rows with no client, at most one every 10 seconds.
+
+Activity stores the time, client ID, command, result, the target calendar or list **ID**, how the request came in, the agent's reported name, and the approval answer. It never stores titles, parameters, item content, keys or tokens; calendar names are looked up when shown.
 
 ## Settings
 
 - **Start at login** uses macOS Login Items. It's available when the app is in `/Applications` or `~/Applications`, and says what to do if macOS needs your approval. The bridge also remembers whether it was on.
 - **Show in Dock:** *While the window is open* (default), *Always*, or *Never*. The menu bar icon is always shown.
-- **Developer:** off by default. Shows the app's test calendar and list tools, every calendar and list ID EventKit can see, and the data folder.
+- **MCP Server:** the **MCP server** switch (off by default), its status and URL, the **Port** (**Change…**), the **Launcher** path agents run (**Copy Path**, **Show in Finder**, and a warning if the app isn't in Applications), and how many agent requests arrived today. If the port is in use, **Try Again** and **Choose Another Port…** appear. Turning the server off when an agent used it in the last 10 minutes asks first.
+- **Ask before changes:** the default for **New AI agent clients** (*Ask me first*) and **New command-line clients** (*Allow without asking*), and **Apply to All Clients…**, which sets every client to one mode after a confirmation.
+- **Developer:** off by default. Shows the app's test calendar and list tools, every calendar and list ID EventKit can see, MCP traffic counts since launch (requests, errors by status, failed authentications; never contents), and the data folder.
 
-## Local key files
+## Local key and token files
 
-The app writes each client's key file to the following path, using the lower-case client UUID shown on its page:
+The app writes each client's key file and MCP token file to the following paths, using the lower-case client UUID shown on its page:
 
 ```text
 ~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json
+~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.mcp-token
 ```
 
-The directory is mode 0700 and the file is mode 0600. The file contains the client UUID and an `ekb_v1_` signing seed. The app stores only the matching public verifier, client names, access, revision, and bounded activity history in `client-registry.json`. Pass the client's name or ID (`--client`) or the **file path** (`--credentials-file`) to `client.py`; never paste the seed into a command, chat, issue, screenshot, or repository. Anyone with the file and access to this macOS user account can sign requests within its current access.
+The directory is mode 0700 and the files are mode 0600. The key file contains the client UUID and an `ekb_v1_` signing seed; the token file contains only the `ekb_mcp_v1_` token. The app stores only the matching public verifier and token hash, client names, access, revision, Ask before changes setting, and bounded activity history in `client-registry.json`. Agents use the token file through the launcher or their own config; don't paste the token anywhere else. Pass the client's name or ID (`--client`) or the **file path** (`--credentials-file`) to `client.py`; never paste the seed into a command, chat, issue, screenshot, or repository. Anyone with the file and access to this macOS user account can sign requests within its current access.
 
 - **Rotate Key…** replaces the key file and verifier for the client. The old key stops working for future requests. Update any task that points to a moved or copied key file; the app can't remove copies it doesn't know about.
-- **Revoke Client…** invalidates the client's verifier and removes its key file. If the file can't be removed, a banner says so with **Show in Finder**. Future requests and asynchronous replies that recheck the client revision are denied; revoking can't undo a write that EventKit already committed.
-- Turning the bridge off stops all client requests without changing access, and is saved; **Quit** stops the running process.
+- **Reset MCP Token…** replaces the token. Launcher and token-file setups keep working; agents you gave the token to directly need the new one. **Remove MCP Access…** deletes it.
+- **Revoke Client…** invalidates the client's verifier and token and removes both files. If the file can't be removed, a banner says so with **Show in Finder**. Future requests and asynchronous replies that recheck the client revision are denied; revoking can't undo a write that EventKit already committed.
+- Turning the bridge off stops all client requests without changing access, and is saved. The MCP server keeps listening so agents stay connected, but refuses their tool calls. **Quit** stops the running process and the MCP server.
 
 An agent or script using a saved grant still needs authorization for the **particular user task** it is performing. The grant configures what the bridge permits; it does not create standing permission to make unrelated Calendar or Reminders changes.
 

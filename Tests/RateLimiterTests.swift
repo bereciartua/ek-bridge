@@ -1,0 +1,113 @@
+import Foundation
+
+@main
+struct RateLimiterTests {
+    static func main() {
+        var clock: TimeInterval = 2_000_000_000
+        var checks = 0
+        func expect(_ actual: RateLimiter.Decision, _ expected: RateLimiter.Decision,
+                    _ note: String) {
+            precondition(actual == expected, "\(note): expected \(expected), got \(actual)")
+            checks += 1
+        }
+
+        // Calls: burst of 30, then 120/min (one token every 0.5 s).
+        let limiter = RateLimiter(now: { clock })
+        for index in 0..<30 { expect(limiter.allow("a", write: false), .allowed, "burst \(index)") }
+        expect(limiter.allow("a", write: false), .limited(retryAfter: 1), "31st call")
+        // Limited calls don't consume tokens: hammering doesn't push the wait out.
+        for _ in 0..<50 { _ = limiter.allow("a", write: false) }
+        clock += 0.5
+        expect(limiter.allow("a", write: false), .allowed, "one token after 0.5 s")
+        expect(limiter.allow("a", write: false), .limited(retryAfter: 1), "and only one")
+        // Refill caps at the burst.
+        clock += 3_600
+        for index in 0..<30 { expect(limiter.allow("a", write: false), .allowed, "refilled \(index)") }
+        expect(limiter.allow("a", write: false), .limited(retryAfter: 1), "capped at 30")
+
+        // Per-client isolation.
+        for index in 0..<30 { expect(limiter.allow("b", write: false), .allowed, "client b \(index)") }
+        expect(limiter.allow("b", write: false), .limited(retryAfter: 1), "client b limited")
+        expect(limiter.allow("c", write: true), .allowed, "client c unaffected")
+
+        // Writes: burst 10, then 20/min (one every 3 s), separate from calls.
+        clock += 3_600
+        for index in 0..<10 { expect(limiter.allow("w", write: true), .allowed, "write \(index)") }
+        expect(limiter.allow("w", write: true), .limited(retryAfter: 3), "11th write")
+        clock += 1.5
+        expect(limiter.allow("w", write: true), .limited(retryAfter: 2), "write half refilled")
+        // The limited writes took no call tokens: 30 - 10 = 20 reads remain
+        // (plus 0.5 s × 2/s = 3 after 1.5 s, capped by the bucket).
+        var reads = 0
+        while limiter.allow("w", write: false) == .allowed { reads += 1 }
+        precondition(reads == 23, "reads after limited writes: \(reads)")
+        checks += 1
+        expect(limiter.allow("w", write: true), .limited(retryAfter: 1),
+               "an empty call bucket blocks writes too")
+        clock += 1.5
+        expect(limiter.allow("w", write: true), .allowed, "write after refill")
+        // A client whose writes are exhausted still reads.
+        let separate = RateLimiter(now: { clock })
+        for _ in 0..<10 { _ = separate.allow("s", write: true) }
+        expect(separate.allow("s", write: true), .limited(retryAfter: 3), "writes exhausted")
+        expect(separate.allow("s", write: false), .allowed, "reads still allowed")
+
+        // Retry-after reflects the configured rate.
+        var slowPolicy = RateLimiter.Policy()
+        slowPolicy.callsPerMinute = 6
+        slowPolicy.callBurst = 2
+        let slow = RateLimiter(policy: slowPolicy, now: { clock })
+        expect(slow.allow("x", write: false), .allowed, "slow 1")
+        expect(slow.allow("x", write: false), .allowed, "slow 2")
+        expect(slow.allow("x", write: false), .limited(retryAfter: 10), "slow wait 10")
+        clock += 5
+        expect(slow.allow("x", write: false), .limited(retryAfter: 5), "slow wait 5")
+        clock += 5
+        expect(slow.allow("x", write: false), .allowed, "slow refilled")
+
+        // 250 writes per rolling 24 h with the default policy (one every 3 s
+        // stays inside 20/min).
+        let start = clock + 86_400
+        clock = start
+        let daily = RateLimiter(now: { clock })
+        for index in 0..<250 {
+            expect(daily.allow("d", write: true), .allowed, "daily write \(index)")
+            clock += 3
+        }
+        expect(daily.allow("d", write: true), .limited(retryAfter: 86_400 - 750), "251st write")
+        expect(daily.allow("d", write: false), .allowed, "reads unaffected by the daily cap")
+        clock = start + 86_400 - 1
+        expect(daily.allow("d", write: true), .limited(retryAfter: 1), "one second before rollover")
+        clock = start + 86_400
+        expect(daily.allow("d", write: true), .allowed, "first write left the window")
+        expect(daily.allow("d", write: true), .limited(retryAfter: 3), "250 in the window again")
+        expect(daily.allow("e", write: true), .allowed, "other client's daily cap is separate")
+
+        // Failed authentication: more than 120 in a minute locks out for 60 s.
+        clock = start + 200_000
+        let auth = RateLimiter(now: { clock })
+        precondition(auth.authLockout() == nil)
+        for _ in 0..<120 { auth.recordFailedAuth() }
+        precondition(auth.authLockout() == nil, "120 is still allowed")
+        auth.recordFailedAuth()
+        precondition(auth.authLockout() == 60, "121st locks out")
+        clock += 30
+        precondition(auth.authLockout() == 30)
+        clock += 29.5
+        precondition(auth.authLockout() == 1)
+        clock += 0.5
+        precondition(auth.authLockout() == nil, "recovered after 60 s")
+        // The count restarts after a lockout, and old failures age out.
+        for _ in 0..<120 { auth.recordFailedAuth() }
+        clock += 60
+        for _ in 0..<120 { auth.recordFailedAuth() }
+        precondition(auth.authLockout() == nil, "failures a minute apart don't add up")
+        // Valid tokens never consult the lockout: per-client buckets are unaffected.
+        for _ in 0..<121 { auth.recordFailedAuth() }
+        precondition(auth.authLockout() == 60)
+        expect(auth.allow("valid", write: false), .allowed, "authenticated call during lockout")
+        checks += 8
+
+        print("Rate limiter: \(checks) checks of bursts, refill, retry-after, isolation, write and daily caps, auth lockout passed")
+    }
+}

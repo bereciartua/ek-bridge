@@ -25,10 +25,16 @@ enum JSONRPCID: Equatable, Hashable {
     init?(json value: Any) {
         if let text = value as? String {
             self = .string(text)
-        } else if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-                  let whole = Int(exactly: number.doubleValue),
-                  number.doubleValue.rounded() == number.doubleValue {
-            self = .int(whole)
+        } else if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            // Integers are read as integers, so large IDs echo exactly; a
+            // fraction or anything outside Int64 is refused.
+            if !CFNumberIsFloatType(number), number.stringValue == String(number.int64Value) {
+                self = .int(Int(number.int64Value))
+            } else if let whole = Int(exactly: number.doubleValue), abs(number.doubleValue) < 9.0e15 {
+                self = .int(whole)
+            } else {
+                return nil
+            }
         } else {
             return nil
         }

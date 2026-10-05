@@ -308,9 +308,17 @@ final class Harness {
             return ["requests": snapshot.requests, "authFailures": snapshot.authFailures,
                     "byStatus": Dictionary(uniqueKeysWithValues: snapshot.byStatus.map { (String($0), $1) })]
         case "journal_entries":
-            let data = (try? Data(contentsOf: directory.appendingPathComponent("write-journal.json"))) ?? Data()
-            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            return ["count": (object?["entries"] as? [String: Any])?.count ?? 0]
+            // The main file plus every client's shard.
+            var files = [directory.appendingPathComponent("write-journal.json")]
+            let shards = directory.appendingPathComponent("write-journal")
+            files += ((try? FileManager.default.contentsOfDirectory(atPath: shards.path)) ?? [])
+                .map { shards.appendingPathComponent($0) }
+            let count = files.reduce(0) { total, url in
+                let data = (try? Data(contentsOf: url)) ?? Data()
+                let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                return total + ((object?["entries"] as? [String: Any])?.count ?? 0)
+            }
+            return ["count": count]
         default:
             return ["error": "unknown command"]
         }

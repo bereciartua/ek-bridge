@@ -177,6 +177,7 @@ struct AgentSetupCard: View {
                 HStack(spacing: 6) {
                     // A fixed mask, never derived from the token.
                     MonoText(text: ClientRegistry.mcpTokenPrefix + " ••••••••••••••••")
+                        .fixedSize()
                         .accessibilityLabel(String(localized: "Token hidden"))
                     if let issued = client.mcpIssuedAt {
                         Text("· " + String(localized: "created \(issued.formatted(.dateTime.month(.abbreviated).day()))"))

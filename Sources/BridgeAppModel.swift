@@ -1110,10 +1110,11 @@ final class BridgeAppModel {
         mcpConnections[clientID] = connection
     }
 
-    func setMCPServerEnabled(_ on: Bool) {
+    /// `confirm: false` skips the "agents used it recently" question (UI review).
+    func setMCPServerEnabled(_ on: Bool, confirm: Bool = true) {
         guard on != mcpEnabled else { return }
-        if on {
-            applyMCPEnabled(true)
+        if on || !confirm {
+            applyMCPEnabled(on)
             return
         }
         let recent = Set(mcpConnections.filter { now.timeIntervalSince($0.value.at) < 600 }.map(\.key))

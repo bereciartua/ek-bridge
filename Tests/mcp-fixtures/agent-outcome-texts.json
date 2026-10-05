@@ -45,48 +45,6 @@
     "tool" : "delete_reminder"
   },
   {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "create_event"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "update_event"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "delete_event"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "create_reminder"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "update_reminder"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "complete_reminder"
-  },
-  {
-    "code" : "all_day_readback_failed_cleanup_needed",
-    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
-    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: all_day_readback_failed_cleanup_needed)",
-    "tool" : "delete_reminder"
-  },
-  {
     "code" : "completion_pending_reconciliation",
     "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
     "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
@@ -356,6 +314,12 @@
   {
     "code" : "idempotency_pending_review",
     "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. Don't repeat the change until you have. (code: idempotency_pending_review)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "all_day_readback_failed_cleanup_needed",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the event was saved but didn't read back as requested, and the bridge couldn't remove it. Tell the user to check the calendar in Calendar; don't retry. (code: all_day_readback_failed_cleanup_needed)",
     "tool" : "create_event"
   },
   {

@@ -169,6 +169,104 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/AgentSetupTests.swift" \
     -o "$project_dir/build/agent-setup-tests"
 "$project_dir/build/agent-setup-tests" "$project_dir/Tests/agent-setup"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Tests/ClientRegistryV4Tests.swift" \
+    -o "$project_dir/build/client-registry-v4-tests"
+"$project_dir/build/client-registry-v4-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Tests/RequestPipelineTests.swift" \
+    -o "$project_dir/build/request-pipeline-tests"
+"$project_dir/build/request-pipeline-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Tests/RateLimiterTests.swift" \
+    -o "$project_dir/build/rate-limiter-tests"
+"$project_dir/build/rate-limiter-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
+    "$project_dir/Tests/MCPToolCatalogTests.swift" \
+    -o "$project_dir/build/mcp-tool-catalog-tests"
+"$project_dir/build/mcp-tool-catalog-tests" "$project_dir/Tests/mcp-fixtures/tools.json"
+# Also prints the median begin+finish time with 10,000 journal entries (§9.7).
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Tests/WriteJournalQuotaTests.swift" \
+    -o "$project_dir/build/write-journal-quota-tests"
+"$project_dir/build/write-journal-quota-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Sources/ApprovalCenter.swift" \
+    "$project_dir/Tests/ApprovalCenterTests.swift" \
+    -o "$project_dir/build/approval-center-tests"
+"$project_dir/build/approval-center-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/"*.swift \
+    "$project_dir/Tests/MCPGateTests.swift" \
+    -o "$project_dir/build/mcp-gate-tests"
+"$project_dir/build/mcp-gate-tests"
 # Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
 # fake bridge and key files in temporary directories.
 xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
