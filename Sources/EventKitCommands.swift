@@ -253,7 +253,8 @@ final class EventKitCommands {
                 if let error = MutationPolicy.reminderError(
                     recurring: reminder.hasRecurrenceRules,
                     completed: reminder.isCompleted,
-                    completing: command == .completeReminder
+                    completing: command == .completeReminder,
+                    recurrenceScope: ReminderRecurrenceScope.parse(p["recurrenceScope"])
                 ) {
                     completion(["error": error]); return
                 }

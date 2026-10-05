@@ -11,7 +11,7 @@ enum SyntheticRecurrenceProbe {
     private static let name = "EventKit Bridge Recurrence Probe"
     private static let marker = "EventKit Bridge Recurrence Probe: "
 
-    static func run() {
+    static func run(keepForRestart: Bool = false) {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
             report("full_reminders_access_required"); return
         }
@@ -104,13 +104,58 @@ enum SyntheticRecurrenceProbe {
                 return
             }
             observations["afterDelete"] = afterDelete.map(snapshot)
-            cleanup(store, id: id, result: &observations)
-            report("probe_complete", observations)
+            if keepForRestart {
+                observations["stageProcessID"] = getpid()
+                report("restart_stage_complete", observations)
+            } else {
+                cleanup(store, id: id, result: &observations)
+                report("probe_complete", observations)
+            }
         } catch {
             observations["error"] = code(error)
             cleanup(store, id: id, result: &observations)
             report("probe_failed", observations)
         }
+    }
+
+    // A separate launch constructs a new store and refetches the same app-owned
+    // list. This checks persisted local provider state, not remote-device sync.
+    static func verifyAfterRestart() {
+        guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess,
+              !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json"),
+              let id = UserDefaults.standard.string(forKey: listKey),
+              let staged = UserDefaults.standard.dictionary(forKey: "recurrenceProbeLastResult"),
+              staged["outcome"] as? String == "restart_stage_complete" else {
+            report("restart_precondition_failed"); return
+        }
+        let store = EKEventStore()
+        store.refreshSourcesIfNecessary()
+        var result: [String: Any] = ["testListID": id, "verifyProcessID": getpid(),
+                                     "stageProcessID": staged["stageProcessID"] ?? -1]
+        guard let list = matchingList(store, id: id),
+              let rows = reminders(store, list) else {
+            result["failure"] = "list_or_refetch_unavailable"
+            report("restart_verify_failed", result)
+            return
+        }
+        result["refetchedListID"] = list.calendarIdentifier
+        result["afterRestart"] = rows.map(snapshot)
+        let completed = rows.filter { $0.title == marker + "complete" && $0.isCompleted &&
+            ($0.recurrenceRules?.isEmpty ?? true) }
+        let advanced = rows.filter { $0.title == marker + "complete" && !$0.isCompleted &&
+            $0.hasRecurrenceRules }
+        let deleted = rows.filter { $0.title == marker + "delete" }
+        let differentProcess = (staged["stageProcessID"] as? NSNumber)?.int32Value != getpid()
+        result["differentProcess"] = differentProcess
+        result["completedOccurrenceCount"] = completed.count
+        result["advancedSeriesCount"] = advanced.count
+        result["deletedSeriesRows"] = deleted.count
+        result["freshStoreMatchesImmediateReadback"] = differentProcess &&
+            completed.count == 1 && advanced.count == 1 && deleted.isEmpty
+        cleanup(store, id: id, result: &result)
+        report(result["freshStoreMatchesImmediateReadback"] as? Bool == true &&
+            result["cleanup"] as? String == "removed_list" ?
+            "restart_verify_complete" : "restart_verify_failed", result)
     }
 
     static func cleanupOnly() {
@@ -126,11 +171,9 @@ enum SyntheticRecurrenceProbe {
 
     private static func cleanup(_ store: EKEventStore, id: String,
                                 result: inout [String: Any]) {
-        guard let list = store.calendars(for: .reminder).first(where: {
-                  $0.calendarIdentifier == id && $0.title == name
-              }),
+        guard let list = matchingList(store, id: id),
               let rows = reminders(store, list),
-              rows.allSatisfy({ $0.calendar.calendarIdentifier == id &&
+              rows.allSatisfy({ $0.calendar.calendarIdentifier == list.calendarIdentifier &&
                   $0.title.hasPrefix(marker) }) else {
             result["cleanup"] = "refused_identity_or_contents_mismatch"
             return
@@ -142,6 +185,15 @@ enum SyntheticRecurrenceProbe {
         } catch {
             result["cleanup"] = "failed: \(code(error))"
         }
+    }
+
+    private static func matchingList(_ store: EKEventStore, id: String) -> EKCalendar? {
+        let lists = store.calendars(for: .reminder).filter { $0.title == name &&
+            $0.source.title == "iCloud" && !$0.source.isDelegate }
+        if let exact = lists.first(where: { $0.calendarIdentifier == id }) { return exact }
+        // iCloud may rewrite a local calendar identifier. Only recover when
+        // the unique app-owned test name leaves no ambiguous target.
+        return lists.count == 1 ? lists[0] : nil
     }
 
     private static func reminders(_ store: EKEventStore, _ list: EKCalendar) -> [EKReminder]? {

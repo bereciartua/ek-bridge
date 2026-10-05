@@ -18,6 +18,8 @@ enum SyntheticTestMode {
         case "--synthetic-setup": setup()
         case "--synthetic-cleanup": cleanup()
         case "--synthetic-recurrence-probe": SyntheticRecurrenceProbe.run()
+        case "--synthetic-recurrence-sync-stage": SyntheticRecurrenceProbe.run(keepForRestart: true)
+        case "--synthetic-recurrence-sync-verify": SyntheticRecurrenceProbe.verifyAfterRestart()
         case "--synthetic-recurrence-cleanup": SyntheticRecurrenceProbe.cleanupOnly()
         case "--synthetic-all-day-probe": SyntheticAllDayProbe.run()
         case "--synthetic-all-day-cleanup": SyntheticAllDayProbe.cleanupOnly()

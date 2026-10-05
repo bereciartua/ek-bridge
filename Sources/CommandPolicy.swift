@@ -1,5 +1,15 @@
 import Foundation
 
+enum ReminderRecurrenceScope: String {
+    case occurrence
+    case series
+
+    static func parse(_ value: Any?) -> Self? {
+        guard let raw = value as? String else { return nil }
+        return Self(rawValue: raw)
+    }
+}
+
 // Strict shape checks run before EventKit is touched. The target comes from
 // the signed client's saved grant; empty IDs deny all item access.
 struct BridgeScope {
@@ -77,9 +87,12 @@ enum CommandPolicy {
                   ReminderRecurrenceChange.parse(parameters: p) != nil
             else { return "invalid_parameters_or_target" }
         case .completeReminder, .deleteReminder:
-            guard keys(p, ["listID", "itemID", "expectedVersion", "idempotencyKey"]),
+            guard keys(p, required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
+                       optional: ["recurrenceScope"]),
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
+                  (p["recurrenceScope"] == nil ||
+                   ReminderRecurrenceScope.parse(p["recurrenceScope"]) != nil),
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         }

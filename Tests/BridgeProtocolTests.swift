@@ -151,9 +151,23 @@ struct BridgeProtocolTests {
         precondition(MutationPolicy.reminderError(recurring: false, completed: true,
             completing: true) == "already_completed")
         precondition(MutationPolicy.reminderError(recurring: true, completed: false,
-            completing: true) == "recurrence_unsupported")
+            completing: true) == "recurrence_scope_required")
         precondition(MutationPolicy.reminderError(recurring: true, completed: false,
-            completing: false) == "recurrence_unsupported")
+            completing: false, recurrenceScope: .occurrence) == "recurrence_unsupported")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: false, recurrenceScope: .series) == "recurrence_unsupported")
+        precondition(MutationPolicy.reminderError(recurring: false, completed: false,
+            completing: false, recurrenceScope: .series) == "recurrence_scope_not_applicable")
+        let recurringAction: [String: Any] = [
+            "listID": "approved-list", "itemID": "item", "expectedVersion": "version",
+            "idempotencyKey": WriteIdempotencyKey.make(), "recurrenceScope": "occurrence",
+        ]
+        precondition(CommandPolicy.validate(request(.completeReminder, recurringAction),
+                                            scope: scope) == nil)
+        var invalidScope = recurringAction
+        invalidScope["recurrenceScope"] = "all"
+        precondition(CommandPolicy.validate(request(.deleteReminder, invalidScope),
+                                            scope: scope) != nil)
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("eventkit-journal-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temporary) }
