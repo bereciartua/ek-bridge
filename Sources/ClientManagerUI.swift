@@ -45,6 +45,10 @@ final class ClientManagerUI {
     private var windowController: NSWindowController?
     private var activityWindowController: NSWindowController?
     #if EVENTKIT_UI_REVIEW
+    var reviewActivityWindow: NSWindow? { activityWindowController?.window }
+    func showReviewActivity() { showActivity(nil) }
+    #endif
+    #if EVENTKIT_UI_REVIEW
     var reviewWindow: NSWindow? { windowController?.window }
     #endif
     private var clientList = NSStackView()
@@ -532,13 +536,17 @@ final class ClientManagerUI {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.documentView = text
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 360),
-                              styleMask: [.titled, .closable, .resizable],
-                              backing: .buffered, defer: false)
-        window.title = "Recent Bridge Activity"
-        window.contentView = scroll
-        window.center()
-        activityWindowController = NSWindowController(window: window)
+        if let existing = activityWindowController?.window {
+            existing.contentView = scroll
+        } else {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 360),
+                                  styleMask: [.titled, .closable, .resizable],
+                                  backing: .buffered, defer: false)
+            window.title = "Recent Bridge Activity"
+            window.contentView = scroll
+            window.center()
+            activityWindowController = NSWindowController(window: window)
+        }
         activityWindowController?.showWindow(nil)
     }
 

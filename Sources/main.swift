@@ -174,6 +174,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         openControls(nil)
         showReviewClients()
         if CommandLine.arguments.contains("--ui-window-lifecycle-test") {
+            clientManager.showReviewActivity()
             reviewWindowLifecycle(cycle: 1)
         } else if CommandLine.arguments.contains("--ui-visual-review") {
             let result: [String: Any] = [
@@ -508,24 +509,33 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     private func reviewWindowLifecycle(cycle: Int) {
         guard let controls = controlsWindowController?.window,
               let clients = clientManager.reviewWindow,
-              controls.isVisible, clients.isVisible,
-              !controls.isReleasedWhenClosed, !clients.isReleasedWhenClosed else {
+              let activity = clientManager.reviewActivityWindow,
+              controls.isVisible, clients.isVisible, activity.isVisible,
+              !controls.isReleasedWhenClosed, !clients.isReleasedWhenClosed,
+              !activity.isReleasedWhenClosed else {
             reportWindowReview("window_missing_or_released", cycle: cycle)
             return
         }
         let controlsID = ObjectIdentifier(controls)
         let clientsID = ObjectIdentifier(clients)
+        let activityID = ObjectIdentifier(activity)
         controls.close()
         clients.close()
+        activity.close()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self else { return }
             self.openControls(nil)
             self.showReviewClients()
+            self.clientManager.showReviewActivity()
+            self.clientManager.showReviewActivity()
             guard let reopenedControls = self.controlsWindowController?.window,
                   let reopenedClients = self.clientManager.reviewWindow,
+                  let reopenedActivity = self.clientManager.reviewActivityWindow,
                   ObjectIdentifier(reopenedControls) == controlsID,
                   ObjectIdentifier(reopenedClients) == clientsID,
+                  ObjectIdentifier(reopenedActivity) == activityID,
                   reopenedControls.isVisible, reopenedClients.isVisible,
+                  reopenedActivity.isVisible,
                   reopenedControls.frame.width >= 850,
                   reopenedClients.frame.width >= 990 else {
                 self.reportWindowReview("reopen_failed", cycle: cycle)
