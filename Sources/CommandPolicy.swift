@@ -37,10 +37,12 @@ enum CommandPolicy {
                   p["afterID"] == nil || item(p["afterID"])
             else { return "invalid_parameters_or_target" }
         case .createEvent:
-            guard keys(p, ["calendarID", "title", "start", "end", "idempotencyKey"]),
+            guard keys(p, required: ["calendarID", "title", "start", "end", "idempotencyKey"],
+                       optional: ["allDay", "timeZone", "notes"]),
                   target(p, "calendarID", scope.calendarID),
                   title(p["title"]),
-                  dateRange(p["start"], p["end"]),
+                  EventCreationDetails.parse(p) != nil,
+                  (p["allDay"] != nil || dateRange(p["start"], p["end"])),
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .updateEvent:

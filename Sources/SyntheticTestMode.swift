@@ -17,6 +17,10 @@ enum SyntheticTestMode {
         case "--synthetic-status": status()
         case "--synthetic-setup": setup()
         case "--synthetic-cleanup": cleanup()
+        case "--synthetic-recurrence-probe": SyntheticRecurrenceProbe.run()
+        case "--synthetic-recurrence-cleanup": SyntheticRecurrenceProbe.cleanupOnly()
+        case "--synthetic-all-day-probe": SyntheticAllDayProbe.run()
+        case "--synthetic-all-day-cleanup": SyntheticAllDayProbe.cleanupOnly()
         default: report("invalid_arguments")
         }
     }

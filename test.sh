@@ -16,6 +16,7 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
@@ -64,6 +65,7 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \

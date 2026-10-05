@@ -11,6 +11,9 @@ test_flag=""
 if [ "${EVENTKIT_SYNTHETIC_TEST:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_SYNTHETIC_TEST"
 fi
+if [ "${EVENTKIT_UI_REVIEW:-0}" = "1" ]; then
+    test_flag="-D EVENTKIT_UI_REVIEW"
+fi
 
 mkdir -p "$contents_dir/MacOS" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
@@ -29,6 +32,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientManagerUI.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
@@ -40,6 +44,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
     "$project_dir/Sources/SyntheticTestMode.swift" \
+    "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
+    "$project_dir/Sources/SyntheticAllDayProbe.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 xcrun swiftc -sdk "$sdk_dir" \

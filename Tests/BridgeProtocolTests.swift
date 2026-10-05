@@ -115,6 +115,28 @@ struct BridgeProtocolTests {
             "calendarID": "approved", "title": "Test", "start": 1000, "end": 2000,
             "idempotencyKey": WriteIdempotencyKey.make(), "recurrence": "daily"
         ]), scope: scope) != nil)
+        var ny = Calendar(identifier: .gregorian)
+        ny.timeZone = TimeZone(identifier: "America/New_York")!
+        let allDayStart = ny.date(from: DateComponents(year: 2026, month: 10, day: 14))!.timeIntervalSince1970
+        let allDayEnd = ny.date(from: DateComponents(year: 2026, month: 10, day: 16))!.timeIntervalSince1970
+        let allDay: [String: Any] = [
+            "calendarID": "approved", "title": "Synthetic all-day test", "start": allDayStart,
+            "end": allDayEnd, "allDay": true, "timeZone": "America/New_York",
+            "notes": "Source: https://example.test/", "idempotencyKey": WriteIdempotencyKey.make(),
+        ]
+        precondition(CommandPolicy.validate(request(.createEvent, allDay), scope: scope) == nil)
+        var invalidAllDay = allDay
+        invalidAllDay["start"] = allDayStart + 3600
+        precondition(CommandPolicy.validate(request(.createEvent, invalidAllDay), scope: scope) != nil)
+        invalidAllDay = allDay
+        invalidAllDay["timeZone"] = "Invalid/Zone"
+        precondition(CommandPolicy.validate(request(.createEvent, invalidAllDay), scope: scope) != nil)
+        invalidAllDay = allDay
+        invalidAllDay["notes"] = String(repeating: "x", count: 2_001)
+        precondition(CommandPolicy.validate(request(.createEvent, invalidAllDay), scope: scope) != nil)
+        invalidAllDay = allDay
+        invalidAllDay["allDay"] = false
+        precondition(CommandPolicy.validate(request(.createEvent, invalidAllDay), scope: scope) != nil)
         precondition(MutationPolicy.eventError(recurring: true, allDay: false,
             hasAttendees: false, floatingTime: false, updating: true) == "recurrence_unsupported")
         precondition(MutationPolicy.eventError(recurring: false, allDay: true,

@@ -135,17 +135,60 @@ final class EventKitCommands {
             guard let calendar = writableCalendar(p["calendarID"], .event) else {
                 completion(["error": "target_not_writable"]); return
             }
+            guard let details = EventCreationDetails.parse(p) else {
+                completion(["error": "invalid_event_schedule"]); return
+            }
             let event = EKEvent(eventStore: store)
             event.calendar = calendar
             event.title = p["title"] as? String
-            event.startDate = Date(timeIntervalSince1970: (p["start"] as! NSNumber).doubleValue)
-            event.endDate = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
-            event.isAllDay = false
-            event.timeZone = TimeZone(secondsFromGMT: 0)
+            let requestedStart = Date(timeIntervalSince1970: (p["start"] as! NSNumber).doubleValue)
+            let requestedEnd = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
+            event.startDate = requestedStart
+            event.endDate = requestedEnd
+            switch details {
+            case .timed:
+                event.isAllDay = false
+                event.timeZone = TimeZone(secondsFromGMT: 0)
+            case .allDay(let zone, let notes):
+                event.timeZone = zone
+                event.isAllDay = true
+                event.notes = notes
+            }
             guard reserveWrite(request, completion) else { return }
             do {
                 try store.save(event, span: .thisEvent)
-                finishWrite(["item": eventReceipt(event)], request, completion)
+                var receipt = eventReceipt(event)
+                if case .allDay(let zone, let notes) = details {
+                    let persisted = event.eventIdentifier.flatMap(store.event(withIdentifier:))
+                    var local = Calendar(identifier: .gregorian)
+                    local.timeZone = zone
+                    let sameDays = persisted.map {
+                        local.isDate($0.startDate, inSameDayAs: requestedStart) &&
+                        // iCloud EventKit represents an all-day exclusive end
+                        // as the preceding day's 23:59:59 on this Mac.
+                        ($0.endDate == requestedEnd ||
+                         $0.endDate == requestedEnd.addingTimeInterval(-1))
+                    } ?? false
+                    guard let persisted,
+                          persisted.calendar.calendarIdentifier == calendar.calendarIdentifier,
+                          persisted.title == event.title,
+                          persisted.isAllDay, sameDays, persisted.notes == notes else {
+                        do {
+                            try store.remove(event, span: .thisEvent)
+                            finishWrite(["error": "all_day_readback_failed_rolled_back"], request, completion)
+                        } catch {
+                            finishWrite(["error": "all_day_readback_failed_cleanup_needed",
+                                         "itemID": event.eventIdentifier ?? ""], request, completion)
+                        }
+                        return
+                    }
+                    receipt["allDayVerified"] = true
+                    receipt["notesVerified"] = true
+                    receipt["start"] = persisted.startDate.timeIntervalSince1970
+                    receipt["end"] = persisted.endDate.timeIntervalSince1970
+                    receipt["endExclusive"] = requestedEnd.timeIntervalSince1970
+                }
+                finishWrite(["item": receipt], request, completion)
             } catch { completion(["error": "save_failed"]) }
         case .updateEvent, .deleteEvent:
             guard writableCalendar(p["calendarID"], .event) != nil,

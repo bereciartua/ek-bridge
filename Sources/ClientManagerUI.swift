@@ -7,11 +7,29 @@ import EventKit
 final class ClientManagerUI {
     private struct Collection {
         let resource: ClientResource
-        let calendar: EKCalendar
-        var id: String { calendar.calendarIdentifier }
-        var name: String { calendar.title }
-        var account: String { calendar.source.title }
-        var writable: Bool { calendar.allowsContentModifications }
+        let id: String
+        let name: String
+        let account: String
+        let writable: Bool
+
+        init(resource: ClientResource, calendar: EKCalendar) {
+            self.resource = resource
+            self.id = calendar.calendarIdentifier
+            self.name = calendar.title
+            self.account = calendar.source.title
+            self.writable = calendar.allowsContentModifications
+        }
+
+        #if EVENTKIT_UI_REVIEW
+        init(resource: ClientResource, id: String, name: String,
+             account: String, writable: Bool) {
+            self.resource = resource
+            self.id = id
+            self.name = name
+            self.account = account
+            self.writable = writable
+        }
+        #endif
     }
 
     private struct GrantRow {
@@ -285,6 +303,13 @@ final class ClientManagerUI {
     }
 
     private func availableCollections() -> [Collection] {
+        #if EVENTKIT_UI_REVIEW
+        return (0..<24).map { index in
+            Collection(resource: index < 16 ? .calendar : .reminderList,
+                       id: "synthetic-\(index)", name: "Sample collection \(index + 1)",
+                       account: "Preview account", writable: true)
+        }
+        #else
         var collections = [Collection]()
         if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             collections += store.calendars(for: .event).map { Collection(resource: .calendar, calendar: $0) }
@@ -297,6 +322,7 @@ final class ClientManagerUI {
             if $0.account != $1.account { return $0.account.localizedStandardCompare($1.account) == .orderedAscending }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
+        #endif
     }
 
     private func addGrantRow(_ collection: Collection, client: ClientView) {
@@ -340,8 +366,8 @@ final class ClientManagerUI {
             return (bit, check)
         }
         stack.addArrangedSubview(choices)
-        stack.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
         detail.addArrangedSubview(stack)
+        stack.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -48).isActive = true
         rows.append(GrantRow(collection: collection, controls: controls))
     }
 
@@ -372,6 +398,7 @@ final class ClientManagerUI {
         saveButton?.isEnabled = true
         discardButton?.isEnabled = true
     }
+
 
     @objc private func discardChanges(_ sender: Any?) {
         guard confirmDiscardIfNeeded() else { return }
