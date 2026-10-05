@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "due.date_time: 2026-11-01T01:30:00 happens twice in America/New_York, and a reminder keeps only the wall-clock time, so only the first one (-04:00) can be saved. Use a different time",
+    "text" : "Invalid arguments: due.date_time: 2026-11-01T01:30:00 happens twice in America/New_York, and a reminder keeps only the wall-clock time, so only the first one (-04:00) can be saved. Use a different time. (code: invalid_arguments)"
+  }
+}

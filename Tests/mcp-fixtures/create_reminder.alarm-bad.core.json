@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarm: expected at_due, none, or an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"soon\"",
+    "text" : "Invalid arguments: alarm: expected at_due, none, or an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"soon\". (code: invalid_arguments)"
+  }
+}

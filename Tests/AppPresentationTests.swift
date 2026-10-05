@@ -18,9 +18,16 @@ struct AppPresentationTests {
     // Every code the bridge can return has an entry in the outcome map.
     static func outcomeMapCoversEmittedCodes() throws {
         let sources = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
-        let files = try FileManager.default.contentsOfDirectory(atPath: sources.path)
-            .filter { $0.hasSuffix(".swift") && !$0.hasPrefix("Synthetic") &&
-                $0 != "TestCollections.swift" && $0 != "BridgeClient.swift" }
+        // Recursive, so Sources/MCP is covered too.
+        let files = (FileManager.default.subpaths(atPath: sources.path) ?? [])
+            .filter { path in
+                let name = (path as NSString).lastPathComponent
+                return name.hasSuffix(".swift") && !name.hasPrefix("Synthetic") &&
+                    name != "TestCollections.swift" && name != "BridgeClient.swift" &&
+                    name != "MCPLauncher.swift" &&
+                    // OAuth protocol errors (RFC 6749), not bridge outcomes.
+                    !name.hasPrefix("OAuth") && name != "CIMDFetcher.swift"
+            }
         let patterns = [
             #""error": "([a-z_]+)""#,
             #"\.reject\("([a-z_]+)"\)"#,
@@ -156,6 +163,11 @@ struct AppPresentationTests {
         precondition(problems(.failed("x"), calendar: .notDetermined, policy: false) ==
                      [.bridgeFailed, .policyStoreUnavailable, .calendarAccess(.notDetermined)])
         precondition(AttentionProblem.remindersAccess(.denied).title == "Reminders access is turned off")
+        // Only an enabled MCP server that failed is a problem.
+        precondition(AttentionLogic.problems(bridge: .on, calendar: .fullAccess, reminders: .fullAccess,
+                                             clients: [], policyStoreAvailable: true,
+                                             mcpFailure: "Port 47615 is in use") ==
+                     [.mcpServerFailed("Port 47615 is in use")])
     }
 
     static func checklist() {
@@ -164,7 +176,8 @@ struct AppPresentationTests {
                                          clients: [], bridgeOn: false, successfulClientIDs: [])
         var states = SetupChecklist.states(input)
         precondition(states[.calendarAccess] == .current)
-        precondition(Step.allCases.dropFirst().allSatisfy { states[$0] == .pending })
+        precondition(SetupChecklist.steps(input).dropFirst().allSatisfy { states[$0] == .pending })
+        precondition(states[.mcpServer] == nil, "the MCP step needs an MCP client")
         input.calendar = .fullAccess
         states = SetupChecklist.states(input)
         precondition(states[.calendarAccess] == .done && states[.remindersAccess] == .current)
@@ -186,6 +199,24 @@ struct AppPresentationTests {
         precondition(SetupChecklist.isComplete(input))
         input.skipped = [.remindersAccess]
         precondition(SetupChecklist.states(input)[.remindersAccess] == .skipped)
+        // An MCP client adds "Turn on the MCP server" before "Connect your tool".
+        var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [
+            ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
+        agent.hasSigningKey = false
+        agent.hasMCPToken = true
+        var mcp = input
+        mcp.clients = [agent]
+        mcp.successfulClientIDs = []
+        precondition(SetupChecklist.steps(mcp).suffix(3) == [.turnOn, .mcpServer, .testRequest])
+        precondition(SetupChecklist.states(mcp)[.mcpServer] == .current)
+        mcp.mcpListening = true
+        precondition(SetupChecklist.states(mcp)[.mcpServer] == .done &&
+                     SetupChecklist.states(mcp)[.testRequest] == .current)
+        precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6,
+                     "stored skipped steps keep their meaning")
+        precondition(ClientTransport(agent).badge == "MCP" && ClientTransport(client).badge == "CLI")
+        agent.hasSigningKey = true
+        precondition(ClientTransport(agent).badge == "MCP + CLI")
         // Steps stay usable out of order: turning the bridge on first works.
         let early = SetupChecklist.Input(calendar: .notDetermined, reminders: .notDetermined,
                                          clients: [], bridgeOn: true, successfulClientIDs: [])

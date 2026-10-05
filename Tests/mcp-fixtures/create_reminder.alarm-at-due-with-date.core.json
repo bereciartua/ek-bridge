@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarm: at_due needs a due time (due.date_time); for a due day use none or an ISO 8601 date-time",
+    "text" : "Invalid arguments: alarm: at_due needs a due time (due.date_time); for a due day use none or an ISO 8601 date-time. (code: invalid_arguments)"
+  }
+}

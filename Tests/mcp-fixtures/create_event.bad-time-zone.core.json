@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "time_zone: expected an IANA time zone like America/New_York; got \"Mars/Olympus\"",
+    "text" : "Invalid arguments: time_zone: expected an IANA time zone like America/New_York; got \"Mars/Olympus\". (code: invalid_arguments)"
+  }
+}

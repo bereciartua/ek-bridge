@@ -1,0 +1,1 @@
+claude mcp add-json --scope user eventkit-bridge '{"type":"http","url":"http://127.0.0.1:47615/mcp","headersHelper":"\"/Users/o'\''brien/Apps/EventKit Bridge.app/Contents/MacOS/bridge-mcp\" headers --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c --url http://127.0.0.1:47615/mcp"}'

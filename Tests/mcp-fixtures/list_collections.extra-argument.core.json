@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "calendar_id: unknown argument",
+    "text" : "Invalid arguments: calendar_id: unknown argument. (code: invalid_arguments)"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+  "list_id" : "LIST-GROC",
+  "next_occurrence" : {
+    "alarms" : [
+
+    ],
+    "completed" : false,
+    "due" : {
+      "date_time" : "2026-10-07T09:00:00-04:00",
+      "time_zone" : "America/New_York"
+    },
+    "id" : "R7",
+    "recurrence" : {
+      "frequency" : "daily",
+      "interval" : 1,
+      "supported" : true
+    },
+    "recurring" : true,
+    "title" : "Vitamins",
+    "version" : "1791216007.000000"
+  },
+  "reminder" : {
+    "alarms" : [
+
+    ],
+    "completed" : true,
+    "due" : {
+      "date_time" : "2026-10-06T09:00:00-04:00",
+      "time_zone" : "America/New_York"
+    },
+    "id" : "R7-DONE",
+    "recurrence" : null,
+    "recurring" : false,
+    "title" : "Vitamins",
+    "version" : "1791216007.000000"
+  }
+}

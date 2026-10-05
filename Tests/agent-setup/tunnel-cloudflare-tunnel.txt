@@ -1,0 +1,31 @@
+Cloudflare Tunnel (your own domain)
+preservesHost: false
+detectionHeader: CF-Ray
+
+commands:
+brew install cloudflared
+cloudflared tunnel login
+cloudflared tunnel create eventkit-bridge
+cloudflared tunnel route dns eventkit-bridge my-mac.tail1234.ts.net
+cloudflared tunnel run eventkit-bridge
+
+config.yml:
+tunnel: eventkit-bridge
+credentials-file: ~/.cloudflared/<tunnel-UUID>.json
+ingress:
+  - hostname: my-mac.tail1234.ts.net
+    service: http://127.0.0.1:47616
+    originRequest:
+      httpHostHeader: "127.0.0.1:47616"
+  - service: http_status:404
+
+steps:
+1. You need a domain on Cloudflare. The login command opens your browser.
+2. Before you run the tunnel, save the configuration as ~/.cloudflared/config.yml, with <tunnel-UUID> replaced by the ID that tunnel create printed.
+3. Paste https:// and your hostname under Address, then click Test.
+4. To turn it off, press Control-C in the Terminal window running cloudflared.
+
+notes:
+- TLS ends at Cloudflare's edge, so Cloudflare can read the traffic, calendar data included.
+- The configuration rewrites Host to this Mac's address.
+- Optionally, put Cloudflare Access service tokens in front for agents that can send two extra headers, such as Cursor, Copilot and Devin.

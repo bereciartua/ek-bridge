@@ -1,0 +1,10 @@
+{
+  "allDay" : true,
+  "calendarID" : "CAL-WORK",
+  "end" : 1798347600,
+  "idempotencyKey" : "$generated",
+  "notes" : "Out of office",
+  "start" : 1798088400,
+  "timeZone" : "America/New_York",
+  "title" : "Holidays"
+}

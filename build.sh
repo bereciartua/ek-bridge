@@ -25,7 +25,7 @@ xcrun swiftc -parse-as-library \
     -Xcc "-fmodules-cache-path=$cache_dir" \
     -target arm64-apple-macosx14.0 \
     -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
-    -framework SwiftUI \
+    -framework SwiftUI -framework Network -framework IOKit \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
@@ -59,6 +59,31 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ApprovalCenter.swift" \
+    "$project_dir/Sources/ApprovalPanel.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
+    "$project_dir/Sources/ConnectAgentView.swift" \
+    "$project_dir/Sources/MCP/AgentOutcomeText.swift" \
+    "$project_dir/Sources/MCP/HTTPMessage.swift" \
+    "$project_dir/Sources/MCP/JSONRPC.swift" \
+    "$project_dir/Sources/MCP/LoopbackHTTPServer.swift" \
+    "$project_dir/Sources/MCP/MCPEndpointFile.swift" \
+    "$project_dir/Sources/MCP/MCPServer.swift" \
+    "$project_dir/Sources/MCP/MCPService.swift" \
+    "$project_dir/Sources/MCP/MCPTime.swift" \
+    "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
+    "$project_dir/Sources/MCP/MCPToolMapping.swift" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Sources/MCP/RemoteMCPService.swift" \
+    "$project_dir/Sources/MCP/OAuthTypes.swift" \
+    "$project_dir/Sources/MCP/OAuthServer.swift" \
+    "$project_dir/Sources/MCP/OAuthStore.swift" \
+    "$project_dir/Sources/MCP/OAuthPages.swift" \
+    "$project_dir/Sources/MCP/CIMDFetcher.swift" \
+    "$project_dir/Sources/RemoteAccessView.swift" \
+    "$project_dir/Sources/RemoteAccessSupport.swift" \
     "$project_dir/Sources/SyntheticTestMode.swift" \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
     "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
@@ -70,12 +95,27 @@ xcrun swiftc -sdk "$sdk_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$output_dir/bridge-client"
 
+# The MCP launcher agents run (Contents/MacOS/bridge-mcp): no AppKit or EventKit.
+xcrun swiftc -parse-as-library -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    -target arm64-apple-macosx14.0 \
+    "$project_dir/Sources/MCPLauncher.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    -o "$contents_dir/MacOS/bridge-mcp"
+
 # Default signing is ad hoc for build validation only. Use the same approved
 # identity for installed updates when testing permission-grant persistence.
+# The launcher is signed first, then the app around it.
 sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
+bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents_dir/Info.plist")
+codesign --force --sign "$sign_identity" --options runtime \
+    --identifier "$bundle_id.bridge-mcp" "$contents_dir/MacOS/bridge-mcp"
 codesign --force --sign "$sign_identity" --options runtime \
     --entitlements "$project_dir/Entitlements.plist" "$app_dir"
+codesign --verify --deep --strict "$app_dir"
 printf '%s\n' "$app_dir"

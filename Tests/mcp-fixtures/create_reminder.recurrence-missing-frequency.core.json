@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence.frequency: expected daily, weekly, monthly or yearly",
+    "text" : "Invalid arguments: recurrence.frequency: expected daily, weekly, monthly or yearly. (code: invalid_arguments)"
+  }
+}

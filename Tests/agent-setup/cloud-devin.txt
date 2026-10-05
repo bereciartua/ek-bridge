@@ -1,0 +1,20 @@
+Devin
+credential: bearer
+needsLiteralToken: true
+
+snippet (values):
+Server name: eventkit-bridge
+Transport: HTTP
+Server URL: https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp
+Authentication: Auth Header
+Header key: Authorization
+Header value: Bearer <remote token from Copy Remote Token…>
+
+steps:
+1. In Devin, open Customize ▸ MCPs, choose Add MCP, then Add custom MCP.
+2. Enter these values.
+3. Paste the token from Copy Remote Token… on the “claude.ai” client.
+4. Click Test tools.
+
+warnings:
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.

@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence.day_of_month: only for monthly rules",
+    "text" : "Invalid arguments: recurrence.day_of_month: only for monthly rules. (code: invalid_arguments)"
+  }
+}

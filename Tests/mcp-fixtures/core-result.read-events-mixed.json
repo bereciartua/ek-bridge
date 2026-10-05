@@ -1,0 +1,96 @@
+{
+  "tool": "read_events",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "start": "2026-12-20T00:00:00-05:00",
+    "end": "2027-01-10T00:00:00-05:00"
+  },
+  "core": {
+    "items": [
+      {
+        "id": "EV-R",
+        "title": "Weekly sync",
+        "titleTruncated": false,
+        "start": 1797861600,
+        "end": 1797865200,
+        "recurring": true,
+        "allDay": false,
+        "timeZone": "America/New_York",
+        "hasAttendees": false,
+        "version": "1791200000.123456"
+      },
+      {
+        "id": "EV-I",
+        "title": "Invitation",
+        "titleTruncated": false,
+        "start": 1797951600,
+        "end": 1797955200,
+        "recurring": false,
+        "allDay": false,
+        "timeZone": "Europe/London",
+        "hasAttendees": true,
+        "version": "1791200000.123456"
+      },
+      {
+        "id": "EV-A",
+        "title": "Holidays",
+        "titleTruncated": false,
+        "start": 1798088400,
+        "end": 1798347599,
+        "recurring": false,
+        "allDay": true,
+        "timeZone": "America/New_York",
+        "hasAttendees": false,
+        "version": "1791200000.123456"
+      },
+      {
+        "id": "EV-F",
+        "title": "Floating brunch",
+        "titleTruncated": false,
+        "start": 1798210800,
+        "end": 1798214400,
+        "recurring": false,
+        "allDay": false,
+        "timeZone": "",
+        "hasAttendees": false
+      },
+      {
+        "id": "EV-N",
+        "title": "New Year's Eve",
+        "titleTruncated": false,
+        "start": 1798693200,
+        "end": 1798779600,
+        "recurring": false,
+        "allDay": true,
+        "timeZone": "",
+        "hasAttendees": false,
+        "version": "1791200000.123456"
+      },
+      {
+        "id": "EV-K",
+        "title": "New Year in Kolkata",
+        "titleTruncated": false,
+        "start": 1798741800,
+        "end": 1798828200,
+        "recurring": false,
+        "allDay": true,
+        "timeZone": "Asia/Calcutta",
+        "hasAttendees": false,
+        "version": "1791200000.123456"
+      },
+      {
+        "id": "EV-T",
+        "title": "A title that the core cut at 200 bytes",
+        "titleTruncated": true,
+        "start": 1798756200,
+        "end": 1798759800,
+        "recurring": false,
+        "allDay": false,
+        "timeZone": "GMT",
+        "hasAttendees": false,
+        "version": "1791200000.123456"
+      }
+    ],
+    "truncated": false
+  }
+}

@@ -187,6 +187,8 @@ def main() -> int:
         f.write_registry(twins, 2, [(twin_a, "Twin", False), (twin_b, "twin ", False)])
         v2_registry = f.make_dir(f.tmp / "support-v2")
         f.write_registry(v2_registry, 2, [(f.alpha, "Alpha Tool", False)])
+        v4_registry = f.make_dir(f.tmp / "support-v4")
+        f.write_registry(v4_registry, 4, [(f.alpha, "Alpha Tool", False)])
         empty_root = f.make_dir(f.tmp / "empty-root")
         stale_root, _ = f.fake_bridge("stale-root", session_dir=False)
         idle_root, _ = f.fake_bridge("idle-root")
@@ -219,11 +221,14 @@ def main() -> int:
             ("--help", ["--help"], 0, None, None, {},
              lambda out: out.startswith("Usage: client.py COMMAND") and
              "read_reminders" in out and "Needs Read access to the list." in out and
+             "List calendars and lists. Needs an active client." in out and
              "client ID" in out and "--params-file -" in out),
             ("-h", ["-h"], 0, None, None, {}, has("Usage: client.py COMMAND")),
             ("read_events --help", ["read_events", "--help"], 0, None, None, {},
              has("Usage: client.py read_events", "Needs Read access to the calendar.",
                  "Required: calendarID, start, end, limit")),
+            ("list_collections --help", ["list_collections", "--help"], 0, None, None, {},
+             has("Usage: client.py list_collections", "Needs an active client.")),
             ("read_reminders -h", ["read_reminders", "-h"], 0, None, None, {},
              has("Required: listID, limit", "Optional: afterID")),
             ("help create_event", ["help", "create_event"], 0, None, None, {},
@@ -285,6 +290,9 @@ def main() -> int:
             ("--client with version 2 registry", ["scope_status", "--client", "alpha tool"], 4,
              f"error: key file not found: {v2_registry / 'client-credentials' / (f.alpha + '.json')}",
              None, {"env": {"EVENTKIT_TEST_SUPPORT_DIR": v2_registry}}, None),
+            ("--client with version 4 registry", ["scope_status", "--client", "alpha tool"], 4,
+             f"error: key file not found: {v4_registry / 'client-credentials' / (f.alpha + '.json')}",
+             None, {"env": {"EVENTKIT_TEST_SUPPORT_DIR": v4_registry}}, None),
             ("--client name shared by two active clients", ["scope_status", "--client", "twin"], 2,
              f"error: more than one active client is named \"twin\". Use --client with one of these IDs: "
              f"{twin_a}, {twin_b}", None, {"env": {"EVENTKIT_TEST_SUPPORT_DIR": twins}}, None),

@@ -12,7 +12,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     init(model: BridgeAppModel) {
         self.model = model
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -28,6 +28,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.bridge
             _ = model.needsAttention
             _ = model.statusSubtitle
+            _ = model.pendingApprovalCount
+            _ = model.remoteEnabled
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 self?.updateIcon()
@@ -51,11 +53,34 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             symbol = "calendar"
             state = String(localized: "off")
         }
-        let label = String(localized: "\(AppIdentity.displayName), \(state)")
+        let pending = model.pendingApprovalCount
+        var label = String(localized: "\(AppIdentity.displayName), \(state)")
+        if pending > 0 {
+            label += ", " + (pending == 1 ? String(localized: "1 change waiting for approval")
+                                          : String(localized: "\(pending) changes waiting for approval"))
+        }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular))
         image?.isTemplate = true
         button.image = image
+        // The pending count, and a globe while Remote Access is on, sit beside
+        // the icon.
+        let title = NSMutableAttributedString()
+        if model.remoteEnabled, let globe = NSImage(systemSymbolName: "globe",
+                                                   accessibilityDescription: String(localized: "Remote Access on")) {
+            let attachment = NSTextAttachment()
+            attachment.image = globe.withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+            title.append(NSAttributedString(attachment: attachment))
+        }
+        if pending > 0 {
+            title.append(NSAttributedString(string: "\(pending)", attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.systemRed]))
+        }
+        button.imagePosition = title.length > 0 ? .imageLeading : .imageOnly
+        button.attributedTitle = title
+        if model.remoteEnabled { label += ", " + String(localized: "Remote Access on") }
+        button.setAccessibilityLabel(label)
         button.appearsDisabled = !model.bridge.isOn && !model.needsAttention
         button.setAccessibilityLabel(label)
         button.toolTip = "\(AppIdentity.displayName)\n\(model.statusSubtitle)"
@@ -82,7 +107,44 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let headerItem = NSMenuItem()
         headerItem.view = headerView
         menu.addItem(headerItem)
+        let mcpLine = model.mcpEnabled
+            ? (model.mcpListeningPort.map { String(localized: "MCP server · port \(String($0))") }
+                ?? (model.mcpFailureText != nil ? String(localized: "MCP server · couldn't start")
+                                                : String(localized: "MCP server · starting")))
+            : String(localized: "MCP server · off")
+        let mcpItem = item(mcpLine) { [weak self] in
+            self?.model.settingsScrollTarget = "mcp"
+            self?.model.show(.settings)
+        }
+        mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: .secondaryLabelColor), mcpLine)
+        mcpItem.toolTip = String(localized: "Open Settings ▸ MCP Server")
+        menu.addItem(mcpItem)
+        if model.remoteEnabled {
+            let line = model.remoteMenuLine
+            let remoteItem = item(line) { [weak self] in
+                self?.model.settingsScrollTarget = "remote"
+                self?.model.show(.settings)
+            }
+            remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)
+            menu.addItem(remoteItem)
+            // One click cuts all cloud access (R5).
+            let off = item(String(localized: "Turn Off Remote Access")) { [weak self] in
+                self?.model.applyRemoteEnabled(false)
+            }
+            off.attributedTitle = iconTitle(nil, String(localized: "Turn Off Remote Access"))
+            menu.addItem(off)
+        }
         menu.addItem(.separator())
+
+        let pending = model.pendingApprovalCount
+        if pending > 0 {
+            let title = pending == 1 ? String(localized: "1 change waiting for approval…")
+                                     : String(localized: "\(pending) changes waiting for approval…")
+            let approvals = item(title) { [weak self] in self?.model.showApprovals() }
+            approvals.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
+            menu.addItem(approvals)
+            menu.addItem(.separator())
+        }
 
         let problems = model.problems
         for problem in problems {
@@ -145,6 +207,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .calendarAccess: model.openPrivacySettings(.calendar)
         case .remindersAccess: model.openPrivacySettings(.reminderList)
         case .policyStoreUnavailable, .bridgeFailed: model.show(.overview)
+        case .mcpServerFailed:
+            model.settingsScrollTarget = "mcp"
+            model.show(.settings)
+        case .remoteAccessFailed:
+            model.settingsScrollTarget = "remote"
+            model.show(.settings)
         }
     }
 

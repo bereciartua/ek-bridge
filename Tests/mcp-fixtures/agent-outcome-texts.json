@@ -1,0 +1,555 @@
+[
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "read_events"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't edit events in that calendar. If it should be able to, ask the user to grant Edit for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "read_reminders"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't add reminders in that list. If it should be able to, ask the user to grant Create for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't edit reminders in that list. If it should be able to, ask the user to grant Edit for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't complete reminders in that list. If it should be able to, ask the user to grant Complete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't delete reminders in that list. If it should be able to, ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "completion_pending_reconciliation",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_pending_reconciliation)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "completion_readback_uncertain",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: completion_readback_uncertain)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: idempotency_pending_review)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "timeout",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: timeout)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. If the event is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "delete_event"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder doesn't show the change, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder isn't completed, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "write_committed_journal_pending_review",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the list to check. If the reminder is still there, retry this exact call with idempotency_key \"ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f\". Never retry with a new key. (code: write_committed_journal_pending_review)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "timeout",
+    "text" : "No answer in time: EventKit Bridge didn't answer in time. Try once more; if it fails again, tell the user to check EventKit Bridge. (code: timeout)",
+    "tool" : "read_reminders"
+  },
+  {
+    "code" : "rate_limited",
+    "retry_after" : 1,
+    "text" : "Too many requests: this agent is calling faster than EventKit Bridge allows. Wait 1 second before the next call, and don't loop. (code: rate_limited)",
+    "tool" : "read_events"
+  },
+  {
+    "code" : "rate_limited",
+    "text" : "Too many requests: this agent is calling faster than EventKit Bridge allows. Wait a minute before the next call, and don't loop. (code: rate_limited)",
+    "tool" : "read_events"
+  },
+  {
+    "code" : "invalid_arguments",
+    "text" : "Invalid arguments: the arguments don't match the tool's input schema. Fix them and call again. (code: invalid_arguments)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "invalid_parameters_or_target",
+    "detail" : "a hint",
+    "text" : "Rejected: the bridge rejected these values (a hint). Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters_or_target)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "full_access_required",
+    "text" : "Needs Full Access: macOS isn't giving EventKit Bridge Full Access to Calendars or Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
+    "tool" : "list_collections"
+  },
+  {
+    "code" : "full_access_required",
+    "text" : "Needs Full Access: macOS isn't giving EventKit Bridge Full Access to Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
+    "tool" : "read_reminders"
+  },
+  {
+    "code" : "target_unavailable",
+    "text" : "Not found: that calendar isn't available or its ID changed. Call list_collections to get current IDs. (code: target_unavailable)",
+    "tool" : "read_events"
+  },
+  {
+    "code" : "item_unavailable",
+    "text" : "Not found: that reminder isn't available or its ID changed. Read the list again to get current IDs. (code: item_unavailable)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "completed_reminder_due_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: completed_reminder_due_unsupported)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "recurrence_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Calendar. (code: recurrence_unsupported)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "idempotency_pending_review",
+    "text" : "Needs review: the change may have been saved, but the bridge couldn't confirm it. Read the calendar to check. Don't repeat the change until you have. (code: idempotency_pending_review)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "all_day_readback_failed_cleanup_needed",
+    "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "text" : "Needs review: the event was saved but didn't read back as requested, and the bridge couldn't remove it. Tell the user to check the calendar in Calendar; don't retry. (code: all_day_readback_failed_cleanup_needed)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "mystery_code",
+    "text" : "Error: EventKit Bridge returned mystery_code. Tell the user. (code: mystery_code)",
+    "tool" : "read_events"
+  },
+  {
+    "code" : "unauthorized",
+    "text" : "Access removed: this agent's access was removed in EventKit Bridge. Tell the user; don't retry. (code: unauthorized)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "bridge_off",
+    "text" : "Bridge off: EventKit Bridge is turned off. Ask the user to turn it on from the menu bar; don't retry until they do. (code: bridge_off)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "target_not_writable",
+    "text" : "Read only: that list is read-only. Choose another one from list_collections. (code: target_not_writable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "conflict",
+    "text" : "Out of date: the reminder changed since you read it. Read it again and retry with the new version. (code: conflict)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "occurrence_conflict",
+    "text" : "Out of date: the reminder changed since you read it. Read it again and retry with the new version. (code: occurrence_conflict)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "too_many_events_narrow_range",
+    "text" : "Too many events: more events matched than limit. Call again with a shorter range or a higher limit (max 100). (code: too_many_events_narrow_range)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "nonexistent_local_time",
+    "text" : "Time doesn't exist: that local time doesn't exist (clocks skip forward). Use a different time or give an offset. (code: nonexistent_local_time)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "ambiguous_local_time",
+    "text" : "Ambiguous time: that local time happens twice. Add the UTC offset you mean. (code: ambiguous_local_time)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_parameters",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_schedule",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_schedule)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_event_schedule",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_event_schedule)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "invalid_request",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_request)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_requires_due",
+    "text" : "Needs a due date: a repeating reminder needs a due date. Send due with the repeat rule and call again. (code: recurrence_requires_due)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_anchor_mismatch",
+    "text" : "Repeat doesn't match: the repeat rule doesn't fit the due date: weekdays or day_of_month must include the due day, and end_until must be after it. Fix the arguments and call again. (code: recurrence_anchor_mismatch)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_requires_alarm_reset",
+    "text" : "Needs due and alarm: adding a repeat rule to this reminder resets its alarm. Send due (and alarm, if any) along with recurrence and call again. (code: recurrence_requires_alarm_reset)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_scope_required",
+    "text" : "Needs occurrence: this reminder repeats. Read it again and pass its completion_candidate as occurrence; if it has none, tell the user to complete it in Reminders. (code: recurrence_scope_required)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_scope_not_applicable",
+    "text" : "Doesn't repeat: this reminder doesn't repeat. Call again without occurrence. (code: recurrence_scope_not_applicable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_shape_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: recurrence_shape_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "floating_time_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: floating_time_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "complex_alarm_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: complex_alarm_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "complex_start_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: complex_start_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "all_day_or_attendees_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: all_day_or_attendees_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "ambiguous_occurrence",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: ambiguous_occurrence)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "alarm_in_past",
+    "text" : "Alarm in the past: the alarm time is in the past. Call again with a future time or alarm \"none\". (code: alarm_in_past)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "already_completed",
+    "text" : "Already done: this was already done. Nothing to do; don't retry. (code: already_completed)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "occurrence_already_requested",
+    "text" : "Already done: this was already done. Nothing to do; don't retry. (code: occurrence_already_requested)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "approval_denied",
+    "text" : "Declined: the user declined this change in EventKit Bridge. Don't retry it unless the user asks you to. (code: approval_denied)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "approval_timed_out",
+    "text" : "Not approved in time: nobody answered the approval prompt in EventKit Bridge within 45 seconds. Ask the user whether to try again. (code: approval_timed_out)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "scope_changed",
+    "text" : "Access changed: access changed while this ran. Call list_collections, then try again if still allowed. (code: scope_changed)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "scope_changed_after_write",
+    "text" : "Access changed: access changed after the change was saved. Read to confirm the result; don't repeat the change. (code: scope_changed_after_write)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "journal_clock_rollback",
+    "text" : "Clock changed: the Mac's clock moved backwards, so the bridge is refusing changes for safety. Tell the user; don't retry. (code: journal_clock_rollback)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "idempotency_conflict",
+    "text" : "Key reused: that idempotency_key was used for a different change. Call again without idempotency_key for a new change. (code: idempotency_conflict)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "idempotency_expired",
+    "text" : "Key expired: that idempotency_key is too old. Read the reminder, then make the change without idempotency_key. (code: idempotency_expired)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_idempotency_key",
+    "text" : "Invalid key: that idempotency_key isn't one this server issued. Read the reminder, then make the change without idempotency_key. (code: invalid_idempotency_key)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "response_too_large",
+    "text" : "Result too large: the result is too large. Call again asking for fewer items with limit, or a shorter range. (code: response_too_large)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "cancelled",
+    "text" : "Cancelled: the request was cancelled before it finished, so nothing changed. Call again only if you still need it. (code: cancelled)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "save_failed",
+    "text" : "Error: EventKit Bridge couldn't complete this (saving failed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: save_failed)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "fetch_failed",
+    "text" : "Error: EventKit Bridge couldn't complete this (reading failed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: fetch_failed)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "all_day_readback_failed_rolled_back",
+    "text" : "Error: EventKit Bridge couldn't complete this (the saved event didn't match, so it was removed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: all_day_readback_failed_rolled_back)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "app_unavailable",
+    "text" : "Error: EventKit Bridge couldn't complete this (the app is quitting or busy). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: app_unavailable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "client_unavailable",
+    "text" : "Error: EventKit Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: client_unavailable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "activity_unavailable",
+    "text" : "Error: EventKit Bridge couldn't complete this (its activity log is unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: activity_unavailable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "journal_unavailable",
+    "text" : "Error: EventKit Bridge couldn't complete this (its write journal is unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: journal_unavailable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "journal_full",
+    "text" : "Error: EventKit Bridge couldn't complete this (its write journal is full). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: journal_full)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "unavailable",
+    "text" : "Error: EventKit Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: unavailable)",
+    "tool" : "complete_reminder"
+  }
+]

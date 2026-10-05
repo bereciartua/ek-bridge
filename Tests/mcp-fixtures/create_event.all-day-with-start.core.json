@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "start: not used for an all-day event; pass start_date and end_date (inclusive) instead",
+    "text" : "Invalid arguments: start: not used for an all-day event; pass start_date and end_date (inclusive) instead. (code: invalid_arguments)"
+  }
+}

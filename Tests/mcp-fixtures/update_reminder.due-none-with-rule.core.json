@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence: a repeating reminder needs a due date; don't combine it with due {\"none\": true}",
+    "text" : "Invalid arguments: recurrence: a repeating reminder needs a due date; don't combine it with due {\"none\": true}. (code: invalid_arguments)"
+  }
+}

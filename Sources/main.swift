@@ -30,6 +30,49 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     private let review = UIReview()
     #else
     private lazy var clientRegistry = ClientRegistry()
+    private let rateLimiter = RateLimiter()
+    private let mcpCounters = MCPTrafficCounters()
+    private lazy var approvals = ApprovalCenter(summarize: { [weak self] request in
+        ApprovalSummaries.build(request, store: self?.store, collections: self?.model.collections ?? [])
+    })
+    private lazy var approvalPanel = ApprovalPanelController(center: approvals)
+    private lazy var pipeline = RequestPipeline(
+        registry: clientRegistry, commands: commands,
+        collections: EventKitCollectionSource(store: store),
+        approvals: approvals, limiter: rateLimiter,
+        bridgeActive: { [weak self] in self?.localBridge?.active == true },
+        didRecord: { [weak self] in self?.model.scheduleRefresh() })
+    private lazy var mcpService: MCPService = {
+        let server = MCPServer(registry: clientRegistry, pipeline: pipeline, limiter: rateLimiter,
+                               counters: mcpCounters,
+                               didConnect: { [weak self] id, connection in
+                                   self?.model.mcpDidConnect(id, connection) })
+        let origins = Set(UserDefaults.standard.stringArray(forKey: "MCPServerAllowedOrigins") ?? [])
+        let service = MCPService(server: server, limiter: rateLimiter, counters: mcpCounters,
+                                 endpointFile: MCPEndpointFile(directory: Self.dataFolder),
+                                 allowedOrigins: origins)
+        service.statusChanged = { [weak self] status in self?.model.mcpStatusDidChange(status) }
+        return service
+    }()
+    private lazy var cimdFetcher = CIMDFetcher()
+    private lazy var oauth = OAuthServer(
+        directory: Self.dataFolder, fetcher: cimdFetcher,
+        clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
+        clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
+    private let keepAwake = KeepAwake()
+    private lazy var remoteService: RemoteMCPService = {
+        // A second protocol layer over the same pipeline: only credentials,
+        // limits and the gate differ.
+        let server = MCPServer(registry: clientRegistry, pipeline: pipeline, limiter: rateLimiter,
+                               counters: mcpCounters,
+                               didConnect: { [weak self] id, connection in
+                                   self?.model.mcpDidConnect(id, connection) })
+        let service = RemoteMCPService(server: server, registry: clientRegistry, limiter: rateLimiter,
+                                       counters: mcpCounters, oauth: oauth)
+        service.statusChanged = { [weak self] status in self?.model.remoteStatusDidChange(status) }
+        service.didServe = { [weak self] note in self?.model.remoteDidServe(note) }
+        return service
+    }()
     #endif
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
@@ -47,6 +90,18 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         windowController = MainWindowController(model: model)
         statusMenu = StatusMenuController(model: model)
+        #if !EVENTKIT_UI_REVIEW
+        approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
+        // If the listener didn't survive sleep, start it again.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.model.mcpEnabled, !self.model.mcpIsListening else { return }
+                self.model.retryMCPServer()
+            }
+        }
+        #endif
         NSApp.mainMenu = MainMenu.build(target: self)
         #if EVENTKIT_UI_REVIEW
         review.run(model: model, window: windowController, statusMenu: statusMenu)
@@ -77,6 +132,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Pasteboard.clearSecret()
+        #if !EVENTKIT_UI_REVIEW
+        // Waiting changes are refused, and the endpoint file goes away.
+        approvals.shutDown()
+        mcpService.stop()
+        remoteService.stop()
+        keepAwake.set(false)
+        #endif
         localBridge?.stop()
         localBridge = nil
         #if EVENTKIT_UI_REVIEW
@@ -87,13 +150,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     // MARK: Live services
 
     #if !EVENTKIT_UI_REVIEW
+    private static var dataFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true)
+    }
+
     private func liveServices() -> BridgeServices {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return BridgeServices(
+        BridgeServices(
             registry: clientRegistry,
             credentialFiles: ClientCredentialFiles(),
             defaults: .standard,
-            dataFolder: support.appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true),
+            dataFolder: Self.dataFolder,
             store: store,
             authorizationStatus: { EKEventStore.authorizationStatus(for: $0) },
             requestFullAccess: { [weak self] type, completion in
@@ -118,7 +185,27 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
-            testCollections: testCollections)
+            testCollections: testCollections,
+            mcp: MCPControls(
+                start: { [weak self] port in self?.mcpService.start(port: port) },
+                stop: { [weak self] in self?.mcpService.stop() },
+                counters: { [weak self] in self?.mcpCounters.snapshot ?? .init() },
+                launcherURL: Bundle.main.bundleURL
+                    .appendingPathComponent("Contents/MacOS/\(AppIdentity.launcherName)"),
+                portIsFree: { PortProbe.isFree($0) }),
+            approvals: approvals,
+            remote: RemoteControls(
+                start: { [weak self] in self?.remoteService.start($0) },
+                update: { [weak self] in self?.remoteService.update($0) },
+                stop: { [weak self] in self?.remoteService.stop() },
+                test: { [weak self] configuration, completion in
+                    guard let self else { return }
+                    RemoteProbe.test(configuration, nonces: self.remoteService.nonces, completion: completion)
+                },
+                portIsFree: { PortProbe.isFree($0) },
+                setKeepAwake: { [weak self] in self?.keepAwake.set($0) },
+                onACPower: { KeepAwake.onACPower },
+                oauth: oauth))
     }
 
     private func liveCollections() -> [CollectionInfo] {
@@ -155,6 +242,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         }
         bridgeEnablement.setEnabled(false)
         localBridge?.stop()
+        approvals.withdrawAll()
         return .off
     }
 
@@ -167,6 +255,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 self.handleClient(envelope, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
+                self?.approvals.withdrawAll()
                 self?.model.bridgeDidChange(.off)
             })
             return .on
@@ -177,76 +266,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
 
     private func handleClient(_ envelope: ClientBridgeEnvelope,
                               completion: @escaping ([String: Any]) -> Void) {
-        let request = envelope.request
-        let checked = clientRegistry.authorize(
+        switch clientRegistry.authenticateSignature(
             clientID: envelope.clientID, signature: envelope.signature,
-            signedPayload: envelope.signedPayload, request: request)
-        guard case .success(let call) = checked else {
-            let error: String
-            if case .failure(let reason) = checked { error = reason.rawValue }
-            else { error = "unauthorized" }
+            signedPayload: envelope.signedPayload, command: envelope.request.command) {
+        case .success(let id):
+            pipeline.handle(envelope.request, clientID: id, origin: .cli, completion: completion)
+        case .failure(let error):
             model.scheduleRefresh()
-            completion(["error": error])
-            return
+            completion(["error": error.rawValue])
         }
-        let selected = BridgeScope(
-            calendarID: call.grant?.resource == .calendar ? call.targetID : nil,
-            reminderListID: call.grant?.resource == .reminderList ? call.targetID : nil,
-            generation: call.revision)
-        if let error = CommandPolicy.validate(request, scope: selected) {
-            finishClient(call, ["error": error], completion)
-            return
-        }
-        guard clientRegistry.stillAuthorized(call), localBridge?.active == true else {
-            finishClient(call, ["error": "scope_changed"], completion)
-            return
-        }
-        switch request.command {
-        case .scopeStatus, .calendarCount, .reminderListCount:
-            guard let client = clientRegistry.clients()?.first(where: { $0.id == call.clientID }) else {
-                finishClient(call, ["error": "client_unavailable"], completion)
-                return
-            }
-            let grants = client.grants
-            if request.command == .scopeStatus {
-                let rows = grants.map { grant -> [String: Any] in
-                    ["resource": grant.resource.rawValue,
-                     "targetID": grant.targetID, "mask": grant.mask]
-                }
-                finishClient(call, ["grants": rows], completion)
-            } else {
-                let type: EKEntityType = request.command == .calendarCount ? .event : .reminder
-                guard EKEventStore.authorizationStatus(for: type) == .fullAccess else {
-                    finishClient(call, ["error": "full_access_required"], completion)
-                    return
-                }
-                let resource: ClientResource = type == .event ? .calendar : .reminderList
-                let allowed = Set(grants.filter { $0.resource == resource }.map(\.targetID))
-                let count = store.calendars(for: type).filter {
-                    allowed.contains($0.calendarIdentifier)
-                }.count
-                finishClient(call, ["count": count], completion)
-            }
-        default:
-            commands.runAuthorized(request, selected: selected,
-                                   stillAuthorized: { [weak self] in
-                guard let self else { return false }
-                return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
-            }) { [weak self] value in
-                self?.finishClient(call, value, completion)
-            }
-        }
-    }
-
-    private func finishClient(_ call: AuthorizedClientCall, _ value: [String: Any],
-                              _ completion: ([String: Any]) -> Void) {
-        let outcome = (value["error"] as? String).map { "error:\($0)" } ?? "success"
-        guard clientRegistry.recordResult(call, outcome: outcome) else {
-            completion(["error": "activity_unavailable"])
-            return
-        }
-        model.scheduleRefresh()
-        completion(value)
     }
     #endif
 

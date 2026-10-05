@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "version: required",
+    "text" : "Invalid arguments: version: required. (code: invalid_arguments)"
+  }
+}

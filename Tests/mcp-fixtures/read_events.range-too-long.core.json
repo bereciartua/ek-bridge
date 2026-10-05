@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "end: must be at most 31 days after start",
+    "text" : "Invalid arguments: end: must be at most 31 days after start. (code: invalid_arguments)"
+  }
+}

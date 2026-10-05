@@ -1,0 +1,11 @@
+{
+  "due" : {
+    "alarmAt" : 1793865600,
+    "date" : "2026-11-05",
+    "kind" : "all_day",
+    "timeZone" : "Europe/London"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "title" : "Buy bread"
+}

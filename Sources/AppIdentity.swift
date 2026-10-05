@@ -5,6 +5,12 @@ enum AppIdentity {
     /// Bundle IDs, data paths and protocol prefixes are separate decisions.
     static let displayName = "EventKit Bridge"
     static let dataFolderName = "EventKitBridge"
+    /// The key agents store this MCP server under. It becomes part of agents'
+    /// tool names (`mcp__eventkit-bridge__read_events`), so renaming it later
+    /// breaks users' allowlists. Keep it stable.
+    static let mcpServerKey = "eventkit-bridge"
+    /// The stdio launcher inside the app bundle (`Contents/MacOS/bridge-mcp`).
+    static let launcherName = "bridge-mcp"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"

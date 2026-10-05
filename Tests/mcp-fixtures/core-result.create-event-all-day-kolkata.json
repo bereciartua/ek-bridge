@@ -1,0 +1,21 @@
+{
+  "tool": "create_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "title": "Diwali",
+    "all_day": true,
+    "start_date": "2026-11-08",
+    "time_zone": "Asia/Kolkata"
+  },
+  "core": {
+    "item": {
+      "id": "EV4",
+      "version": "1791216002.000000",
+      "allDayVerified": true,
+      "notesVerified": true,
+      "start": 1794076200,
+      "end": 1794162600,
+      "endExclusive": 1794162600
+    }
+  }
+}

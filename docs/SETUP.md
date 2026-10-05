@@ -5,7 +5,7 @@ This guide describes the source build and the local choices needed before using 
 ## Requirements
 
 - macOS 14 or later according to `Info.plist`. Development has been exercised on one Mac with the macOS 26.5 SDK at `/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`; `build.sh` and `test.sh` currently hardcode that path. Other SDK versions are not validated by these scripts.
-- Xcode Command Line Tools with `xcrun`, `swiftc`, `clang`, `codesign`, and the AppKit, SwiftUI, EventKit, Security, and ServiceManagement frameworks. The app targets macOS 14 (`build.sh` passes `-target arm64-apple-macosx14.0`).
+- Xcode Command Line Tools with `xcrun`, `swiftc`, `clang`, `codesign`, and the AppKit, SwiftUI, EventKit, Security, ServiceManagement, Network, and IOKit frameworks (IOKit for Remote Access's keep-awake option). The app targets macOS 14 (`build.sh` passes `-target arm64-apple-macosx14.0`).
 - Python 3 for the small `client.py` launcher and test syntax check.
 - A Calendar and/or Reminders account already configured in macOS if you want to use synced collections. Provider behavior can differ.
 
@@ -17,7 +17,7 @@ sh build.sh
 codesign --verify --deep --strict build/EventKitBridge.app
 ```
 
-`build.sh` writes only to ignored `build/`. It makes `build/EventKitBridge.app` and `build/bridge-client`, and signs the app ad hoc by default. `test.sh` compiles and runs offline tests and ad hoc XPC requirement fixtures; it does not need Calendar or Reminders data. `ui_test.sh` is a separate logged-in GUI fixture using fake clients and collections; `ui_snapshots.sh` writes PNGs of every screen from the same fake data.
+`build.sh` writes only to ignored `build/`. It makes `build/EventKitBridge.app`, with the MCP launcher at `Contents/MacOS/bridge-mcp`, and `build/bridge-client`. It signs the launcher (with the identifier `<bundle ID>.bridge-mcp` and the hardened runtime) and then the app around it, ad hoc by default, and checks the result with `codesign --verify --deep --strict`. `test.sh` compiles and runs offline tests and ad hoc XPC requirement fixtures; it does not need Calendar or Reminders data. `ui_test.sh` is a separate logged-in GUI fixture using fake clients and collections; `ui_snapshots.sh` writes PNGs of every screen from the same fake data.
 
 ## Signing and installation
 
@@ -32,6 +32,8 @@ codesign --verify --deep --strict build/EventKitBridge.app
 
 `Info.plist` currently contains a development bundle identifier. If you change the identifier or signing identity, treat the resulting app as a different macOS privacy identity and expect to review access again. Keep the bundle identifier, signing identity, and installed location stable across updates when testing permission continuity. Quit a running copy before replacing it. Do not run two bridge processes against one local directory. Install the reviewed app in `~/Applications` or `/Applications` if you want this app's **Launch at Login** control; the code enables that control only for those locations. Launch the installed copy through Finder or LaunchServices. Keep the matching `bridge-client` built from the same source revision.
 
+**Install the app before you connect AI agents.** Launcher setups contain the full path of `bridge-mcp` inside the app bundle, for example `/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp`, so moving or renaming the app breaks them. Settings ▸ MCP Server and the client's Connect ▸ AI agent tab show the installed path and warn when the app isn't in `/Applications` or `~/Applications`. Replacing the app at the same path keeps agent setups working. The launcher sends the token only to a listener whose app has the same bundle identifier as the app containing the launcher, so a build with a different identifier can't receive it.
+
 The source `Info.plist` leaves `EKBridgeVerifiedICloudReminderSourceID` empty. This intentionally disables the narrow recurring-occurrence completion path. A verified source ID is a **local signed-build configuration**, not a sample value to copy from another Mac or commit to source control. See [the support matrix](API.md#support-matrix).
 
 ## macOS permissions and first run
@@ -40,12 +42,14 @@ The source `Info.plist` leaves `EKBridgeVerifiedICloudReminderSourceID` empty. T
 2. In the checklist (or Overview ▸ macOS access), choose **Allow Access…** for Calendars and/or Reminders and answer the macOS prompts yourself. The app requires **Full Access** for item operations; add-only access isn't enough. If access was turned off, **Open Privacy Settings** opens **System Settings → Privacy & Security → Calendars / Reminders**.
 3. Create a client and choose its calendars and lists, as described in [the user guide](USAGE.md). A new client has no access and the bridge is still off.
 4. Turn on the bridge (the switch on Overview or in the menu) only when you want local tasks to use saved access. The choice is saved; turning it off saves that too.
-5. Send the test request the checklist offers. Settings ▸ Developer (off by default) lists every calendar and list ID EventKit can see.
+5. For AI agents, turn on **Settings ▸ MCP Server** (off by default). It listens on `127.0.0.1:47615` only. Binding the loopback address isn't expected to trigger the Application Firewall's incoming-connections prompt or the Local Network privacy prompt; if either appears, note it in the [testing record](TESTING.md#live-mcp-matrix). If the port is in use, Settings says so and offers **Choose Another Port…**.
+6. Send the test request the checklist offers, or connect your agent as described in [MCP](MCP.md). Settings ▸ Developer (off by default) lists every calendar and list ID EventKit can see.
+7. Only for cloud agents, turn on **Settings ▸ Remote Access** (off by default). It listens on `127.0.0.1:47616`, for a tunnel you install and run yourself, such as Tailscale Funnel; the app shows the commands but never installs or runs a tunnel. Then allow cloud access on the clients that cloud agents should use. See [Use from cloud agents](MCP.md#use-from-cloud-agents).
 
 The app uses [`EKEventStore.requestFullAccessToEvents`](https://developer.apple.com/documentation/eventkit/ekeventstore/requestfullaccesstoevents(completion:)) and the corresponding Reminders API. Its `Info.plist` contains privacy usage descriptions. Its shipped `Entitlements.plist` is part of the build; changing entitlements or packaging needs a fresh permission test. Never copy another user's TCC database or signing key.
 
 ## Launch at Login
 
-Turn on **Settings ▸ General ▸ Start at login**. This uses [`SMAppService.mainApp`](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp). The switch is available only when the app is in `/Applications` or `~/Applications`; if macOS needs approval, Settings says so and offers **Open Login Items**. Registration is separate from enabling the bridge. At login, the app reads its saved bridge choice; if the bridge was off, startup leaves it off. If you want it off before a restart, turn it off first.
+Turn on **Settings ▸ General ▸ Start at login**. This uses [`SMAppService.mainApp`](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp). The switch is available only when the app is in `/Applications` or `~/Applications`; if macOS needs approval, Settings says so and offers **Open Login Items**. Registration is separate from enabling the bridge. At login, the app reads its saved bridge, MCP server and Remote Access choices; if the bridge was off, startup leaves it off, and Remote Access stays off if its automatic turn-off time passed while the app wasn't running. An agent that starts at the same moment gets up to 5 seconds of grace from the launcher while the server comes up. If you want it off before a restart, turn it off first.
 
-A supervised restart on the development Mac showed the app process and scoped read-only bridge active after login, with Full access and the same grants. This does not prove operation before login or while the Mac is asleep. A remote cloud process cannot call the local bridge directly. See [verification and remaining checks](TESTING.md).
+A supervised restart on the development Mac showed the app process and scoped read-only bridge active after login, with Full access and the same grants. This does not prove operation before login or while the Mac is asleep. A remote cloud process cannot call the local bridge directly; cloud agents reach it only through Remote Access and a running tunnel, while the Mac is awake and logged in. See [verification and remaining checks](TESTING.md).

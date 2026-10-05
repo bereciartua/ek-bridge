@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "ambiguous_local_time",
+    "message" : "start: 2026-11-01T01:30 happens twice in America/New_York. Add the offset you mean: -04:00 or -05:00.",
+    "text" : "Ambiguous time: start: 2026-11-01T01:30 happens twice in America/New_York. Add the offset you mean: -04:00 or -05:00. (code: ambiguous_local_time)"
+  }
+}

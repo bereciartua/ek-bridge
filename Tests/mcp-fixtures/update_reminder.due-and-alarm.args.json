@@ -1,0 +1,10 @@
+{
+  "list_id": "LIST-GROC",
+  "reminder_id": "R9",
+  "version": "1791216003.000000",
+  "title": "Buy oat milk",
+  "due": {
+    "date_time": "2026-11-06T09:00:00-05:00"
+  },
+  "alarm": "2026-11-06T08:45:00-05:00"
+}

@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarm: only together with due; send due as well",
+    "text" : "Invalid arguments: alarm: only together with due; send due as well. (code: invalid_arguments)"
+  }
+}

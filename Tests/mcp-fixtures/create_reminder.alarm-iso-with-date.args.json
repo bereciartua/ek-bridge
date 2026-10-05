@@ -1,0 +1,9 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Buy bread",
+  "due": {
+    "date": "2026-11-05",
+    "time_zone": "Europe/London"
+  },
+  "alarm": "2026-11-05T08:00"
+}

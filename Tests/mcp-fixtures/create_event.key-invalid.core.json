@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_idempotency_key",
+    "message" : "idempotency_key: expected the exact key an earlier result returned, like ekb3_1791216000_…; got \"ekb3_1791216000_6F0C1D2E-3A4B-4C5D-8E6F-7A8B9C0D1E2F\"",
+    "text" : "Invalid key: that idempotency_key isn't one this server issued. Read the event, then make the change without idempotency_key. (code: invalid_idempotency_key)"
+  }
+}

@@ -20,12 +20,16 @@ import EventKit
 //   --ui-max-clients             32 active clients (New Client is disabled)
 //   --ui-max-activity            500 activity rows
 //   --ui-bridge-off              start with the bridge off
+//   --ui-mcp listening|off|port-in-use   the fake MCP server's state (default listening)
+//   --ui-remote                  start with Remote Access on, a tunnel address and a cloud client
 @MainActor
 final class UIReview {
     static let claudeID = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d"
     static let briefingID = "8c1d4e2f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
     static let obsidianID = "b7e3f1a2-9c4d-4e5f-a6b7-c8d9e0f1a2b3"
+    static let cursorID = "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9"
     static let revokedID = "d2c4e6f8-1a3b-4c5d-8e7f-9a0b1c2d3e4f"
+    static let port = 47615
 
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("eventkit-ui-review-\(UUID().uuidString)", isDirectory: true)
@@ -38,6 +42,20 @@ final class UIReview {
     var remindersStatus: EKAuthorizationStatus
     var bridgeOn: Bool
     let many: Bool
+    /// "listening", "off" or "port-in-use".
+    var mcpMode: String
+    weak var model: BridgeAppModel?
+    private(set) lazy var approvals = ApprovalCenter(summarize: { request in
+        Self.fixtureSummary(request) ?? ApprovalSummaries.build(
+            request, store: nil, collections: Self.collections(many: false))
+    })
+    private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
+    private(set) lazy var oauth = OAuthServer(
+        directory: directory, fetcher: ReviewFetcher(),
+        clientAllowed: { [unowned self] id in self.registry.cloudAccessAllowed(clientID: id) },
+        clientName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
+    static let remoteSecret = "q7Zk2vN4bXwP9sL1mT6hYa"
+    static let remoteOrigin = "https://my-mac.tail1234.ts.net"
     static var longNames: Bool { CommandLine.arguments.contains("--ui-long-names") }
     private var extraWindows = [MainWindowController]()
     private var extraReviews = [UIReview]()
@@ -48,12 +66,30 @@ final class UIReview {
         remindersStatus = reminders ?? Self.status(CommandLine.arguments, "--ui-reminders")
         bridgeOn = fresh == true ? false : !CommandLine.arguments.contains("--ui-bridge-off")
         many = CommandLine.arguments.contains("--ui-many-collections")
+        mcpMode = Self.value(CommandLine.arguments, "--ui-mcp") ?? "listening"
+        if mcpMode != "off" && fresh != true { defaults.set(true, forKey: "MCPServerEnabled") }
+        if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
             seed()
             // Requests from the last day and a half count as unseen.
             defaults.set(Date().addingTimeInterval(-129_600).timeIntervalSinceReferenceDate,
                          forKey: "ActivityLastViewed")
         }
+    }
+
+    private static func value(_ arguments: [String], _ flag: String) -> String? {
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+    }
+
+    /// Reports the fake listener's state, as MCPService would.
+    func reportMCP() {
+        let status: MCPService.Status = switch mcpMode {
+        case "port-in-use": .failed(.portInUse(Self.port))
+        case "off": .off
+        default: .listening(port: Self.port)
+        }
+        model?.mcpStatusDidChange(status)
     }
 
     private static func status(_ arguments: [String], _ flag: String) -> EKAuthorizationStatus {
@@ -92,7 +128,103 @@ final class UIReview {
             loginItemStatus: { .notRegistered },
             setLoginItem: { _ in },
             isInstalledInApplications: { false },
-            testCollections: nil)
+            testCollections: nil,
+            mcp: MCPControls(
+                start: { [unowned self] _ in
+                    if self.mcpMode == "off" { self.mcpMode = "listening" }
+                    DispatchQueue.main.async { self.reportMCP() }
+                },
+                stop: { [unowned self] in self.mcpMode = "off" },
+                counters: { MCPTrafficCounters.Snapshot(requests: 41, byStatus: [401: 2, 421: 1],
+                                                         authFailures: 2) },
+                launcherURL: URL(fileURLWithPath: "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp"),
+                portIsFree: { $0 != 47616 }),
+            approvals: approvals,
+            remote: RemoteControls(
+                start: { [unowned self] configuration in
+                    DispatchQueue.main.async { self.model?.remoteStatusDidChange(.listening(port: configuration.port)) }
+                },
+                update: { _ in },
+                stop: {},
+                test: { _, completion in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        completion(.success((rtt: 0.18, tunnel: "Tailscale Funnel")))
+                    }
+                },
+                portIsFree: { $0 != 47615 },
+                setKeepAwake: { _ in },
+                onACPower: { true },
+                oauth: oauth))
+    }
+
+    /// Starts a pairing request the way claude.ai would: register (DCR),
+    /// then open the authorize page. The app then shows the pairing sheet.
+    func startPairing(for clientID: String, reopen: Bool = true) {
+        if reopen { oauth.openPairing(clientID: clientID) }
+        let context = OAuthContext(publicOrigin: Self.remoteOrigin, secretPrefix: "/r/" + Self.remoteSecret)
+        let callback = "https://claude.ai/api/mcp/auth_callback"
+        let registration = try! JSONSerialization.data(withJSONObject: [
+            "redirect_uris": [callback], "client_name": "claude.ai"])
+        let register = Self.request("POST", context.secretPrefix + "/oauth/register", body: registration,
+                                    contentType: "application/json")
+        _ = oauth.handle(register, context: context) { [weak self] response in
+            guard let self,
+                  let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                  let clientID = object["client_id"] as? String else { return }
+            var query = URLComponents()
+            query.queryItems = [
+                .init(name: "response_type", value: "code"), .init(name: "client_id", value: clientID),
+                .init(name: "redirect_uri", value: callback), .init(name: "state", value: "review"),
+                .init(name: "code_challenge", value: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"),
+                .init(name: "code_challenge_method", value: "S256")]
+            let authorize = Self.request("GET", context.secretPrefix + "/oauth/authorize?" + (query.query ?? ""))
+            _ = self.oauth.handle(authorize, context: context) { _ in }
+        }
+    }
+
+    static func request(_ method: String, _ target: String, body: Data = Data(),
+                        contentType: String? = nil) -> HTTPRequest {
+        var head = "\(method) \(target) HTTP/1.1\r\nHost: my-mac.tail1234.ts.net\r\n"
+        if let contentType { head += "Content-Type: \(contentType)\r\n" }
+        head += "Content-Length: \(body.count)\r\n\r\n"
+        var parser = HTTPParser()
+        guard case .request(let request) = parser.feed(Data(head.utf8) + body) else {
+            preconditionFailure("review request didn't parse")
+        }
+        return request
+    }
+
+    /// Remote Access on, with a tunnel address and Claude Code allowed from
+    /// the cloud.
+    func seedRemote() {
+        defaults.set(true, forKey: "RemoteAccessEnabled")
+        defaults.set(Self.remoteSecret, forKey: "RemoteAccessSecretPath")
+        defaults.set(Self.remoteOrigin, forKey: "RemoteAccessPublicAddress")
+    }
+
+    // Before/after rows for the update snapshot, which has no EventKit to read.
+    static func fixtureSummary(_ request: ApprovalRequest) -> ApprovalSummary? {
+        guard request.request.parameters["itemID"] as? String == "fixture-update" else { return nil }
+        return ApprovalSummary(
+            title: String(localized: "\(request.clientName) wants to change an event"),
+            subtitle: "Work · iCloud",
+            rows: [.init(label: String(localized: "Event"), value: "Design review"),
+                   .init(label: String(localized: "When"), value: "Tue, Oct 6, 11:00 AM–12:00 PM",
+                         before: "Tue, Oct 6, 10:00–11:00 AM")],
+            isDelete: false,
+            collectionColor: collections(many: false).first { $0.id == "cal-work" }?.color)
+    }
+
+    /// Queues fixture approvals the way the pipeline would.
+    func queueApproval(_ command: BridgeCommand, _ parameters: [String: Any], agent: String,
+                       client: String? = nil, name: String = "Claude Code") {
+        let client = client ?? Self.claudeID
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: command,
+                                    parameters: parameters)
+        _ = approvals.request(ApprovalRequest(clientID: client, clientName: name, agent: agent,
+                                              request: request,
+                                              targetID: (parameters["calendarID"] ?? parameters["listID"]) as? String)) { _ in }
+        approvalPanel.update()
     }
 
     func cleanup() {
@@ -147,26 +279,45 @@ final class UIReview {
         func grant(_ resource: String, _ id: String, _ mask: Int) -> [String: Any] {
             ["resource": resource, "targetID": id, "mask": mask]
         }
+        func token() -> (String, String) {
+            let value = "ekb_mcp_v1_" + (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+            return (ClientRegistry.tokenDigest(value), value)
+        }
         let now = Date()
         var clients = [[String: Any]]()
-        let definitions: [(String, String, [[String: Any]])] = [
+        // (id, name, grants, CLI key, MCP token, Ask before changes)
+        let definitions: [(String, String, [[String: Any]], Bool, Bool, String?)] = [
             (Self.claudeID, Self.longNames ? "Claude Code on the work laptop, with a long descriptive name" : "Claude Code", [
                 grant("calendar", "cal-home", 1), grant("calendar", "cal-work", 7),
-                grant("reminderList", "list-errands", 23), grant("calendar", "cal-signed-out", 1)]),
+                grant("reminderList", "list-errands", 23), grant("calendar", "cal-signed-out", 1)],
+             false, true, "ask"),
             (Self.briefingID, "Morning briefing", [
                 grant("calendar", "cal-work", 1), grant("calendar", "cal-family", 1),
                 grant("calendar", "cal-home", 1), grant("reminderList", "list-reminders", 1),
-                grant("calendar", "cal-holidays", 3)]),
-            (Self.obsidianID, "Obsidian sync", [grant("calendar", "cal-work", 5)]),
+                grant("calendar", "cal-holidays", 3)], true, false, nil),
+            (Self.obsidianID, "Obsidian sync", [grant("calendar", "cal-work", 5)], true, false, nil),
+            (Self.cursorID, "Cursor", [grant("calendar", "cal-home", 1)], true, true, "ask"),
         ]
-        for (id, name, grants) in definitions {
-            let (public_, key) = verifier()
-            clients.append(["id": id, "name": name, "verifier": public_, "revoked": false,
-                            "revision": 4, "grants": grants])
-            _ = credentialFiles.saveNew(clientID: id, key: key)
+        for (id, name, grants, cli, mcp, approval) in definitions {
+            var record: [String: Any] = ["id": id, "name": name, "verifier": "", "revoked": false,
+                                         "revision": 4, "grants": grants]
+            if cli {
+                let (public_, key) = verifier()
+                record["verifier"] = public_
+                _ = credentialFiles.saveNew(clientID: id, key: key)
+            }
+            if mcp {
+                let (digest, value) = token()
+                record["mcpVerifier"] = digest
+                record["mcpIssuedAt"] = now.addingTimeInterval(id == Self.cursorID ? -300 : -86_400 * 3)
+                    .timeIntervalSinceReferenceDate
+                _ = credentialFiles.saveNew(clientID: id, token: value)
+            }
+            if let approval { record["approval"] = approval }
+            clients.append(record)
         }
         if CommandLine.arguments.contains("--ui-max-clients") {
-            for index in 1...29 {
+            for index in 1...28 {
                 clients.append(["id": UUID().uuidString.lowercased(), "name": "Script \(index)",
                                 "verifier": verifier().0, "revoked": false, "revision": 1, "grants": []])
             }
@@ -175,6 +326,7 @@ final class UIReview {
                         "revision": 6, "grants": [],
                         "revokedAt": now.addingTimeInterval(-86_400 * 6).timeIntervalSinceReferenceDate])
         // Oldest first, as stored. Each request has an "accepted" row and a result.
+        // Claude Code and Cursor come in over MCP, the scripts over the command line.
         let script: [(TimeInterval, String?, String, String, String?)] = [
             (-86_400 * 2 - 600, Self.revokedID, "read_events", "success", "cal-work"),
             (-86_400 - 7_200, Self.obsidianID, "read_events", "success", "cal-work"),
@@ -203,8 +355,13 @@ final class UIReview {
             (-600, Self.claudeID, "create_event", "success", "cal-work"),
             (-420, Self.claudeID, "read_events", "success", "cal-work"),
             (-300, Self.claudeID, "update_event", "success", "cal-work"),
+            (-1_500, nil, "mcp", "unauthorized", nil),
+            (-1_400, Self.cursorID, "read_events", "error:bridge_off", "cal-home"),
+            (-1_300, Self.claudeID, "delete_reminder", "error:approval_denied", "list-errands"),
+            (-1_250, Self.claudeID, "read_events", "error:rate_limited", "cal-work"),
+            (-1_100, Self.claudeID, "list_collections", "success", nil),
             (-200, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-150, Self.claudeID, "read_events", "success", "cal-work"),
+            (-150, Self.claudeID, "create_reminder", "success", "list-errands"),
             (-120, Self.claudeID, "read_events", "success", "cal-work"),
         ]
         var activity = [[String: Any]]()
@@ -213,8 +370,19 @@ final class UIReview {
             var row: [String: Any] = ["at": at, "command": command, "outcome": outcome]
             if let client { row["clientID"] = client }
             if let target { row["targetID"] = target }
-            if outcome == "success" || outcome.hasPrefix("error:") {
+            let mcp = client == nil ? command == "mcp" : (client == Self.claudeID || client == Self.cursorID)
+            if client != Self.revokedID && !(client == nil && command == "read_events") {
+                row["via"] = mcp ? "mcp" : "cli"
+            }
+            if client == Self.claudeID { row["agent"] = "claude-code 2.4.1" }
+            if client == Self.claudeID && command == "create_reminder" && outcome == "success" {
+                row["approval"] = "user"
+            }
+            if outcome == "error:approval_denied" { row["approval"] = "denied" }
+            if (outcome == "success" || outcome.hasPrefix("error:")) &&
+                outcome != "error:bridge_off" && outcome != "error:rate_limited" {
                 var accepted = row
+                accepted["approval"] = nil
                 accepted["at"] = at - 0.2
                 accepted["outcome"] = "accepted"
                 activity.append(accepted)
@@ -233,7 +401,7 @@ final class UIReview {
                 return row
             }
         }
-        let state: [String: Any] = ["version": 3, "clients": clients, "activity": activity]
+        let state: [String: Any] = ["version": 4, "clients": clients, "activity": activity]
         let file = directory.appendingPathComponent("client-registry.json")
         if let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) {
             FileManager.default.createFile(atPath: file.path, contents: data,
@@ -244,6 +412,12 @@ final class UIReview {
     // MARK: Modes
 
     func run(model: BridgeAppModel, window: MainWindowController, statusMenu: StatusMenuController) {
+        self.model = model
+        approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
+        model.mcpDidConnect(Self.claudeID, MCPServer.Connection(at: Date().addingTimeInterval(-120),
+                                                               agent: "claude-code 2.4.1"))
+        reportMCP()
         model.bridgeDidChange(bridgeOn ? .on : .off)
         DispatchQueue.main.async { self.runMode(model: model, window: window, statusMenu: statusMenu) }
     }
@@ -252,7 +426,7 @@ final class UIReview {
         if arguments.contains("--ui-window-lifecycle-test") {
             WindowLifecycleReview(model: model, controller: window).start()
         } else if arguments.contains("--ui-behavior-test") {
-            BehaviorReview(model: model, controller: window).start()
+            BehaviorReview(model: model, controller: window, review: self).start()
         } else if let index = arguments.firstIndex(of: "--ui-snapshots"), index + 1 < arguments.count {
             let folder = URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
             SnapshotReview(review: self, model: model, controller: window, folder: folder).start()
@@ -308,6 +482,14 @@ final class UIReview {
 
 /// Opens and closes the window and its sheets eight times, checking that the
 /// controller keeps the same window and that nothing is released on close.
+/// The review build makes no network requests.
+@MainActor
+final class ReviewFetcher: CIMDFetching {
+    func fetch(_ url: URL, completion: @escaping (Result<ClientMetadata, CIMDError>) -> Void) {
+        completion(.failure(.network("offline review build")))
+    }
+}
+
 @MainActor
 final class WindowLifecycleReview {
     let model: BridgeAppModel
@@ -330,7 +512,8 @@ final class WindowLifecycleReview {
                                .client(UIReview.revokedID)]
         model.navigate(to: routes[number % routes.count])
         model.sheet = number.isMultiple(of: 2) ? .newClient : .rename(UIReview.claudeID)
-        after(0.25) {
+        // Generous: the window server is slower with the display asleep.
+        after(0.6) {
             guard let window = self.controller.window, window.isVisible, window.attachedSheet != nil,
                   !window.isReleasedWhenClosed else { return self.report("sheet_missing", number) }
             self.model.sheet = nil
@@ -373,12 +556,35 @@ final class WindowLifecycleReview {
 final class BehaviorReview {
     let model: BridgeAppModel
     let controller: MainWindowController
+    let review: UIReview
     private var steps = [(String, @MainActor () -> Bool)]()
     private var passed = [String]()
+    private var tokenBefore: String?
+    private var callBefore: AuthorizedClientCall?
+    private var decision: ApprovalDecision?
 
-    init(model: BridgeAppModel, controller: MainWindowController) {
+    init(model: BridgeAppModel, controller: MainWindowController, review: UIReview) {
         self.model = model
         self.controller = controller
+        self.review = review
+    }
+
+    private var registry: ClientRegistry { review.registry }
+
+    private func authorizedCall(_ clientID: String) -> AuthorizedClientCall? {
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: .scopeStatus, parameters: [:])
+        guard case .success(let call) = registry.authorize(clientID: clientID, request: request, origin: .cli)
+        else { return nil }
+        return call
+    }
+
+    private func queue(_ command: BridgeCommand, _ parameters: [String: Any]) {
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: command, parameters: parameters)
+        _ = review.approvals.request(ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code",
+                                                     agent: "claude-code 2.4.1", request: request,
+                                                     targetID: parameters["listID"] as? String)) {
+            [weak self] in self?.decision = $0
+        }
     }
 
     private var window: NSWindow { controller.window! }
@@ -519,8 +725,10 @@ final class BehaviorReview {
         step("create client") {
             guard self.model.createClient(name: "Shortcuts") == nil,
                   let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }
+            // AI agent is the default kind, with Ask before changes preset on.
             return self.model.route == .client(created.id) && self.model.banner?.kind == .info &&
-                created.grants.isEmpty && self.model.keyFileStatus(created.id) == .present &&
+                created.grants.isEmpty && self.model.tokenFileStatus(created.id) == .present &&
+                self.model.keyFileStatus(created.id) == .missing && created.approval == .ask &&
                 self.model.createClient(name: "shortcuts") == .duplicate("Shortcuts")
         }
         step("revoke asks first") {
@@ -532,7 +740,198 @@ final class BehaviorReview {
         step("revoked, key file removed") {
             guard let revoked = self.model.revokedClients.first(where: { $0.name == "Shortcuts" }) else { return false }
             return self.model.route == .overview && self.model.banner?.kind == .success &&
-                self.model.keyFileStatus(revoked.id) == .missing
+                self.model.tokenFileStatus(revoked.id) == .missing
+        }
+        step("create a command-line client") {
+            guard self.model.createClient(name: "Nightly sync", kind: .cli) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == "Nightly sync" }) else { return false }
+            return self.model.keyFileStatus(created.id) == .present &&
+                self.model.tokenFileStatus(created.id) == .missing && created.approval == .allow &&
+                self.model.connectTab[created.id] == .cli
+        }
+        step("switch Connect tabs") {
+            self.model.navigate(to: .client(claude))
+            self.model.connectTab[claude] = .cli
+            let cli = self.model.connectTab[claude] == .cli
+            self.model.connectTab[claude] = .agent
+            return cli && self.model.client(claude)?.hasSigningKey == false
+        }
+        step("no snippet contains the token") {
+            guard let url = self.model.tokenFileURL(claude),
+                  let token = try? String(contentsOf: url, encoding: .utf8) else { return false }
+            let context = SetupContext(url: self.model.mcpURL, launcherPath: self.model.launcherPath,
+                                       clientID: claude, tokenPath: url.path)
+            for agent in AgentKind.allCases {
+                self.model.agentChoice[claude] = agent
+                for method in agent.methods {
+                    self.model.methodChoice["\(claude)|\(agent.rawValue)"] = method
+                    let snippet = agent.snippet(method, context)
+                    let texts = [snippet.text] + snippet.steps + snippet.extraSnippets.map(\.text)
+                    if texts.contains(where: { $0.contains(token) || $0.contains("ekb_mcp_v1_") }) { return false }
+                }
+            }
+            self.model.agentChoice[claude] = .claudeCode
+            return true
+        }
+        step("Copy Token asks first") {
+            NSPasteboard.general.clearContents()
+            self.model.copyToken(claude)
+            return self.window.attachedSheet != nil
+        }
+        step("cancel copies nothing") {
+            self.answer(.alertSecondButtonReturn) &&
+                NSPasteboard.general.string(forType: .string) == nil
+        }
+        step("Reset token asks first") {
+            self.tokenBefore = self.model.tokenFileURL(claude).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            self.callBefore = self.authorizedCall(claude)
+            self.model.resetMCPToken(claude)
+            return self.window.attachedSheet != nil
+        }
+        step("reset replaces the token and bumps the revision") {
+            guard self.answer(.alertFirstButtonReturn) else { return false }
+            let after = self.model.tokenFileURL(claude).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            return after != nil && after != self.tokenBefore &&
+                self.callBefore.map { !self.registry.stillAuthorized($0) } == true
+        }
+        step("approval mode change bumps the revision") {
+            guard let call = self.authorizedCall(claude) else { return false }
+            self.model.setApproval(claude, .allow)
+            let changed = self.model.client(claude)?.approval == .allow && !self.registry.stillAuthorized(call)
+            self.model.setApproval(claude, .ask)
+            return changed && self.model.client(claude)?.approval == .ask
+        }
+        step("approval panel shows, Allow resolves") {
+            self.decision = nil
+            self.queue(.createReminder, ["listID": "list-errands", "title": "Buy oat milk"])
+            guard self.review.approvalPanel.window?.isVisible == true else { return false }
+            self.review.approvals.allow(self.review.approvals.pending[0].id)
+            return self.decision == .allowed && self.review.approvalPanel.window?.isVisible == false
+        }
+        step("Deny resolves") {
+            self.decision = nil
+            self.queue(.deleteReminder, ["listID": "list-errands", "itemID": "x"])
+            guard self.review.approvals.pending.first?.summary.isDelete == true else { return false }
+            self.review.approvals.deny(self.review.approvals.pending[0].id)
+            return self.decision == .denied && self.review.approvals.pending.isEmpty
+        }
+        step("timeout, queue limit and the 15-minute allowance (fake clock)") {
+            var clock = Date()
+            var timers = [@MainActor () -> Void]()
+            let center = ApprovalCenter(summarize: { _ in ApprovalSummary(title: "", rows: [], isDelete: false) },
+                                        now: { clock }, schedule: { _, action in timers.append(action) })
+            var decisions = [ApprovalDecision]()
+            let request = ApprovalRequest(clientID: "c", clientName: "C", agent: nil,
+                                          request: BridgeRequest(id: "r", command: .createEvent, parameters: [:]),
+                                          targetID: nil, revision: 3)
+            for _ in 0..<4 { _ = center.request(request) { decisions.append($0) } }
+            guard decisions == [.tooMany], center.pending.count == 3 else { return false }
+            timers[0]()
+            guard decisions == [.tooMany, .timedOut] else { return false }
+            center.allow(center.pending[0].id, forWindow: true)
+            _ = center.request(request) { decisions.append($0) }
+            guard decisions.last == .allowedByWindow else { return false }
+            clock = clock.addingTimeInterval(ApprovalCenter.allowWindow + 1)
+            _ = center.request(request) { decisions.append($0) }
+            let expired = decisions.last == .allowedByWindow && center.pending.count == 2
+            var next = request
+            next.revision = 4
+            center.allow(center.pending[0].id, forWindow: true)
+            _ = center.request(next) { decisions.append($0) }
+            // A revision change ends the allowance.
+            return expired && center.pending.count == 2
+        }
+        step("port change validation") {
+            self.model.portIssue("80") != nil && self.model.portIssue("abc") != nil &&
+                self.model.portIssue("70000") != nil && self.model.portIssue("47616") != nil &&
+                self.model.portIssue("47620") == nil
+        }
+        step("turning the MCP server off with recent agents asks first") {
+            self.model.mcpDidConnect(claude, MCPServer.Connection(at: Date(), agent: "claude-code 2.4.1"))
+            self.model.refresh()
+            self.model.setMCPServerEnabled(false)
+            return self.window.attachedSheet != nil
+        }
+        step("cancel keeps it on") {
+            self.answer(.alertSecondButtonReturn) && self.model.mcpEnabled && self.model.mcpIsListening
+        }
+        step("turning on Remote Access asks first") {
+            self.model.setRemoteAccessEnabled(true)
+            return self.window.attachedSheet != nil && !self.model.remoteEnabled
+        }
+        step("Remote Access on, with a secret path") {
+            self.answer(.alertFirstButtonReturn) && self.model.remoteEnabled &&
+                RemoteConfiguration.validSecret(self.model.remoteSecret)
+        }
+        step("address validation") {
+            self.model.remoteIsListening &&
+                self.model.remoteAddressIssue("http://my-mac.example") != nil &&
+                self.model.remoteAddressIssue("https://my-mac.example/path") != nil &&
+                self.model.setRemoteAddress("https://My-Mac.tail1234.ts.net/") == nil &&
+                self.model.remoteMCPURL == "https://my-mac.tail1234.ts.net/r/\(self.model.remoteSecret)/mcp"
+        }
+        step("remote port can't be the MCP port") {
+            self.model.remotePortIssue("47615") != nil && self.model.remotePortIssue("47620") == nil
+        }
+        step("Test reports reachable") {
+            self.model.testRemoteAccess()
+            return self.model.remoteTest == .testing
+        }
+        step("reachable") {
+            if case .reachable = self.model.remoteTest { return true }
+            return false
+        }
+        step("cloud access and Copy Remote Token asks first") {
+            self.model.setCloudAccess(claude, true)
+            guard self.model.client(claude)?.cloudAccess == true else { return false }
+            self.model.copyRemoteToken(claude)
+            return self.window.attachedSheet != nil
+        }
+        step("copying creates the remote token") {
+            NSPasteboard.general.clearContents()
+            guard self.answer(.alertFirstButtonReturn) else { return false }
+            let copied = NSPasteboard.general.string(forType: .string) ?? ""
+            Pasteboard.clearSecret()
+            return ClientRegistry.validRemoteToken(copied) && self.model.client(claude)?.hasRemoteToken == true &&
+                NSPasteboard.general.string(forType: .string) == nil
+        }
+        step("a cloud app asks to pair") {
+            self.review.startPairing(for: claude)
+            return self.model.pairingClientID == claude
+        }
+        step("pairing shows the code") {
+            guard case .pairing(let id) = self.model.sheet, let request = self.model.pairingRequest(id) else {
+                return false
+            }
+            return request.code.count == 7 && request.appName == "claude.ai" && self.window.attachedSheet != nil
+        }
+        var firstPairing: UUID?
+        step("a second request waits instead of replacing the sheet") {
+            guard case .pairing(let id) = self.model.sheet else { return false }
+            firstPairing = id
+            self.review.startPairing(for: claude, reopen: false)
+            return self.model.sheet == .pairing(id) && self.review.oauth.pendingPairings.count == 2
+        }
+        step("answering shows the waiting request") {
+            guard let first = firstPairing else { return false }
+            self.model.answerPairing(first, allow: false)
+            return self.model.sheet == nil
+        }
+        step("deny closes the pairing") {
+            guard case .pairing(let id) = self.model.sheet, id != firstPairing else { return false }
+            self.model.answerPairing(id, allow: false)
+            return self.model.sheet == nil && self.model.oauthConnections(claude).isEmpty
+        }
+        step("turning cloud access off asks, then removes the token") {
+            self.model.setCloudAccess(claude, false)
+            guard self.window.attachedSheet != nil, self.answer(.alertFirstButtonReturn) else { return false }
+            return self.model.client(claude)?.cloudAccess == false &&
+                self.model.client(claude)?.hasRemoteToken == false &&
+                self.model.remoteTokenStatus(claude) == .missing
+        }
+        step("Remote Access off from the menu") {
+            self.model.applyRemoteEnabled(false)
+            return !self.model.remoteEnabled && self.model.remoteStatus == .off
         }
         step("activity deep link") {
             guard let forbidden = self.model.activity.first(where: { $0.code == "forbidden" }) else { return false }
@@ -648,6 +1047,132 @@ final class SnapshotReview {
                 self.model.navigate(to: .settings)
                 return main
             }
+            step("overview-mcp") {
+                self.model.setShowDeveloperTools(false)
+                self.model.navigate(to: .overview)
+                return main
+            }
+            step("client-connect-agent-claude-code") {
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.connectTab[UIReview.claudeID] = .agent
+                self.model.agentChoice[UIReview.claudeID] = .claudeCode
+                return main
+            }
+            step("client-connect-agent-claude-desktop") {
+                self.model.agentChoice[UIReview.claudeID] = .claudeDesktop
+                return main
+            }
+            step("client-connect-direct-other") {
+                self.model.agentChoice[UIReview.claudeID] = .other
+                return main
+            }
+            step("client-connect-no-token") {
+                self.model.agentChoice[UIReview.claudeID] = .claudeCode
+                self.model.navigate(to: .client(UIReview.briefingID))
+                self.model.connectTab[UIReview.briefingID] = .agent
+                return main
+            }
+            step("client-connect-cli") {
+                self.model.connectTab[UIReview.briefingID] = .cli
+                return main
+            }
+            step("client-connect-server-off") {
+                self.model.navigate(to: .client(UIReview.cursorID))
+                self.review.mcpMode = "off"
+                self.model.setMCPServerEnabled(false, confirm: false)
+                return main
+            }
+            step("settings-mcp-listening") {
+                self.model.setMCPServerEnabled(true)
+                self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-mcp-port-in-use") {
+                self.review.mcpMode = "port-in-use"
+                self.review.reportMCP()
+                return main
+            }
+            step("activity-mcp-inspector") {
+                self.review.mcpMode = "listening"
+                self.review.reportMCP()
+                self.model.navigate(to: .activity)
+                self.model.activitySelection = self.model.activity.first { $0.code == "approval_denied" }?.id
+                return main
+            }
+            step("approval-panel-create") {
+                self.model.activitySelection = nil
+                self.review.queueApproval(.createReminder, [
+                    "listID": "list-groceries", "title": "Buy oat milk",
+                    "due": ["kind": "timed", "at": 1_793_887_200, "timeZone": "America/New_York"],
+                    "recurrence": ["kind": "rule", "frequency": "weekly", "interval": 1, "weekdays": ["TH"]]],
+                    agent: "codex 0.98.0", client: UIReview.cursorID, name: "Codex")
+                self.review.approvalPanel.window?.appearance = NSAppearance(named: appearance)
+                return self.review.approvalPanel.window
+            }
+            step("approval-panel-update") {
+                self.review.approvals.withdrawAll()
+                self.review.queueApproval(.updateEvent, ["calendarID": "cal-work", "itemID": "fixture-update",
+                                                         "title": "Design review"], agent: "codex 0.98.0",
+                                          client: UIReview.cursorID, name: "Codex")
+                return self.review.approvalPanel.window
+            }
+            step("approval-panel-delete-queued") {
+                self.review.approvals.withdrawAll()
+                for title in ["a", "b"] {
+                    self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": title],
+                                              agent: "claude-code 2.4.1")
+                }
+                self.review.queueApproval(.deleteReminder, ["listID": "list-errands", "itemID": "x"],
+                                          agent: "claude-code 2.4.1")
+                self.review.approvals.selection = 2
+                return self.review.approvalPanel.window
+            }
+            step("settings-remote") {
+                self.review.approvals.withdrawAll()
+                self.model.applyRemoteEnabled(true)
+                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                self.model.settingsScrollTarget = "remote"
+                self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-remote-more") {
+                self.model.settingsScrollTarget = "developer"
+                return main
+            }
+            step("client-cloud") {
+                if self.model.client(UIReview.claudeID)?.cloudAccess != true {
+                    self.model.setCloudAccess(UIReview.claudeID, true)
+                }
+                self.model.cloudAgentChoice[UIReview.claudeID] = .claudeAI
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientScrollTarget = "cloud"
+                return main
+            }
+            step("client-cloud-bearer") {
+                self.model.cloudAgentChoice[UIReview.claudeID] = .anthropicAPI
+                return main
+            }
+            step("sheet-pairing") {
+                self.review.startPairing(for: UIReview.claudeID)
+                return main?.attachedSheet ?? main
+            }
+            step("sheet-oauth-client") {
+                self.model.sheet = nil
+                self.model.cloudAgentChoice[UIReview.claudeID] = .geminiEnterprise
+                self.model.setUpOAuthClient(UIReview.claudeID, appName: CloudAgentKind.geminiEnterprise.displayName,
+                                            redirectURI: CloudAgentKind.geminiEnterprise.preRegisteredRedirectURI!)
+                return main?.attachedSheet ?? main
+            }
+            step("new-client-sheet-mcp") {
+                self.model.oauthClientDetails = nil
+                self.model.sheet = nil
+                self.model.applyRemoteEnabled(false)
+                self.review.approvals.withdrawAll()
+                self.model.navigate(to: .overview)
+                self.model.sheet = .newClient
+                return main?.attachedSheet ?? main
+            }
             step("sheet-new-client") {
                 self.model.setShowDeveloperTools(false)
                 self.model.navigate(to: .overview)
@@ -733,11 +1258,12 @@ final class SnapshotReview {
 
     private func target(for name: String) -> NSWindow? {
         if name.hasPrefix("restore") { return nil }
+        if name.hasPrefix("approval-panel") { return review.approvalPanel.window }
         if name.hasPrefix("setup") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }
         }
         guard let main = controller.window else { return nil }
-        return name.hasPrefix("sheet") ? (main.attachedSheet ?? main) : main
+        return name.hasPrefix("sheet") || name.hasPrefix("new-client-sheet") ? (main.attachedSheet ?? main) : main
     }
 
     private func capture(_ window: NSWindow, name: String) {

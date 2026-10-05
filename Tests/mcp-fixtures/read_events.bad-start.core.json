@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "start: expected an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"tomorrow at 9\"",
+    "text" : "Invalid arguments: start: expected an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"tomorrow at 9\". (code: invalid_arguments)"
+  }
+}

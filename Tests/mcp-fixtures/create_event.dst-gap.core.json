@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "nonexistent_local_time",
+    "message" : "start: 2026-03-08T02:30 doesn't exist in America/New_York (clocks skip forward). Use a different time or give an offset.",
+    "text" : "Time doesn't exist: start: 2026-03-08T02:30 doesn't exist in America/New_York (clocks skip forward). Use a different time or give an offset. (code: nonexistent_local_time)"
+  }
+}

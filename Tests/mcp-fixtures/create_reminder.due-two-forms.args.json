@@ -1,0 +1,8 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Buy bread",
+  "due": {
+    "date": "2026-11-05",
+    "date_time": "2026-11-05T09:00:00-05:00"
+  }
+}

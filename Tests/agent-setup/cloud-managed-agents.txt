@@ -1,0 +1,26 @@
+Claude Managed Agents
+credential: bearer
+needsLiteralToken: true
+
+snippet (shellCommand):
+curl "https://api.anthropic.com/v1/vaults/$VAULT_ID/credentials" \
+  -H "content-type: application/json" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "anthropic-beta: managed-agents-2026-04-01" \
+  -d '{"display_name":"EventKit Bridge (claude.ai)","auth":{"type":"static_bearer","mcp_server_url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","token":"'"$EVENTKIT_BRIDGE_REMOTE_TOKEN"'"}}'
+
+In your agent (json):
+{"mcp_servers":[{"type":"url","name":"eventkit-bridge","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"eventkit-bridge"}]}
+
+steps:
+1. Create a vault, or pick an existing one, and set VAULT_ID to its ID.
+2. In Terminal, set EVENTKIT_BRIDGE_REMOTE_TOKEN to the remote token (Copy Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
+3. Add the mcp_servers and tools entries below to your agent.
+4. Pass the vault in vault_ids when you create a session.
+
+warnings:
+- The API calls tools without asking you, so this client's grants are the only limit. Give it only the lists it needs.
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
+
+footnote: The vault matches the credential by URL. If you reset the secret path, add the credential again.

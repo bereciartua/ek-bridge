@@ -1,0 +1,9 @@
+{
+  "allDay" : true,
+  "calendarID" : "CAL-WORK",
+  "end" : 1788750000,
+  "idempotencyKey" : "$generated",
+  "start" : 1788667200,
+  "timeZone" : "America/Santiago",
+  "title" : "Feria"
+}

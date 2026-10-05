@@ -394,9 +394,11 @@ struct ActionMenuButton: NSViewRepresentable {
         var systemImage: String? = nil
         var destructive = false
         var isSeparator = false
+        var isHeader = false
         var action: () -> Void = {}
 
         static let separator = Item(isSeparator: true)
+        static func header(_ title: String) -> Item { Item(title: title, isHeader: true) }
     }
 
     let accessibilityLabel: String
@@ -431,6 +433,7 @@ struct ActionMenuButton: NSViewRepresentable {
             let menu = NSMenu()
             for item in items() {
                 if item.isSeparator { menu.addItem(.separator()); continue }
+                if item.isHeader { menu.addItem(.sectionHeader(title: item.title)); continue }
                 let entry = ClosureMenuItem(title: item.title, keyEquivalent: "", handler: item.action)
                 if let symbol = item.systemImage {
                     entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)

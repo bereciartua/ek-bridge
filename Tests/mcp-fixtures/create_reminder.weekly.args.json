@@ -1,0 +1,15 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Bins out",
+  "due": {
+    "date_time": "2026-11-05T19:00:00-05:00"
+  },
+  "recurrence": {
+    "frequency": "weekly",
+    "interval": 2,
+    "weekdays": [
+      "TH",
+      "MO"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+OpenAI Responses API
+credential: bearer
+needsLiteralToken: true
+
+snippet (shellCommand):
+curl "https://api.openai.com/v1/responses" \
+  -H "content-type: application/json" \
+  -H "authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-6-astra","input":"What is on my calendar today?","tools":[{"type":"mcp","server_label":"eventkit-bridge","server_url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","authorization":"'"$EVENTKIT_BRIDGE_REMOTE_TOKEN"'","allowed_tools":["list_collections","read_events","read_reminders"],"require_approval":"never"}]}'
+
+steps:
+1. In Terminal, set EVENTKIT_BRIDGE_REMOTE_TOKEN to the remote token (Copy Remote Token…) and OPENAI_API_KEY to your API key, then run the command.
+2. This example allows only the read tools, without approval. To use the others, remove allowed_tools and handle approval requests in your code.
+
+warnings:
+- The API calls tools without asking you, so this client's grants are the only limit. Give it only the lists it needs.
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
+
+footnote: The authorization field takes the bare token, without Bearer.

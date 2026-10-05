@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "title: must not be blank",
+    "text" : "Invalid arguments: title: must not be blank. (code: invalid_arguments)"
+  }
+}

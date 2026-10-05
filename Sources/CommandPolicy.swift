@@ -30,7 +30,8 @@ enum CommandPolicy {
         let command = request.command
         let keysAccepted = command.acceptsKeys(of: p)
         switch command {
-        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
+        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus,
+             .listCollections:
             return keysAccepted ? nil : "invalid_parameters"
         case .readEvents:
             guard keysAccepted,

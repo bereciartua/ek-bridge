@@ -219,8 +219,15 @@ struct ActivityEntry: Identifiable, Equatable {
     let command: String
     let code: String
     let targetID: String?
+    /// "cli" or "mcp"; nil for rows written before version 4.
+    var via: String? = nil
+    /// The agent's name as it reported it; display only.
+    var agent: String? = nil
+    /// How Ask before changes was answered: "user", "window", "denied", "timeout".
+    var approval: String? = nil
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
+    var isMCP: Bool { via == "mcp" }
     var isProblem: Bool { outcome.tone.isProblem }
 
     static func entries(from activity: [ClientActivity]) -> [ActivityEntry] {
@@ -233,7 +240,8 @@ struct ActivityEntry: Identifiable, Equatable {
             let ordinal = seen[base, default: 0]
             seen[base] = ordinal + 1
             return ActivityEntry(id: "\(base)|\(ordinal)", at: row.at, clientID: row.clientID,
-                                 command: row.command, code: code, targetID: row.targetID)
+                                 command: row.command, code: code, targetID: row.targetID,
+                                 via: row.via, agent: row.agent, approval: row.approval)
         }
     }
 }
@@ -275,6 +283,8 @@ enum AttentionProblem: Equatable, Hashable {
     case remindersAccess(EKAuthorizationStatus)
     case policyStoreUnavailable
     case bridgeFailed
+    case mcpServerFailed(String)
+    case remoteAccessFailed(String)
 
     var title: String {
         switch self {
@@ -282,6 +292,8 @@ enum AttentionProblem: Equatable, Hashable {
         case .remindersAccess(let status): AccessText.problemTitle(.reminderList, status)
         case .policyStoreUnavailable: String(localized: "Client settings can't be read")
         case .bridgeFailed: String(localized: "The bridge couldn't start")
+        case .mcpServerFailed: String(localized: "The MCP server couldn't start")
+        case .remoteAccessFailed: String(localized: "Remote Access couldn't start")
         }
     }
 
@@ -295,11 +307,14 @@ enum AttentionProblem: Equatable, Hashable {
 
 enum AttentionLogic {
     /// Problems that put the menu bar icon in the attention state, in display order.
+    /// `mcpFailure` is set only for an enabled MCP server that failed: a
+    /// server the user turned off is not a problem.
     static func problems(bridge: BridgeRunState, calendar: EKAuthorizationStatus,
                          reminders: EKAuthorizationStatus, clients: [ClientView],
-                         policyStoreAvailable: Bool) -> [AttentionProblem] {
+                         policyStoreAvailable: Bool, mcpFailure: String? = nil) -> [AttentionProblem] {
         var result = [AttentionProblem]()
         if case .failed = bridge { result.append(.bridgeFailed) }
+        if let mcpFailure { result.append(.mcpServerFailed(mcpFailure)) }
         if !policyStoreAvailable { result.append(.policyStoreUnavailable) }
         let active = clients.filter { !$0.revoked }
         let needsCalendar = active.contains { $0.grants.contains { $0.resource == .calendar } }
@@ -357,8 +372,12 @@ enum AccessText {
 
 /// The first-run checklist (§6). Pure so it can be unit tested.
 enum SetupChecklist {
+    // Raw values are stored (skipped steps), so new steps take new numbers;
+    // the order below is the display order.
     enum Step: Int, CaseIterable {
-        case calendarAccess = 1, remindersAccess, createClient, chooseAccess, turnOn, testRequest
+        case calendarAccess = 1, remindersAccess, createClient, chooseAccess, turnOn
+        case mcpServer = 7
+        case testRequest = 6
     }
 
     enum State: Equatable {
@@ -377,6 +396,7 @@ enum SetupChecklist {
         var bridgeOn: Bool
         var successfulClientIDs: Set<String>
         var skipped: Set<Step> = []
+        var mcpListening = false
     }
 
     /// The client the checklist talks about: a client with access that hasn't
@@ -396,14 +416,22 @@ enum SetupChecklist {
         case .createClient: return !active.isEmpty
         case .chooseAccess: return focusClient(input).map { !$0.grants.isEmpty } ?? false
         case .turnOn: return input.bridgeOn
+        case .mcpServer: return input.mcpListening
         case .testRequest: return active.contains { input.successfulClientIDs.contains($0.id) }
         }
+    }
+
+    /// The MCP step is shown only when the client the checklist is about can
+    /// connect over MCP.
+    static func steps(_ input: Input) -> [Step] {
+        let mcp = focusClient(input)?.hasMCPToken ?? false
+        return Step.allCases.filter { $0 != .mcpServer || mcp }
     }
 
     static func states(_ input: Input) -> [Step: State] {
         let hasClient = input.clients.contains { !$0.revoked }
         var result = [Step: State]()
-        for step in Step.allCases {
+        for step in steps(input) {
             if isDone(step, input) { result[step] = .done; continue }
             if input.skipped.contains(step) { result[step] = .skipped; continue }
             switch step {
@@ -414,7 +442,7 @@ enum SetupChecklist {
                 result[step] = .pending
             }
         }
-        if let first = Step.allCases.first(where: { result[$0] == .pending }) {
+        if let first = steps(input).first(where: { result[$0] == .pending }) {
             result[first] = .current
         }
         return result
@@ -423,6 +451,30 @@ enum SetupChecklist {
     /// Complete when no step is pending. Optional and skipped steps don't block.
     static func isComplete(_ input: Input) -> Bool {
         !states(input).values.contains { $0 == .pending || $0 == .current }
+    }
+}
+
+/// How a client connects, from the credentials it holds.
+enum ClientTransport: Equatable {
+    case mcp, cli, both, none
+
+    init(_ client: ClientView) {
+        switch (client.hasMCPToken, client.hasSigningKey) {
+        case (true, true): self = .both
+        case (true, false): self = .mcp
+        case (false, true): self = .cli
+        case (false, false): self = .none
+        }
+    }
+
+    /// The small badge on client rows; nil for a client with no credential.
+    var badge: String? {
+        switch self {
+        case .mcp: "MCP"
+        case .cli: "CLI"
+        case .both: "MCP + CLI"
+        case .none: nil
+        }
     }
 }
 

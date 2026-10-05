@@ -1,0 +1,18 @@
+ngrok
+preservesHost: false
+detectionHeader: X-Forwarded-Host
+
+commands:
+ngrok config add-authtoken <your ngrok authtoken>
+ngrok http 47616 --url https://my-mac.tail1234.ts.net --host-header=rewrite
+
+steps:
+1. Sign up at ngrok.com, then put your authtoken and your free dev domain from the dashboard into the commands.
+2. Paste https:// and your dev domain under Address, then click Test.
+3. To turn it off, press Control-C in the Terminal window running ngrok.
+
+notes:
+- TLS ends at ngrok's edge, so ngrok can read the traffic, calendar data included.
+- The free plan allows 20,000 requests a month.
+- Don't turn on ngrok's basic auth: it takes over the Authorization header that carries the token.
+- Optionally, allow only your agent's addresses with a Traffic Policy IP restriction, for example Anthropic's 160.79.104.0/21.

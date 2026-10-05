@@ -10,6 +10,14 @@ struct OverviewView: View {
                 if !model.policyStoreAvailable {
                     PolicyUnavailableCard(model: model)
                 }
+                if let failure = model.mcpFailureText {
+                    BannerView(banner: Banner(
+                        kind: .warning, title: String(localized: "The MCP server couldn't start."),
+                        message: failure,
+                        actionTitle: model.mcpPortInUse ? String(localized: "Choose Another Port…")
+                                                        : String(localized: "Try Again"),
+                        action: { model.mcpPortInUse ? (model.sheet = .mcpPort) : model.retryMCPServer() }))
+                }
                 if model.showsSetupChecklist {
                     SetupChecklistView(model: model)
                 } else {
@@ -59,6 +67,14 @@ struct BridgeStatusCard: View {
                     Text(subtitle)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Label(model.mcpStatusLine, systemImage: "server.rack")
+                        .foregroundStyle(model.mcpFailureText == nil ? Color.secondary : Color.orange)
+                        .font(.callout)
+                    if let remote = model.remoteStatusLine {
+                        Label(remote, systemImage: "globe")
+                            .foregroundStyle(model.remoteFailureText == nil ? Color.secondary : Color.orange)
+                            .font(.callout)
+                    }
                     if case .failed = model.bridge {
                         Button(String(localized: "Try Again")) { model.setBridgeEnabled(true) }
                             .padding(.top, 4)
@@ -110,7 +126,7 @@ struct BridgeStatusCard: View {
                 ? String(localized: "1 client can use the access you've granted. Requests stay on this Mac.")
                 : String(localized: "\(count) clients can use the access you've granted. Requests stay on this Mac.")
         case .off:
-            return String(localized: "Clients can't connect. Their access is kept.")
+            return String(localized: "Requests are refused. Clients keep their access.")
         case .failed(let reason):
             return String(localized: "The bridge couldn't start. \(reason)")
         }
@@ -194,11 +210,18 @@ struct OverviewClientRow: View {
             AvatarView(name: client.name, id: client.id, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.name).font(.body.weight(.medium)).lineLimit(1)
-                Text(AccessSummary.text(grants: client.grants, collections: model.collections,
-                                        hidden: model.hiddenResources))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let badge = ClientTransport(client).badge {
+                        TransportBadge(text: badge)
+                    }
+                    Text([model.agentSubtitle(client),
+                          AccessSummary.text(grants: client.grants, collections: model.collections,
+                                             hidden: model.hiddenResources)]
+                        .compactMap { $0 }.joined(separator: " · "))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
             Spacer(minLength: 12)
             Text(model.lastRequest(for: client.id).map { RelativeTime.ago($0, now: model.now) }
@@ -216,6 +239,22 @@ struct OverviewClientRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// "MCP", "CLI" or "MCP + CLI" before a client's access summary.
+struct TransportBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1))
+            .fixedSize()
+            .accessibilityLabel(text == "CLI" ? String(localized: "command line") : text)
     }
 }
 
@@ -255,10 +294,12 @@ struct SetupChecklistView: View {
             } else {
                 let input = model.checklistInput
                 let states = SetupChecklist.states(input)
+                let steps = SetupChecklist.steps(input)
                 Card {
-                    ForEach(SetupChecklist.Step.allCases, id: \.self) { step in
-                        if step != .calendarAccess { Divider().padding(.leading, 56) }
-                        SetupStepRow(model: model, step: step, state: states[step] ?? .pending,
+                    ForEach(Array(steps.enumerated()), id: \.element) { index, step in
+                        if index > 0 { Divider().padding(.leading, 56) }
+                        SetupStepRow(model: model, step: step, number: index + 1,
+                                     state: states[step] ?? .pending,
                                      focus: SetupChecklist.focusClient(input))
                     }
                 }
@@ -281,6 +322,7 @@ struct SetupChecklistView: View {
 struct SetupStepRow: View {
     let model: BridgeAppModel
     let step: SetupChecklist.Step
+    let number: Int
     let state: SetupChecklist.State
     let focus: ClientView?
 
@@ -319,7 +361,7 @@ struct SetupStepRow: View {
         case .optional: String(localized: "optional")
         case .pending: String(localized: "not done")
         }
-        return String(localized: "Step \(step.rawValue), \(title), \(status)")
+        return String(localized: "Step \(number), \(title), \(status)")
     }
 
     @ViewBuilder private var indicator: some View {
@@ -333,13 +375,13 @@ struct SetupStepRow: View {
                 .font(.system(size: 26))
                 .foregroundStyle(.white, .secondary)
         case .current:
-            Text("\(step.rawValue)")
+            Text("\(number)")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 26, height: 26)
                 .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
         case .pending, .optional:
-            Text("\(step.rawValue)")
+            Text("\(number)")
                 .font(.callout.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 26, height: 26)
@@ -356,7 +398,8 @@ struct SetupStepRow: View {
         case .createClient: String(localized: "Create a client")
         case .chooseAccess: String(localized: "Choose what \(clientName) can use")
         case .turnOn: String(localized: "Turn on the bridge")
-        case .testRequest: String(localized: "Send a test request")
+        case .mcpServer: String(localized: "Turn on the MCP server")
+        case .testRequest: String(localized: "Connect your tool")
         }
     }
 
@@ -377,7 +420,12 @@ struct SetupStepRow: View {
             return String(localized: "Pick calendars and lists, and what it can do with each. It has no access yet.")
         case .turnOn:
             return String(localized: "Clients can only connect while it's on. Your choice is kept after a restart.")
+        case .mcpServer:
+            return String(localized: "Lets AI agents on this Mac connect. Listens on this Mac only.")
         case .testRequest:
+            if focus?.hasMCPToken == true {
+                return String(localized: "Copy the setup for your agent, then ask it something like “What's on my calendar today?”")
+            }
             return String(localized: "Copy the command and run it in Terminal, in the eventkit-bridge folder. This step completes when the request arrives.")
         }
     }
@@ -419,9 +467,20 @@ struct SetupStepRow: View {
             .toggleStyle(.switch)
             .labelsHidden()
             .accessibilityLabel(String(localized: "Turn on the bridge"))
+        case .mcpServer:
+            if state != .done {
+                Button(String(localized: "Turn On")) { model.setMCPServerEnabled(true) }
+                    .modifier(Prominent(on: prominent))
+            }
         case .testRequest:
             if state == .done {
                 EmptyView()
+            } else if let focus, focus.hasMCPToken {
+                Button(String(localized: "Open Connect")) {
+                    model.connectTab[focus.id] = .agent
+                    model.navigate(to: .client(focus.id))
+                }
+                .modifier(Prominent(on: prominent))
             } else {
                 HStack(spacing: 10) {
                     if model.waitingForTestRequest && model.bridge.isOn {

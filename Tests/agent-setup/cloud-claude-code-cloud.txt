@@ -1,0 +1,21 @@
+Claude Code on the web
+credential: bearer
+needsLiteralToken: true
+
+snippet (json):
+{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer ${EVENTKIT_BRIDGE_TOKEN}"}}}}
+
+With an API credential (json):
+{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp"}}}
+
+steps:
+1. Add this to .mcp.json at the root of the repository and commit it. It holds no token.
+2. At claude.ai/code, edit the cloud environment and add EVENTKIT_BRIDGE_TOKEN=<remote token from Copy Remote Token…> under Environment variables.
+3. Set Network access to Custom and add my-mac.tail1234.ts.net under Allowed domains.
+4. On Pro and Max plans, you can add an API credential for my-mac.tail1234.ts.net instead (Bearer, with the remote token as the value) and commit the version without headers.
+
+warnings:
+- Anyone who uses that cloud environment can read its environment variables, including this token. Use an environment only you use, or on Pro and Max plans an API credential.
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
+
+footnote: Cloud sessions load .mcp.json only when the session has one repository.

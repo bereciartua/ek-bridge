@@ -1,0 +1,46 @@
+{
+  "tool": "list_collections",
+  "arguments": {},
+  "core": {
+    "calendarsAccess": "full",
+    "remindersAccess": "denied",
+    "collections": [
+      {
+        "resource": "calendar",
+        "id": "CAL-WORK",
+        "name": "Work",
+        "account": "iCloud",
+        "writable": true,
+        "available": true,
+        "mask": 3
+      },
+      {
+        "resource": "calendar",
+        "id": "CAL-HOL",
+        "name": "US Holidays",
+        "account": "Other",
+        "writable": false,
+        "available": true,
+        "mask": 1
+      },
+      {
+        "resource": "reminderList",
+        "id": "LIST-GROC",
+        "name": null,
+        "account": null,
+        "writable": false,
+        "available": false,
+        "mask": 19
+      },
+      {
+        "resource": "reminderList",
+        "id": "LIST-ALL",
+        "name": null,
+        "account": null,
+        "writable": false,
+        "available": false,
+        "mask": 31
+      }
+    ]
+  }
+}
