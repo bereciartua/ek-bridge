@@ -1,0 +1,7 @@
+{
+  "tool": "list_collections",
+  "arguments": {},
+  "core": {
+    "error": "bridge_off"
+  }
+}

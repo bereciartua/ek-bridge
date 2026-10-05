@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Error: EventKit Bridge returned unexpected_result. Tell the user. (code: unexpected_result)"
+}

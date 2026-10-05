@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Declined: the user declined this change in EventKit Bridge. Don't retry it unless the user asks you to. (code: approval_denied)"
+}

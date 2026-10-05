@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "due.date: expected a date like 2026-10-06; got \"Nov 5\"",
+    "text" : "Invalid arguments: due.date: expected a date like 2026-10-06; got \"Nov 5\". (code: invalid_arguments)"
+  }
+}

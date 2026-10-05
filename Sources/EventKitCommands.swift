@@ -1,19 +1,6 @@
 import EventKit
 import Foundation
 
-/// Runs one authorized item command. `EventKitCommands` is the real one; the
-/// MCP test harness injects a fake.
-@MainActor
-protocol BridgeCommandExecutor: AnyObject {
-    /// Client authorization is checked before entry and again by
-    /// `stillAuthorized` after asynchronous reads and before a mutation.
-    /// `isCancelled` is checked before the write is journaled; once it is,
-    /// the write finishes even if the caller has gone away.
-    func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
-                       stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
-                       completion: @escaping ([String: Any]) -> Void)
-}
-
 @MainActor
 final class EventKitCommands: BridgeCommandExecutor {
     private let store: EKEventStore

@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "occurrence.occurrence_due: expected an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"today\"",
+    "text" : "Invalid arguments: occurrence.occurrence_due: expected an ISO 8601 date-time with an offset, like 2026-10-06T09:00:00-04:00; got \"today\". (code: invalid_arguments)"
+  }
+}

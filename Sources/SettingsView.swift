@@ -10,6 +10,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 22) {
                 PaneTitle(title: String(localized: "Settings"))
                 general
+                MCPServerSettings(model: model)
                 developer
                 about
             }
@@ -101,6 +102,11 @@ struct SettingsView: View {
                         Button(String(localized: "Show IDs…")) { model.sheet = .collectionIDs }
                     }
                     RowDivider()
+                    SettingsRow(title: String(localized: "MCP traffic since launch"),
+                                caption: mcpTraffic) {
+                        EmptyView()
+                    }
+                    RowDivider()
                     SettingsRow(title: String(localized: "Data folder"),
                                 caption: (model.dataFolderPath as NSString).abbreviatingWithTildeInPath,
                                 monospacedCaption: true) {
@@ -127,6 +133,15 @@ struct SettingsView: View {
                 .accessibilityLabel(String(localized: "Output"))
             }
         }
+    }
+
+    /// Counts only, never bodies.
+    private var mcpTraffic: String {
+        let counts = model.mcpCounters
+        var parts = [String(localized: "\(counts.requests) requests"),
+                     String(localized: "\(counts.authFailures) failed authentications")]
+        parts += counts.byStatus.keys.sorted().map { String(localized: "\(counts.byStatus[$0]!) × \(String($0))") }
+        return parts.joined(separator: " · ")
     }
 
     private var about: some View {
@@ -200,3 +215,144 @@ struct SettingsNotice: View {
         .padding(.vertical, 10)
     }
 }
+
+/// Settings ▸ MCP Server (§13.4), with the Ask before changes defaults.
+struct MCPServerSettings: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: String(localized: "MCP Server"))
+            Card {
+                SettingsRow(title: String(localized: "MCP server"),
+                            caption: String(localized: "Lets AI agents on this Mac connect. Each agent still needs a client with access.")) {
+                    Toggle(String(localized: "MCP server"),
+                           isOn: Binding(get: { model.mcpEnabled }, set: { model.setMCPServerEnabled($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+                RowDivider()
+                statusRow
+                if model.mcpPortInUse {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Button(String(localized: "Try Again")) { model.retryMCPServer() }
+                        Button(String(localized: "Choose Another Port…")) { model.sheet = .mcpPort }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "Port")) {
+                    MonoText(text: String(model.mcpPort))
+                } actions: {
+                    Button(String(localized: "Change…")) { model.sheet = .mcpPort }
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "Launcher")) {
+                    MonoText(text: model.launcherPath)
+                } actions: {
+                    CopyButton(text: model.launcherPath, help: String(localized: "Copy Path"))
+                    Button { model.revealLauncher() } label: { Image(systemName: "folder") }
+                        .help(String(localized: "Show in Finder"))
+                        .accessibilityLabel(String(localized: "Show in Finder"))
+                }
+                if !model.isInstalledInApplications {
+                    RowDivider()
+                    SettingsNotice(
+                        text: String(localized: "Agents run the launcher from this location. Move \(AppIdentity.displayName) to Applications first, or setups will break when you move it."),
+                        button: String(localized: "Show in Finder"), action: model.revealRunningApp)
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "Today")) {
+                    Text(model.mcpTodayText)
+                } actions: {
+                    if model.activity.contains(where: \.isMCP) {
+                        Button(String(localized: "Show in Activity")) {
+                            model.activityVia = .mcp
+                            model.openActivity(keepingVia: true)
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(String(localized: "Ask before changes")).font(.headline)
+                Text(String(localized: "Each client can be changed on its page. Reads never ask."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 6)
+            Card {
+                SettingsRow(title: String(localized: "New AI agent clients")) {
+                    approvalPicker(.agent)
+                }
+                RowDivider()
+                SettingsRow(title: String(localized: "New command-line clients")) {
+                    approvalPicker(.cli)
+                }
+                RowDivider()
+                SettingsRow(title: String(localized: "Set every existing client to one mode.")) {
+                    Menu(String(localized: "Apply to All Clients…")) {
+                        Button(String(localized: "Ask me first")) { model.applyApprovalToAll(.ask) }
+                        Button(String(localized: "Allow without asking")) { model.applyApprovalToAll(.allow) }
+                    }
+                    .fixedSize()
+                    .disabled(model.activeClients.isEmpty)
+                }
+            }
+        }
+    }
+
+    private var statusRow: some View {
+        ValueRow(label: String(localized: "Status")) {
+            HStack(spacing: 10) {
+                if !model.mcpEnabled {
+                    Pill(label: String(localized: "Off"), tone: .neutral)
+                } else {
+                    switch model.mcpStatus {
+                    case .listening:
+                        Pill(label: String(localized: "Listening"), tone: .ok, icon: true)
+                        MonoText(text: model.mcpURL)
+                    case .failed:
+                        Pill(label: String(localized: "Couldn't start"), tone: .bad, icon: true)
+                        Text(model.mcpFailureText ?? "").fixedSize(horizontal: false, vertical: true)
+                    case .starting, .off:
+                        ProgressView().controlSize(.small)
+                        Text(String(localized: "Starting…")).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } actions: {
+            if model.mcpIsListening {
+                CopyButton(text: model.mcpURL, help: String(localized: "Copy URL"))
+            } else if model.mcpEnabled, !model.mcpPortInUse, case .failed = model.mcpStatus {
+                Button(String(localized: "Try Again")) { model.retryMCPServer() }
+            }
+        }
+    }
+
+    private func approvalPicker(_ kind: ClientKind) -> some View {
+        Picker(kind == .cli ? String(localized: "New command-line clients") : String(localized: "New AI agent clients"),
+               selection: Binding(get: { model.defaultApproval(for: kind) },
+                                  set: { model.setNewClientApproval($0, for: kind) })) {
+            Text(String(localized: "Ask me first")).tag(ApprovalMode.ask)
+            Text(String(localized: "Allow without asking")).tag(ApprovalMode.allow)
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
+/// A label, a value and trailing buttons, as in the Connect card.
+struct ValueRow<Value: View, Actions: View>: View {
+    let label: String
+    @ViewBuilder var value: Value
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        ConnectRow(label: label, value: { value }, actions: { actions })
+    }
+}
+

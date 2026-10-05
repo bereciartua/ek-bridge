@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "end_date: an all-day event can span at most 7 days",
+    "text" : "Invalid arguments: end_date: an all-day event can span at most 7 days. (code: invalid_arguments)"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "tool": "create_reminder",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "title": "Buy oat milk",
+    "due": {
+      "date_time": "2026-11-05T09:00:00-05:00"
+    }
+  },
+  "core": {
+    "error": "write_committed_journal_pending_review"
+  }
+}

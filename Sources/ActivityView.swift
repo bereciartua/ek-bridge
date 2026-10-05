@@ -14,24 +14,7 @@ struct ActivityView: View {
                     .fixedSize()
                     .layoutPriority(1)
                 Spacer(minLength: 12)
-                Picker(String(localized: "Client"), selection: $model.activityClientFilter) {
-                    Text(String(localized: "All Clients")).tag(ActivityClientFilter.all)
-                    Divider()
-                    ForEach(model.activeClients) { client in
-                        Text(client.name).tag(ActivityClientFilter.client(client.id))
-                    }
-                    ForEach(model.revokedClients.filter { client in
-                        model.activityClientFilter == .client(client.id) ||
-                            model.activity.contains { $0.clientID == client.id }
-                    }) { client in
-                        Text(model.clientName(client.id)).tag(ActivityClientFilter.client(client.id))
-                    }
-                    Divider()
-                    Text(String(localized: "Unknown client")).tag(ActivityClientFilter.unknown)
-                }
-                .labelsHidden()
-                .frame(maxWidth: 170)
-                .accessibilityLabel(String(localized: "Client"))
+                ActivityFilterMenu(model: model)
                 Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
                     Text(String(localized: "All")).tag(false)
                     Text(String(localized: "Problems \(scoped.filter(\.isProblem).count)")).tag(true)
@@ -100,11 +83,17 @@ struct ActivityView: View {
 
     private var clientScoped: [ActivityEntry] {
         model.activity.filter { entry in
-            switch model.activityClientFilter {
+            let client = switch model.activityClientFilter {
             case .all: true
             case .client(let id): entry.clientID == id
             case .unknown: entry.clientID == nil
             }
+            let via = switch model.activityVia {
+            case .all: true
+            case .mcp: entry.via == "mcp"
+            case .cli: entry.via == "cli"
+            }
+            return client && via
         }
     }
 
@@ -118,7 +107,7 @@ struct ActivityView: View {
                                             ? .reminderList : .calendar, targetID: id))?.name
             }
             return [model.clientName(entry.clientID), CommandPresentation.label(entry.command),
-                    entry.outcome.label, entry.code, target ?? ""]
+                    entry.outcome.label, entry.code, target ?? "", entry.agent ?? ""]
                 .contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
@@ -144,7 +133,8 @@ struct ActivityTable: View {
         let usable = max(width - 84, 320)
         let time = max(62, usable * 0.14)
         let result = max(128, usable * 0.2)
-        let rest = usable - time - result
+        let via: CGFloat = 22
+        let rest = usable - time - result - via
         ScrollViewReader { proxy in
         Table(rows, selection: $model.activitySelection) {
             TableColumn(String(localized: "Time")) { entry in
@@ -154,6 +144,10 @@ struct ActivityTable: View {
                     .help(RelativeTime.full(entry.at))
             }
             .width(time)
+            TableColumn(String(localized: "Via")) { entry in
+                ViaIcon(via: entry.via)
+            }
+            .width(via)
             TableColumn(String(localized: "Client")) { entry in
                 Text(model.clientName(entry.clientID))
                     .foregroundStyle(entry.clientID == nil ? .secondary : .primary)
@@ -269,6 +263,21 @@ struct ActivityInspector: View {
                     Text(String(localized: "Client")).foregroundStyle(.secondary)
                     Text(model.clientName(entry.clientID))
                 }
+                if let via = entry.via {
+                    GridRow {
+                        Text(String(localized: "Via")).foregroundStyle(.secondary)
+                        Text(via == "mcp"
+                             ? (entry.agent.map { String(localized: "MCP (\($0), as reported)") } ?? String(localized: "MCP"))
+                             : String(localized: "Command line"))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let approval = ApprovalText.detail(entry.approval) {
+                    GridRow {
+                        Text(String(localized: "Approval")).foregroundStyle(.secondary)
+                        Text(approval)
+                    }
+                }
                 if let key = entry.targetKey {
                     GridRow {
                         Text(key.resource == .calendar ? String(localized: "Calendar") : String(localized: "List"))
@@ -329,6 +338,9 @@ struct ActivityInspector: View {
 
     private func why(_ entry: ActivityEntry, outcome: OutcomePresentation,
                      collection: CollectionInfo?) -> String? {
+        if entry.code == "approval_denied" && entry.isMCP {
+            return String(localized: "You declined this change. The agent was told not to retry unless you ask it to.")
+        }
         if entry.code == "forbidden", entry.clientID != nil,
            let action = CommandPresentation.requiredAction(entry.command) {
             let target = collection?.name ?? (entry.targetKey?.resource == .reminderList
@@ -388,3 +400,100 @@ struct ActivityInspector: View {
 
     private func outcome(_ entry: ActivityEntry) -> OutcomePresentation { entry.outcome }
 }
+
+/// The narrow Via column: sparkles for MCP, a terminal for the command line.
+struct ViaIcon: View {
+    let via: String?
+
+    var body: some View {
+        switch via {
+        case "mcp":
+            Image(systemName: "sparkles").foregroundStyle(.purple)
+                .help(String(localized: "via MCP"))
+                .accessibilityLabel(String(localized: "via MCP"))
+        case "cli":
+            Image(systemName: "terminal").foregroundStyle(.secondary)
+                .help(String(localized: "via command line"))
+                .accessibilityLabel(String(localized: "via command line"))
+        default:
+            Text("").accessibilityHidden(true)
+        }
+    }
+}
+
+/// "All Clients · MCP": one menu for the client and transport filters.
+struct ActivityFilterMenu: View {
+    @Bindable var model: BridgeAppModel
+
+    var body: some View {
+        Menu {
+            Section(String(localized: "Client")) {
+                choice(String(localized: "All Clients"), model.activityClientFilter == .all) {
+                    model.activityClientFilter = .all
+                }
+                ForEach(model.activeClients) { client in
+                    choice(client.name, model.activityClientFilter == .client(client.id)) {
+                        model.activityClientFilter = .client(client.id)
+                    }
+                }
+                ForEach(model.revokedClients.filter { client in
+                    model.activityClientFilter == .client(client.id) ||
+                        model.activity.contains { $0.clientID == client.id }
+                }) { client in
+                    choice(model.clientName(client.id), model.activityClientFilter == .client(client.id)) {
+                        model.activityClientFilter = .client(client.id)
+                    }
+                }
+                choice(String(localized: "Unknown client"), model.activityClientFilter == .unknown) {
+                    model.activityClientFilter = .unknown
+                }
+            }
+            Section(String(localized: "Via")) {
+                ForEach(ActivityViaFilter.allCases, id: \.self) { via in
+                    choice(title(via), model.activityVia == via) { model.activityVia = via }
+                }
+            }
+        } label: {
+            Text(label)
+        }
+        .fixedSize()
+        .frame(maxWidth: 220)
+        .accessibilityLabel(String(localized: "Filter by client and transport"))
+    }
+
+    private var label: String {
+        let client = switch model.activityClientFilter {
+        case .all: String(localized: "All Clients")
+        case .client(let id): model.clientName(id)
+        case .unknown: String(localized: "Unknown client")
+        }
+        return model.activityVia == .all ? client : "\(client) · \(title(model.activityVia))"
+    }
+
+    private func title(_ via: ActivityViaFilter) -> String {
+        switch via {
+        case .all: String(localized: "All")
+        case .mcp: String(localized: "MCP")
+        case .cli: String(localized: "Command line")
+        }
+    }
+
+    private func choice(_ title: String, _ selected: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if selected { Label(title, systemImage: "checkmark") } else { Text(title) }
+        }
+    }
+}
+
+enum ApprovalText {
+    static func detail(_ approval: String?) -> String? {
+        switch approval {
+        case "user": String(localized: "You approved")
+        case "window": String(localized: "Allowed by a 15-minute allowance")
+        case "denied": String(localized: "You declined")
+        case "timeout": String(localized: "No answer in 45 s")
+        default: nil
+        }
+    }
+}
+

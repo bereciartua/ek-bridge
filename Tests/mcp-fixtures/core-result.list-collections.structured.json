@@ -1,0 +1,59 @@
+{
+  "calendars" : [
+    {
+      "account" : "iCloud",
+      "actions" : [
+        "read",
+        "create"
+      ],
+      "available" : true,
+      "id" : "CAL-WORK",
+      "name" : "Work",
+      "writable" : true
+    },
+    {
+      "account" : "Other",
+      "actions" : [
+        "read"
+      ],
+      "available" : true,
+      "id" : "CAL-HOL",
+      "name" : "US Holidays",
+      "writable" : false
+    }
+  ],
+  "macos_access" : {
+    "calendars" : "full",
+    "reminders" : "denied"
+  },
+  "now" : "2026-10-05T12:00:00-04:00",
+  "reminder_lists" : [
+    {
+      "account" : null,
+      "actions" : [
+        "read",
+        "create",
+        "complete"
+      ],
+      "available" : false,
+      "id" : "LIST-GROC",
+      "name" : null,
+      "writable" : false
+    },
+    {
+      "account" : null,
+      "actions" : [
+        "read",
+        "create",
+        "edit",
+        "delete",
+        "complete"
+      ],
+      "available" : false,
+      "id" : "LIST-ALL",
+      "name" : null,
+      "writable" : false
+    }
+  ],
+  "time_zone" : "America/New_York"
+}

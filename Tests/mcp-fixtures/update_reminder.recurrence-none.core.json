@@ -1,0 +1,10 @@
+{
+  "expectedVersion" : "1791216003.000000",
+  "idempotencyKey" : "$generated",
+  "itemID" : "R9",
+  "listID" : "LIST-GROC",
+  "recurrence" : {
+    "kind" : "none"
+  },
+  "title" : "Buy oat milk"
+}

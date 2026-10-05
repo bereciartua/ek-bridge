@@ -1,0 +1,15 @@
+{
+  "expectedVersion" : "1791216003.000000",
+  "idempotencyKey" : "$generated",
+  "itemID" : "R9",
+  "listID" : "LIST-GROC",
+  "recurrence" : {
+    "frequency" : "weekly",
+    "interval" : 1,
+    "kind" : "rule",
+    "weekdays" : [
+      "TH"
+    ]
+  },
+  "title" : "Buy oat milk"
+}

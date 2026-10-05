@@ -1,0 +1,17 @@
+{
+  "calendar_id" : "CAL-WORK",
+  "events" : [
+    {
+      "all_day" : false,
+      "editable" : true,
+      "end" : "2026-10-06T11:00:00-04:00",
+      "id" : "EV1",
+      "recurring" : false,
+      "start" : "2026-10-06T10:00:00-04:00",
+      "time_zone" : "GMT",
+      "title" : "Design review",
+      "title_truncated" : false,
+      "version" : "1791200000.123456"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "calendarID" : "CAL-WORK",
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV1"
+}

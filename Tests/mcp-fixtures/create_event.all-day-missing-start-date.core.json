@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "start_date: required for an all-day event, like 2026-10-06",
+    "text" : "Invalid arguments: start_date: required for an all-day event, like 2026-10-06. (code: invalid_arguments)"
+  }
+}

@@ -1,5 +1,18 @@
 import Foundation
 
+/// Runs one authorized item command. `EventKitCommands` is the real one; the
+/// MCP test harness injects a fake.
+@MainActor
+protocol BridgeCommandExecutor: AnyObject {
+    /// Client authorization is checked before entry and again by
+    /// `stillAuthorized` after asynchronous reads and before a mutation.
+    /// `isCancelled` is checked before the write is journaled; once it is,
+    /// the write finishes even if the caller has gone away.
+    func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
+                       stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
+                       completion: @escaping ([String: Any]) -> Void)
+}
+
 /// A calendar or reminder list as macOS reports it, for `list_collections`
 /// and the inline counts. Kept free of AppKit so the MCP harness can fake it.
 struct CollectionRecord: Equatable {
@@ -26,6 +39,8 @@ struct ApprovalRequest {
     let agent: String?
     let request: BridgeRequest
     let targetID: String?
+    /// The client's revision when asked; an allowance ends when it changes.
+    var revision = 0
 }
 
 enum ApprovalDecision: Equatable {
@@ -147,7 +162,7 @@ final class RequestPipeline {
         if request.command.isWrite, call.approval == .ask, let approvals {
             let approval = ApprovalRequest(clientID: clientID, clientName: call.clientName,
                                            agent: origin.agent, request: request,
-                                           targetID: call.targetID)
+                                           targetID: call.targetID, revision: call.revision)
             ticket.withdrawApproval = approvals.request(approval) { [weak self] decision in
                 ticket.withdrawApproval = nil
                 guard let self else { completion(["error": "app_unavailable"]); return }

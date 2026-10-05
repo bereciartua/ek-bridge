@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "notes: only supported on all-day events (all_day true)",
+    "text" : "Invalid arguments: notes: only supported on all-day events (all_day true). (code: invalid_arguments)"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "tool": "read_reminders",
+  "arguments": {
+    "list_id": "LIST-GROC"
+  },
+  "core": {
+    "error": "timeout"
+  }
+}

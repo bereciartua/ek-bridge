@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence: a repeating reminder needs due (date or date_time)",
+    "text" : "Invalid arguments: recurrence: a repeating reminder needs due (date or date_time). (code: invalid_arguments)"
+  }
+}

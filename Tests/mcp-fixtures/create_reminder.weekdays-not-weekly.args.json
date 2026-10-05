@@ -1,0 +1,13 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Vitamins",
+  "due": {
+    "date": "2026-11-05"
+  },
+  "recurrence": {
+    "frequency": "daily",
+    "weekdays": [
+      "TH"
+    ]
+  }
+}

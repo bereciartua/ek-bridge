@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence: pass end_count or end_until, not both",
+    "text" : "Invalid arguments: recurrence: pass end_count or end_until, not both. (code: invalid_arguments)"
+  }
+}

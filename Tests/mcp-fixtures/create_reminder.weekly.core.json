@@ -1,0 +1,19 @@
+{
+  "due" : {
+    "at" : 1793923200,
+    "kind" : "timed",
+    "timeZone" : "America/New_York"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "recurrence" : {
+    "frequency" : "weekly",
+    "interval" : 2,
+    "kind" : "rule",
+    "weekdays" : [
+      "TH",
+      "MO"
+    ]
+  },
+  "title" : "Bins out"
+}

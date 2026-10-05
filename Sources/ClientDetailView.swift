@@ -2,7 +2,8 @@ import SwiftUI
 
 // The client page (§8). The key itself is never shown, copied, or put in a
 // tooltip or accessibility value: only the client ID, the key file path and a
-// command that reads the key file.
+// command that reads the key file. The MCP token is never shown either; it can
+// be copied only through Copy Token…, after a confirmation.
 
 struct ClientDetailView: View {
     let model: BridgeAppModel
@@ -68,17 +69,7 @@ struct ClientHeader: View {
             .help(String(localized: "Show this client's requests"))
             ActionMenuButton(accessibilityLabel: String(localized: "More actions for \(client.name)"),
                              help: String(localized: "More actions")) {
-                [
-                    .init(title: String(localized: "Rename…"), systemImage: "pencil",
-                          action: { model.sheet = .rename(client.id) }),
-                    .init(title: String(localized: "Rotate Key…"), systemImage: "arrow.triangle.2.circlepath",
-                          action: { model.rotateKey(client.id) }),
-                    .init(title: String(localized: "Show Key File in Finder"), systemImage: "folder",
-                          action: { model.showKeyFile(client.id) }),
-                    .separator,
-                    .init(title: String(localized: "Revoke Client…"), destructive: true,
-                          action: { model.revokeClient(client.id) }),
-                ]
+                ClientMenu.items(model: model, client: client)
             }
             .fixedSize()
             }
@@ -94,7 +85,92 @@ struct ClientHeader: View {
     }
 }
 
+/// The ⋯ menu on a client page, also used by the sidebar's context menu.
+enum ClientMenu {
+    @MainActor
+    static func items(model: BridgeAppModel, client: ClientView) -> [ActionMenuButton.Item] {
+        var items: [ActionMenuButton.Item] = [
+            .init(title: String(localized: "Rename…"), systemImage: "pencil",
+                  action: { model.sheet = .rename(client.id) }),
+            .separator,
+            .header(String(localized: "MCP Access")),
+        ]
+        if client.hasMCPToken {
+            items += [
+                .init(title: String(localized: "Reset MCP Token…"), systemImage: "arrow.triangle.2.circlepath",
+                      action: { model.resetMCPToken(client.id) }),
+                .init(title: String(localized: "Remove MCP Access…"), systemImage: "minus.circle",
+                      action: { model.removeMCPAccess(client.id) }),
+                .init(title: String(localized: "Show Token File in Finder"), systemImage: "folder",
+                      action: { model.showTokenFile(client.id) }),
+            ]
+        } else {
+            items.append(.init(title: String(localized: "Turn On MCP Access"), systemImage: "sparkles",
+                               action: { model.turnOnMCPAccess(client.id) }))
+        }
+        items.append(.header(String(localized: "Command Line")))
+        if client.hasSigningKey {
+            items += [
+                .init(title: String(localized: "Rotate Key…"), systemImage: "arrow.triangle.2.circlepath",
+                      action: { model.rotateKey(client.id) }),
+                .init(title: String(localized: "Remove Command-Line Key…"), systemImage: "minus.circle",
+                      action: { model.removeSigningKey(client.id) }),
+                .init(title: String(localized: "Show Key File in Finder"), systemImage: "folder",
+                      action: { model.showKeyFile(client.id) }),
+            ]
+        } else {
+            items.append(.init(title: String(localized: "Add Command-Line Key"), systemImage: "terminal",
+                               action: { model.addSigningKey(client.id) }))
+        }
+        items += [
+            .separator,
+            .init(title: String(localized: "Revoke Client…"), destructive: true,
+                  action: { model.revokeClient(client.id) }),
+        ]
+        return items
+    }
+}
+
 struct ConnectSection: View {
+    let model: BridgeAppModel
+    let client: ClientView
+
+    private var tab: ConnectTab {
+        model.connectTab[client.id] ?? (client.hasMCPToken || !client.hasSigningKey ? .agent : .cli)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionTitle(title: String(localized: "Connect"))
+                Spacer()
+                Picker(String(localized: "Connects from"), selection: Binding(
+                    get: { tab }, set: { model.connectTab[client.id] = $0 })) {
+                    Label(String(localized: "AI agent (MCP)"), systemImage: "sparkles").tag(ConnectTab.agent)
+                    Label(String(localized: "Command line"), systemImage: "terminal").tag(ConnectTab.cli)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            switch tab {
+            case .agent: ConnectAgentTab(model: model, client: client)
+            case .cli:
+                if client.hasSigningKey {
+                    CommandLineConnect(model: model, client: client)
+                } else {
+                    EmptyConnectCard(text: String(localized: "This client has no command-line key."),
+                                     button: String(localized: "Add Command-Line Key")) {
+                        model.addSigningKey(client.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Connect ▸ Command line: the client ID, key file and a first command.
+struct CommandLineConnect: View {
     let model: BridgeAppModel
     let client: ClientView
 
@@ -102,7 +178,6 @@ struct ConnectSection: View {
         let keyURL = model.keyFileURL(client.id)
         let keyStatus = model.keyFileStatus(client.id)
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "Connect"))
             Card {
                 ConnectRow(label: String(localized: "Client ID")) {
                     MonoText(text: client.id, truncation: .tail)
@@ -186,6 +261,34 @@ struct ConnectRow<Value: View, Actions: View>: View {
 
 // MARK: - Access (§8.3)
 
+/// Changes: Ask me first / Allow without asking. Saved at once, not staged.
+struct ApprovalControl: View {
+    let model: BridgeAppModel
+    let client: ClientView
+
+    var body: some View {
+        let writes = client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
+        HStack(spacing: 6) {
+            if !writes {
+                Text(String(localized: "Only applies to changes."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Text(String(localized: "Changes:")).foregroundStyle(.secondary)
+            Picker(String(localized: "Changes"), selection: Binding(
+                get: { client.approval }, set: { model.setApproval(client.id, $0) })) {
+                Label(String(localized: "Ask me first"), systemImage: "hand.raised").tag(ApprovalMode.ask)
+                Label(String(localized: "Allow without asking"), systemImage: "checkmark.shield").tag(ApprovalMode.allow)
+            }
+            .labelsHidden()
+            .fixedSize()
+            .disabled(!writes)
+            .accessibilityLabel(String(localized: "Ask before changes"))
+        }
+        .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this client. Reads never ask."))
+    }
+}
+
 struct AccessSection: View {
     let model: BridgeAppModel
     let client: ClientView
@@ -196,7 +299,11 @@ struct AccessSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "Access"))
+            HStack(alignment: .firstTextBaseline) {
+                SectionTitle(title: String(localized: "Access"))
+                Spacer()
+                ApprovalControl(model: model, client: client)
+            }
             HStack(spacing: 12) {
                 Picker(String(localized: "Type"), selection: Binding(
                     get: { tab }, set: { model.accessTab[client.id] = $0 })) {
@@ -512,6 +619,8 @@ struct RevokedClientView: View {
 struct NewClientSheet: View {
     let model: BridgeAppModel
     @State private var name = ""
+    @State private var kind = ClientKind.agent
+    @State private var ask: Bool?
     @State private var submitted: ClientNameIssue?
     @FocusState private var focused: Bool
 
@@ -519,7 +628,7 @@ struct NewClientSheet: View {
         let issue = model.nameIssue(name)
         VStack(alignment: .leading, spacing: 12) {
             Text(String(localized: "New Client")).font(.headline)
-            Text(String(localized: "Name the tool or script that will connect. It starts with no access."))
+            Text(String(localized: "Name the agent or script that will connect. It starts with no access."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
@@ -538,19 +647,68 @@ struct NewClientSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "Connects from"))
+                Picker(String(localized: "Connects from"), selection: $kind) {
+                    ForEach(ClientKind.allCases) { option in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(title(option))
+                            if let caption = caption(option) {
+                                Text(caption)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.bottom, 4)
+                        .tag(option)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                .accessibilityLabel(String(localized: "Connects from"))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle(String(localized: "Ask me before each change"), isOn: Binding(
+                    get: { ask ?? (model.defaultApproval(for: kind) == .ask) }, set: { ask = $0 }))
+                    .toggleStyle(.checkbox)
+                Text(String(localized: "Preset from Settings. You can change this later on the client's page."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
+            }
+            Text(String(localized: "A new client has no access. You choose its calendars and lists next."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button(String(localized: "Cancel")) { model.sheet = nil }
                     .keyboardShortcut(.cancelAction)
-                Button(String(localized: "Create Client")) { create() }
+                Button(String(localized: "Create")) { create() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(issue != nil)
             }
             .padding(.top, 4)
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 480)
         .onAppear { focused = true }
+    }
+
+    private func title(_ option: ClientKind) -> String {
+        switch option {
+        case .agent: String(localized: "AI agent (MCP)")
+        case .cli: String(localized: "Command line")
+        case .both: String(localized: "Both")
+        }
+    }
+
+    private func caption(_ option: ClientKind) -> String? {
+        switch option {
+        case .agent: String(localized: "For Claude Code, Codex, Claude Desktop, Cursor and other agents. What the agent reads is sent to its AI provider.")
+        case .cli: String(localized: "For scripts that run client.py.")
+        case .both: nil
+        }
     }
 
     // Empty is shown as a disabled button, not an error.
@@ -562,7 +720,55 @@ struct NewClientSheet: View {
 
     private func create() {
         guard model.nameIssue(name) == nil else { return }
-        submitted = model.createClient(name: name)
+        // Untouched, the checkbox follows the default for the chosen kind.
+        submitted = model.createClient(name: name, kind: kind, askBeforeChanges: ask)
+    }
+}
+
+/// Settings ▸ MCP Server ▸ Port ▸ Change…
+struct MCPPortSheet: View {
+    let model: BridgeAppModel
+    @State private var text = ""
+    @State private var submitted: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(localized: "Choose Another Port")).font(.headline)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "Port"))
+                TextField(String(localized: "Port"), text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused)
+                    .onSubmit(save)
+                    .frame(width: 120)
+                if let submitted {
+                    Text(submitted).font(.callout).foregroundStyle(.red)
+                }
+                Text(String(localized: "From 1024 to 65535. Agents set up with a direct URL need the new address. Launcher setups keep working."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button(String(localized: "Cancel")) { model.sheet = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button(String(localized: "Use This Port"), action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(Int(text.trimmingCharacters(in: .whitespaces)) == nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .onAppear {
+            text = String(model.mcpPort)
+            focused = true
+        }
+    }
+
+    private func save() {
+        submitted = model.changeMCPPort(text)
     }
 }
 

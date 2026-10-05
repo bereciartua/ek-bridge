@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "end: required for a timed event (or pass all_day true with start_date)",
+    "text" : "Invalid arguments: end: required for a timed event (or pass all_day true with start_date). (code: invalid_arguments)"
+  }
+}

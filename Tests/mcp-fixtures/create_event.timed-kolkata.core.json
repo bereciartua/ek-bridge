@@ -1,0 +1,7 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1791258300,
+  "idempotencyKey" : "$generated",
+  "start" : 1791257400,
+  "title" : "Standup"
+}

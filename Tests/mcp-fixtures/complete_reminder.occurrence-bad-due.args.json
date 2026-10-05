@@ -1,0 +1,9 @@
+{
+  "list_id": "LIST-GROC",
+  "reminder_id": "R7",
+  "version": "1791216003.000000",
+  "occurrence": {
+    "occurrence_due": "today",
+    "occurrence_fingerprint": "3b1f000000000000000000000000000000000000000000000000000000009a7c"
+  }
+}

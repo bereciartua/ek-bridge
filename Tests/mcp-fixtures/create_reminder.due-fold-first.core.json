@@ -1,0 +1,10 @@
+{
+  "due" : {
+    "at" : 1793511000,
+    "kind" : "timed",
+    "timeZone" : "America/New_York"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "title" : "Night shift"
+}

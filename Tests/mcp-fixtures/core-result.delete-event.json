@@ -1,0 +1,11 @@
+{
+  "tool": "delete_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV1",
+    "version": "1791200000.123456"
+  },
+  "core": {
+    "deleted": true
+  }
+}

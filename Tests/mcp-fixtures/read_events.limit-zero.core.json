@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "limit: expected 1 to 100; got 0",
+    "text" : "Invalid arguments: limit: expected 1 to 100; got 0. (code: invalid_arguments)"
+  }
+}

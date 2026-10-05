@@ -1,0 +1,11 @@
+{
+  "tool": "read_reminders",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "cursor": "R9"
+  },
+  "core": {
+    "items": [],
+    "truncated": false
+  }
+}

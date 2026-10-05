@@ -1,0 +1,33 @@
+{
+  "tool": "update_reminder",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "reminder_id": "R9",
+    "version": "1791216003.000000",
+    "title": "Buy oat milk",
+    "due": {
+      "date": "2026-11-06"
+    }
+  },
+  "core": {
+    "item": {
+      "id": "R9",
+      "title": "Buy oat milk",
+      "completed": false,
+      "recurring": false,
+      "due": {
+        "kind": "all_day",
+        "date": "2026-11-06",
+        "timeZone": "America/New_York"
+      },
+      "recurrence": {
+        "kind": "none",
+        "supported": true
+      },
+      "alarms": [],
+      "alarmCount": 0,
+      "alarmsTruncated": false,
+      "version": "1791216005.000000"
+    }
+  }
+}

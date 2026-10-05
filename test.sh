@@ -183,3 +183,54 @@ xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/cli_test.py" \
     "$project_dir/build/bridge-client-test"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/MCP/MCPTime.swift" \
+    "$project_dir/Sources/MCP/AgentOutcomeText.swift" \
+    "$project_dir/Sources/MCP/MCPToolMapping.swift" \
+    "$project_dir/Tests/MCPToolMappingTests.swift" \
+    -o "$project_dir/build/mcp-tool-mapping-tests"
+"$project_dir/build/mcp-tool-mapping-tests" "$project_dir/Tests/mcp-fixtures"
+# Test build only: -D EVENTKIT_MCP_TEST runs the real MCP server, pipeline,
+# registry and journal with fake EventKit and approvals, over loopback.
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -D EVENTKIT_MCP_TEST \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/WriteJournal.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/"*.swift \
+    "$project_dir/Tests/MCPServerHarness.swift" \
+    -o "$project_dir/build/mcp-server-test"
+PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/mcp_test.py" \
+    "$project_dir/build/mcp-server-test" "$project_dir/Tests/mcp-fixtures/tools.json"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -D EVENTKIT_MCP_TEST \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/MCPLauncher.swift" \
+    -o "$project_dir/build/bridge-mcp-test"
+PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/launcher_test.py" \
+    "$project_dir/build/bridge-mcp-test" "$project_dir/build/mcp-server-test"

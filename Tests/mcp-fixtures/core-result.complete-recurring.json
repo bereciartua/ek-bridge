@@ -1,0 +1,58 @@
+{
+  "tool": "complete_reminder",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "reminder_id": "R7",
+    "version": "1791216003.000000",
+    "occurrence": {
+      "occurrence_due": "2026-10-06T09:00:00-04:00",
+      "occurrence_fingerprint": "3b1f000000000000000000000000000000000000000000000000000000009a7c"
+    }
+  },
+  "core": {
+    "completedOccurrence": {
+      "id": "R7-DONE",
+      "title": "Vitamins",
+      "completed": true,
+      "recurring": false,
+      "due": {
+        "kind": "timed",
+        "at": 1791291600,
+        "local": "2026-10-06T09:00:00",
+        "timeZone": "America/New_York"
+      },
+      "recurrence": {
+        "kind": "none",
+        "supported": true
+      },
+      "alarms": [],
+      "alarmCount": 0,
+      "alarmsTruncated": false,
+      "version": "1791216007.000000"
+    },
+    "nextOccurrence": {
+      "id": "R7",
+      "title": "Vitamins",
+      "completed": false,
+      "recurring": true,
+      "due": {
+        "kind": "timed",
+        "at": 1791378000,
+        "local": "2026-10-07T09:00:00",
+        "timeZone": "America/New_York"
+      },
+      "recurrence": {
+        "kind": "rule",
+        "supported": true,
+        "frequency": "daily",
+        "interval": 1
+      },
+      "alarms": [],
+      "alarmCount": 0,
+      "alarmsTruncated": false,
+      "version": "1791216007.000000"
+    },
+    "completedDue": 1791291600,
+    "nextDue": 1791378000
+  }
+}

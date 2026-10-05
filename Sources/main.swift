@@ -31,12 +31,29 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     #else
     private lazy var clientRegistry = ClientRegistry()
     private let rateLimiter = RateLimiter()
+    private let mcpCounters = MCPTrafficCounters()
+    private lazy var approvals = ApprovalCenter(summarize: { [weak self] request in
+        ApprovalSummaries.build(request, store: self?.store, collections: self?.model.collections ?? [])
+    })
+    private lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private lazy var pipeline = RequestPipeline(
         registry: clientRegistry, commands: commands,
         collections: EventKitCollectionSource(store: store),
-        limiter: rateLimiter,
+        approvals: approvals, limiter: rateLimiter,
         bridgeActive: { [weak self] in self?.localBridge?.active == true },
         didRecord: { [weak self] in self?.model.scheduleRefresh() })
+    private lazy var mcpService: MCPService = {
+        let server = MCPServer(registry: clientRegistry, pipeline: pipeline, limiter: rateLimiter,
+                               counters: mcpCounters,
+                               didConnect: { [weak self] id, connection in
+                                   self?.model.mcpDidConnect(id, connection) })
+        let origins = Set(UserDefaults.standard.stringArray(forKey: "MCPServerAllowedOrigins") ?? [])
+        let service = MCPService(server: server, limiter: rateLimiter, counters: mcpCounters,
+                                 endpointFile: MCPEndpointFile(directory: Self.dataFolder),
+                                 allowedOrigins: origins)
+        service.statusChanged = { [weak self] status in self?.model.mcpStatusDidChange(status) }
+        return service
+    }()
     #endif
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
@@ -54,6 +71,18 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         windowController = MainWindowController(model: model)
         statusMenu = StatusMenuController(model: model)
+        #if !EVENTKIT_UI_REVIEW
+        approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
+        // If the listener didn't survive sleep, start it again.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.model.mcpEnabled, !self.model.mcpIsListening else { return }
+                self.model.retryMCPServer()
+            }
+        }
+        #endif
         NSApp.mainMenu = MainMenu.build(target: self)
         #if EVENTKIT_UI_REVIEW
         review.run(model: model, window: windowController, statusMenu: statusMenu)
@@ -84,6 +113,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        #if !EVENTKIT_UI_REVIEW
+        // Waiting changes are refused, and the endpoint file goes away.
+        approvals.shutDown()
+        mcpService.stop()
+        #endif
         localBridge?.stop()
         localBridge = nil
         #if EVENTKIT_UI_REVIEW
@@ -94,13 +128,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     // MARK: Live services
 
     #if !EVENTKIT_UI_REVIEW
+    private static var dataFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true)
+    }
+
     private func liveServices() -> BridgeServices {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return BridgeServices(
+        BridgeServices(
             registry: clientRegistry,
             credentialFiles: ClientCredentialFiles(),
             defaults: .standard,
-            dataFolder: support.appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true),
+            dataFolder: Self.dataFolder,
             store: store,
             authorizationStatus: { EKEventStore.authorizationStatus(for: $0) },
             requestFullAccess: { [weak self] type, completion in
@@ -125,7 +163,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
-            testCollections: testCollections)
+            testCollections: testCollections,
+            mcp: MCPControls(
+                start: { [weak self] port in self?.mcpService.start(port: port) },
+                stop: { [weak self] in self?.mcpService.stop() },
+                counters: { [weak self] in self?.mcpCounters.snapshot ?? .init() },
+                launcherURL: Bundle.main.bundleURL
+                    .appendingPathComponent("Contents/MacOS/\(AppIdentity.launcherName)"),
+                portIsFree: { PortProbe.isFree($0) }),
+            approvals: approvals)
     }
 
     private func liveCollections() -> [CollectionInfo] {
@@ -162,6 +208,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         }
         bridgeEnablement.setEnabled(false)
         localBridge?.stop()
+        approvals.withdrawAll()
         return .off
     }
 

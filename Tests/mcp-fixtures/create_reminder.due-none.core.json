@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "due: {\"none\": true} only works in update_reminder; leave out due for a reminder without a due date",
+    "text" : "Invalid arguments: due: {\"none\": true} only works in update_reminder; leave out due for a reminder without a due date. (code: invalid_arguments)"
+  }
+}

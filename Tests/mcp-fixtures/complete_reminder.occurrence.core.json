@@ -1,0 +1,9 @@
+{
+  "expectedVersion" : "1791216003.000000",
+  "idempotencyKey" : "$generated",
+  "itemID" : "R7",
+  "listID" : "LIST-GROC",
+  "occurrenceDue" : 1791291600,
+  "occurrenceFingerprint" : "3b1f000000000000000000000000000000000000000000000000000000009a7c",
+  "recurrenceScope" : "occurrence"
+}

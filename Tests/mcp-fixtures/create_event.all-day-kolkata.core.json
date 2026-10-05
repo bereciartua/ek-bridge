@@ -1,0 +1,9 @@
+{
+  "allDay" : true,
+  "calendarID" : "CAL-WORK",
+  "end" : 1794162600,
+  "idempotencyKey" : "$generated",
+  "start" : 1794076200,
+  "timeZone" : "Asia/Calcutta",
+  "title" : "Diwali"
+}

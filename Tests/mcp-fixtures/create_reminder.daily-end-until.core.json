@@ -1,0 +1,19 @@
+{
+  "due" : {
+    "at" : 1793883600,
+    "kind" : "timed",
+    "timeZone" : "America/New_York"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "recurrence" : {
+    "end" : {
+      "at" : 1798779599,
+      "kind" : "until"
+    },
+    "frequency" : "daily",
+    "interval" : 1,
+    "kind" : "rule"
+  },
+  "title" : "Vitamins"
+}

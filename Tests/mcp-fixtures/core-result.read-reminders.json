@@ -1,0 +1,279 @@
+{
+  "tool": "read_reminders",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "limit": 11
+  },
+  "core": {
+    "items": [
+      {
+        "id": "R1",
+        "title": "Buy oat milk",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "timed",
+          "at": 1793887200,
+          "local": "2026-11-05T09:00:00",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [
+          {
+            "kind": "absolute",
+            "at": 1793886300
+          }
+        ],
+        "alarmCount": 1,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R10",
+        "title": "Old chore",
+        "completed": true,
+        "recurring": true,
+        "due": null,
+        "recurrence": {
+          "kind": "unsupported",
+          "supported": false,
+          "reason": "multiple_rules",
+          "ruleCount": 2
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R11",
+        "title": "Night shift",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "ambiguous_timed",
+          "local": "2026-11-01T01:30:00",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": true,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R2",
+        "title": "Post office",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "all_day",
+          "date": "2026-11-05",
+          "timeZone": "Europe/London"
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R3",
+        "title": "Floating day",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "floating_all_day",
+          "date": "2026-11-06",
+          "timeZone": null
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R4",
+        "title": "Floating time",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "floating_timed",
+          "local": "2026-11-07T08:30:00",
+          "timeZone": null
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R5",
+        "title": "Skipped hour",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "invalid_timed",
+          "local": "2026-03-08T02:30:00",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R6",
+        "title": "Odd due",
+        "completed": false,
+        "recurring": false,
+        "due": {
+          "kind": "unsupported",
+          "timeZone": null
+        },
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R7",
+        "title": "Vitamins",
+        "completed": false,
+        "recurring": true,
+        "due": {
+          "kind": "timed",
+          "at": 1791291600,
+          "local": "2026-10-06T09:00:00",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "daily",
+          "interval": 1
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000",
+        "completionCandidate": {
+          "recurrenceScope": "occurrence",
+          "occurrenceDue": 1791291600,
+          "occurrenceFingerprint": "3b1f000000000000000000000000000000000000000000000000000000009a7c"
+        }
+      },
+      {
+        "id": "R8",
+        "title": "Bins out",
+        "completed": false,
+        "recurring": true,
+        "due": {
+          "kind": "timed",
+          "at": 1793923200,
+          "local": "2026-11-05T19:00:00",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "weekly",
+          "interval": 2,
+          "weekdays": [
+            "MO",
+            "TH"
+          ],
+          "end": {
+            "kind": "until",
+            "at": 1798779599
+          }
+        },
+        "alarms": [
+          {
+            "kind": "relative",
+            "offset": -900
+          },
+          {
+            "kind": "relative",
+            "offset": 0
+          },
+          {
+            "kind": "relative",
+            "offset": 450
+          },
+          {
+            "kind": "absolute",
+            "at": 1793919600
+          }
+        ],
+        "alarmCount": 6,
+        "alarmsTruncated": true,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      },
+      {
+        "id": "R9",
+        "title": "Pay rent",
+        "completed": false,
+        "recurring": true,
+        "due": {
+          "kind": "all_day",
+          "date": "2026-11-05",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "monthly",
+          "interval": 1,
+          "dayOfMonth": 5,
+          "end": {
+            "kind": "count",
+            "count": 12
+          }
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "titleTruncated": false,
+        "version": "1791216003.000000"
+      }
+    ],
+    "truncated": true,
+    "nextCursor": "R9"
+  }
+}

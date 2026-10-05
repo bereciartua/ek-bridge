@@ -29,6 +29,10 @@ enum ActivityClientFilter: Hashable {
     case unknown
 }
 
+enum ActivityViaFilter: Hashable, CaseIterable {
+    case all, mcp, cli
+}
+
 struct Banner: Identifiable {
     enum Kind { case info, success, warning, error }
 
@@ -48,6 +52,7 @@ enum ModelSheet: Identifiable, Equatable {
     case rename(String)
     case unavailableGrants(String)
     case collectionIDs
+    case mcpPort
 
     var id: String {
         switch self {
@@ -55,8 +60,45 @@ enum ModelSheet: Identifiable, Equatable {
         case .rename(let id): "rename-\(id)"
         case .unavailableGrants(let id): "unavailable-\(id)"
         case .collectionIDs: "collection-ids"
+        case .mcpPort: "mcp-port"
         }
     }
+}
+
+/// How a new client connects (New Client ▸ Connects from).
+enum ClientKind: String, CaseIterable, Identifiable {
+    case agent, cli, both
+
+    var id: String { rawValue }
+    var credentials: Set<CredentialKind> {
+        switch self {
+        case .agent: [.mcpToken]
+        case .cli: [.signingKey]
+        case .both: [.mcpToken, .signingKey]
+        }
+    }
+}
+
+/// The client page's Connect tabs.
+enum ConnectTab: Hashable { case agent, cli }
+
+/// The MCP server, as the model drives it. The UI-review build passes fakes.
+@MainActor
+struct MCPControls {
+    var start: (Int) -> Void
+    var stop: () -> Void
+    var counters: () -> MCPTrafficCounters.Snapshot
+    /// `Contents/MacOS/bridge-mcp` inside the running app.
+    var launcherURL: URL
+    /// Whether 127.0.0.1:port can be bound right now.
+    var portIsFree: (Int) -> Bool
+}
+
+/// What the client page says about an agent's connection.
+enum MCPConnectionState: Equatable {
+    case waiting
+    case connected(agent: String?, at: Date)
+    case refused(code: String, entryID: String)
 }
 
 enum TestCollectionsState {
@@ -89,6 +131,8 @@ struct BridgeServices {
     var setLoginItem: (Bool) throws -> Void
     var isInstalledInApplications: () -> Bool
     var testCollections: TestCollections?
+    var mcp: MCPControls
+    var approvals: ApprovalCenter?
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -124,6 +168,7 @@ final class BridgeAppModel {
     var accessTab = [String: ClientResource]()
 
     var activityClientFilter: ActivityClientFilter = .all
+    var activityVia: ActivityViaFilter = .all
     var activityProblemsOnly = false
     var activitySearch = ""
     var activitySelection: ActivityEntry.ID?
@@ -140,6 +185,18 @@ final class BridgeAppModel {
     private(set) var testCollectionsState: TestCollectionsState = .notCreated
     private(set) var waitingForTestRequest = false
 
+    // MCP server (Settings ▸ MCP Server) and agent connections.
+    private(set) var mcpEnabled = false
+    private(set) var mcpPort = MCPDefaults.port
+    private(set) var mcpStatus: MCPService.Status = .off
+    private(set) var mcpConnections = [String: MCPServer.Connection]()
+    private(set) var newAgentApproval = ApprovalMode.ask
+    private(set) var newCLIApproval = ApprovalMode.allow
+    var connectTab = [String: ConnectTab]()
+    var agentChoice = [String: AgentKind]()
+    /// Keyed by "clientID|agent".
+    var methodChoice = [String: SetupMethod]()
+
     // MARK: Wiring
 
     @ObservationIgnored let services: BridgeServices
@@ -147,6 +204,8 @@ final class BridgeAppModel {
     @ObservationIgnored var showWindow: () -> Void = {}
     @ObservationIgnored var dockModeChanged: () -> Void = {}
     @ObservationIgnored var windowIsVisible: () -> Bool = { false }
+    /// Brings the approval panel forward (menu bar item).
+    @ObservationIgnored var showApprovals: () -> Void = {}
     @ObservationIgnored private var refreshScheduled = false
     @ObservationIgnored private var refreshCollectionsPending = false
     @ObservationIgnored private var started = false
@@ -162,6 +221,10 @@ final class BridgeAppModel {
         static let dockMode = "DockIconMode"
         static let showDeveloperTools = "ShowDeveloperTools"
         static let lastRoute = "LastPane"
+        static let mcpEnabled = "MCPServerEnabled"
+        static let mcpPort = "MCPServerPort"
+        static let approvalAgent = "ApprovalDefaultAgent"
+        static let approvalCLI = "ApprovalDefaultCommandLine"
     }
 
     init(services: BridgeServices) {
@@ -175,6 +238,12 @@ final class BridgeAppModel {
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
+        // Off by default, also after upgrading (D1).
+        mcpEnabled = defaults.bool(forKey: Keys.mcpEnabled)
+        let port = defaults.integer(forKey: Keys.mcpPort)
+        mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
+        newAgentApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalAgent) ?? "") ?? .ask
+        newCLIApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalCLI) ?? "") ?? .allow
         switch defaults.string(forKey: Keys.lastRoute) {
         case "activity": route = .activity
         case "settings": route = .settings
@@ -197,6 +266,7 @@ final class BridgeAppModel {
 
     func start() {
         started = true
+        if mcpEnabled { services.mcp.start(mcpPort) }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                             object: nil, queue: .main) { [weak self] _ in
@@ -307,7 +377,8 @@ final class BridgeAppModel {
 
     var problems: [AttentionProblem] {
         AttentionLogic.problems(bridge: bridge, calendar: calendarAccess, reminders: remindersAccess,
-                                clients: clients, policyStoreAvailable: policyStoreAvailable)
+                                clients: clients, policyStoreAvailable: policyStoreAvailable,
+                                mcpFailure: mcpFailureText)
     }
 
     var needsAttention: Bool { !problems.isEmpty }
@@ -350,7 +421,7 @@ final class BridgeAppModel {
         if !policyStoreAvailable { return String(localized: "Client settings can't be read") }
         switch bridge {
         case .failed: return String(localized: "Off · the bridge couldn't start")
-        case .off: return String(localized: "Off · clients can't connect")
+        case .off: return String(localized: "Off · requests are refused")
         case .on:
             let failing = problems.compactMap { problem -> String? in
                 switch problem {
@@ -504,6 +575,8 @@ final class BridgeAppModel {
         confirmUnsaved { [weak self] in
             guard let self else { return }
             let state = self.services.setBridge(on)
+            // Changes waiting for approval are refused when the bridge goes off.
+            if !state.isOn { self.services.approvals?.withdrawAll() }
             self.bridgeDidChange(state)
         }
     }
@@ -552,29 +625,50 @@ final class BridgeAppModel {
         services.registry.nameIssue(name, excluding: clientID)
     }
 
-    /// Creates a client and its key file. Returns false only for name problems
-    /// the sheet shows inline; every other outcome closes the sheet.
-    func createClient(name: String) -> ClientNameIssue? {
+    /// The Ask before changes preset for a new client of this kind (Settings).
+    func defaultApproval(for kind: ClientKind) -> ApprovalMode {
+        kind == .cli ? newCLIApproval : newAgentApproval
+    }
+
+    /// Creates a client and its credential files. Returns an issue only for
+    /// name problems the sheet shows inline; every other outcome closes it.
+    func createClient(name: String, kind: ClientKind = .agent,
+                      askBeforeChanges: Bool? = nil) -> ClientNameIssue? {
         if let issue = nameIssue(name) { return issue }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch services.registry.createClient(name: trimmed) {
+        let approval = askBeforeChanges.map { $0 ? ApprovalMode.ask : .allow } ?? defaultApproval(for: kind)
+        switch services.registry.createClient(name: trimmed, credentials: kind.credentials,
+                                              approval: approval) {
         case .success(let issued):
             sheet = nil
-            switch services.credentialFiles.saveNew(clientID: issued.id, key: issued.signingKey!) {
-            case .success:
-                refresh()
-                go(.client(issued.id))
-                clientScrollTarget = "access"
-                showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was created."),
-                                  message: String(localized: "It has no access yet. Choose calendars and lists below, then Save.")))
-            case .failure(let error):
-                let revoked = services.registry.revoke(clientID: issued.id)
-                let removed = services.credentialFiles.remove(clientID: issued.id)
-                refresh()
-                showCleanupBanner(title: String(localized: "Couldn't save the key file."),
-                                  code: error.rawValue, revoked: revoked, removed: removed,
-                                  clientID: issued.id)
+            var failure: CredentialFileError?
+            if let key = issued.signingKey,
+               case .failure(let error) = services.credentialFiles.saveNew(clientID: issued.id, key: key) {
+                failure = error
             }
+            if failure == nil, let token = issued.mcpToken,
+               case .failure(let error) = services.credentialFiles.saveNew(clientID: issued.id, token: token) {
+                failure = error
+            }
+            if let failure {
+                let revoked = services.registry.revoke(clientID: issued.id)
+                let removed = removeCredentialFiles(issued.id)
+                refresh()
+                showCleanupBanner(title: issued.mcpToken != nil && issued.signingKey == nil
+                                    ? String(localized: "Couldn't save the token file.")
+                                    : String(localized: "Couldn't save the key file."),
+                                  code: failure.rawValue, revoked: revoked, removed: removed,
+                                  clientID: issued.id)
+                return nil
+            }
+            refresh()
+            go(.client(issued.id))
+            clientScrollTarget = "access"
+            connectTab[issued.id] = kind == .cli ? .cli : .agent
+            showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was created."),
+                              message: kind == .cli
+                                ? String(localized: "It has no access yet. Choose calendars and lists below, then Save.")
+                                : String(localized: "Choose what it can use below, then Save. Then connect your agent from Connect ▸ AI agent.")))
         case .failure(.duplicateName):
             return .duplicate(trimmed)
         case .failure(.invalidName):
@@ -588,6 +682,14 @@ final class BridgeAppModel {
                               code: error.rawValue))
         }
         return nil
+    }
+
+    /// Removes both credential files; the first failure wins.
+    private func removeCredentialFiles(_ clientID: String) -> Result<Void, CredentialFileError> {
+        let key = services.credentialFiles.remove(clientID: clientID, kind: .signingKey)
+        let token = services.credentialFiles.remove(clientID: clientID, kind: .mcpToken)
+        if case .failure = key { return key }
+        return token
     }
 
     func rename(_ clientID: String, to name: String) -> ClientNameIssue? {
@@ -655,6 +757,7 @@ final class BridgeAppModel {
             guard let self, response == .alertFirstButtonReturn else { return }
             switch self.services.registry.rotateKey(clientID: client.id) {
             case .success(let key):
+                self.services.approvals?.withdraw(clientID: client.id)
                 let written = fileStatus == .missing
                     ? self.services.credentialFiles.saveNew(clientID: client.id, key: key)
                     : self.services.credentialFiles.replace(clientID: client.id, key: key)
@@ -665,7 +768,7 @@ final class BridgeAppModel {
                                            message: String(localized: "The old key no longer works.")))
                 case .failure(let error):
                     let revoked = self.services.registry.revoke(clientID: client.id)
-                    let removed = self.services.credentialFiles.remove(clientID: client.id)
+                    let removed = self.removeCredentialFiles(client.id)
                     self.refresh()
                     self.showCleanupBanner(title: String(localized: "Couldn't save the new key file."),
                                            code: error.rawValue, revoked: revoked, removed: removed,
@@ -687,7 +790,7 @@ final class BridgeAppModel {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = String(localized: "Revoke “\(client.name)”?")
-        alert.informativeText = String(localized: "Its key stops working and all of its access is removed. You can’t undo this. To reconnect this tool later, create a new client.")
+        alert.informativeText = String(localized: "Its key and MCP token stop working and all of its access is removed. You can’t undo this. To reconnect this tool later, create a new client.")
         let revoke = alert.addButton(withTitle: String(localized: "Revoke"))
         revoke.hasDestructiveAction = true
         alert.addButton(withTitle: String(localized: "Cancel"))
@@ -695,17 +798,18 @@ final class BridgeAppModel {
             guard let self, response == .alertFirstButtonReturn else { return }
             switch self.services.registry.revoke(clientID: client.id) {
             case .success:
-                let removed = self.services.credentialFiles.remove(clientID: client.id)
+                self.services.approvals?.withdraw(clientID: client.id)
+                let removed = self.removeCredentialFiles(client.id)
                 self.clearDraft()
                 self.refresh()
                 self.go(.overview)
                 switch removed {
                 case .success:
                     self.showBanner(Banner(kind: .success, title: String(localized: "“\(client.name)” was revoked."),
-                                           message: String(localized: "Its key file was removed.")))
+                                           message: String(localized: "Its credential files were removed.")))
                 case .failure(let error):
                     self.showBanner(Banner(
-                        kind: .warning, title: String(localized: "“\(client.name)” was revoked, but its key file couldn’t be removed."),
+                        kind: .warning, title: String(localized: "“\(client.name)” was revoked, but a credential file couldn’t be removed."),
                         message: String(localized: "Its key no longer works. Check the file before continuing."),
                         code: error.rawValue, actionTitle: String(localized: "Show in Finder"),
                         action: { [weak self] in self?.showKeyFile(client.id) }))
@@ -789,6 +893,7 @@ final class BridgeAppModel {
         let grants = draft.grantsToSave(base: client.grants, listed: listed)
         switch services.registry.replaceGrants(clientID: client.id, grants: grants) {
         case .success:
+            services.approvals?.withdraw(clientID: client.id)
             clearDraft()
             refresh()
             if let updated = self.client(client.id) { self.draft = GrantDraft(client: updated) }
@@ -819,9 +924,11 @@ final class BridgeAppModel {
 
     // MARK: Activity
 
-    func openActivity(selecting id: ActivityEntry.ID? = nil, client: String? = nil) {
+    func openActivity(selecting id: ActivityEntry.ID? = nil, client: String? = nil,
+                      keepingVia: Bool = false) {
         activityProblemsOnly = false
         activitySearch = ""
+        if !keepingVia { activityVia = .all }
         activityClientFilter = client.map { .client($0) } ?? .all
         activitySelection = id
         show(.activity)
@@ -854,7 +961,7 @@ final class BridgeAppModel {
             calendar: calendarAccess, reminders: remindersAccess, clients: clients,
             bridgeOn: bridge.isOn,
             successfulClientIDs: Set(activity.filter { $0.code == "success" }.compactMap(\.clientID)),
-            skipped: setupSkipped)
+            skipped: setupSkipped, mcpListening: mcpIsListening)
     }
 
     var showsSetupChecklist: Bool {
@@ -951,6 +1058,412 @@ final class BridgeAppModel {
 
     var dataFolderPath: String { services.dataFolder.path }
 
+    // MARK: MCP server
+
+    var mcpIsListening: Bool {
+        if case .listening = mcpStatus { return true }
+        return false
+    }
+
+    var mcpURL: String { MCPEndpointFile.endpointURL(port: mcpListeningPort ?? mcpPort) }
+
+    var mcpListeningPort: Int? {
+        if case .listening(let port) = mcpStatus { return port }
+        return nil
+    }
+
+    /// Text for an enabled server that failed; nil otherwise.
+    var mcpFailureText: String? {
+        guard mcpEnabled, case .failed(let failure) = mcpStatus else { return nil }
+        switch failure {
+        case .portInUse(let port):
+            return String(localized: "Port \(String(port)) is in use by another app.")
+        case .other(let reason):
+            return String(localized: "Couldn't start: \(reason)")
+        }
+    }
+
+    var mcpPortInUse: Bool {
+        if case .failed(.portInUse) = mcpStatus { return mcpEnabled }
+        return false
+    }
+
+    /// The short line for Overview and the menu bar.
+    var mcpStatusLine: String {
+        if !mcpEnabled { return String(localized: "MCP server · Off") }
+        switch mcpStatus {
+        case .listening(let port): return String(localized: "MCP server · Listening on port \(String(port))")
+        case .failed(.portInUse(let port)): return String(localized: "MCP server · Port \(String(port)) is in use")
+        case .failed: return String(localized: "MCP server · Couldn't start")
+        case .starting, .off: return String(localized: "MCP server · Starting…")
+        }
+    }
+
+    /// Called by the app delegate when the listener changes state.
+    func mcpStatusDidChange(_ status: MCPService.Status) {
+        if mcpStatus != status { mcpStatus = status }
+        checkSetupCompletion()
+    }
+
+    /// Called for every authenticated MCP request.
+    func mcpDidConnect(_ clientID: String, _ connection: MCPServer.Connection) {
+        mcpConnections[clientID] = connection
+    }
+
+    func setMCPServerEnabled(_ on: Bool) {
+        guard on != mcpEnabled else { return }
+        if on {
+            applyMCPEnabled(true)
+            return
+        }
+        let recent = Set(mcpConnections.filter { now.timeIntervalSince($0.value.at) < 600 }.map(\.key))
+        guard !recent.isEmpty else { applyMCPEnabled(false); return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Turn off the MCP server?")
+        alert.informativeText = recent.count == 1
+            ? String(localized: "1 agent used it in the last 10 minutes; it'll lose access until you turn it back on.")
+            : String(localized: "\(recent.count) agents used it in the last 10 minutes; they'll lose access until you turn it back on.")
+        alert.addButton(withTitle: String(localized: "Turn Off"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.applyMCPEnabled(false)
+        }
+    }
+
+    private func applyMCPEnabled(_ on: Bool) {
+        mcpEnabled = on
+        services.defaults.set(on, forKey: Keys.mcpEnabled)
+        if on {
+            services.mcp.start(mcpPort)
+        } else {
+            services.mcp.stop()
+            mcpStatus = .off
+        }
+        announce(on ? String(localized: "MCP server on") : String(localized: "MCP server off"))
+    }
+
+    func retryMCPServer() {
+        guard mcpEnabled else { return }
+        services.mcp.start(mcpPort)
+    }
+
+    /// Nil when `port` can be used; otherwise the reason, for the port sheet.
+    func portIssue(_ text: String) -> String? {
+        guard let port = Int(text.trimmingCharacters(in: .whitespaces)),
+              MCPDefaults.validPorts.contains(port) else {
+            return String(localized: "Use a number from 1024 to 65535.")
+        }
+        if port == mcpListeningPort { return nil }
+        return services.mcp.portIsFree(port) ? nil
+            : String(localized: "Port \(String(port)) is in use by another app.")
+    }
+
+    func changeMCPPort(_ text: String) -> String? {
+        if let issue = portIssue(text) { return issue }
+        let port = Int(text.trimmingCharacters(in: .whitespaces))!
+        sheet = nil
+        guard port != mcpPort || !mcpIsListening else { return nil }
+        mcpPort = port
+        services.defaults.set(port, forKey: Keys.mcpPort)
+        if mcpEnabled { services.mcp.start(port) }
+        showBanner(Banner(kind: .success, title: String(localized: "The MCP server now uses port \(String(port))."),
+                          message: String(localized: "Agents set up with a direct URL need the new address. Launcher setups keep working.")))
+        return nil
+    }
+
+    var launcherPath: String { services.mcp.launcherURL.path }
+
+    func revealLauncher() {
+        NSWorkspace.shared.activateFileViewerSelecting([services.mcp.launcherURL])
+    }
+
+    var mcpCounters: MCPTrafficCounters.Snapshot { services.mcp.counters() }
+
+    /// "2 agents made 37 requests today", from Activity rows that came via MCP.
+    var mcpTodayText: String {
+        let calendar = Calendar.current
+        let today = activity.filter { $0.isMCP && calendar.isDate($0.at, inSameDayAs: now) }
+        let agents = Set(today.compactMap(\.clientID)).count
+        if today.isEmpty { return String(localized: "No agent requests today") }
+        let requests = today.count == 1 ? String(localized: "1 request") : String(localized: "\(today.count) requests")
+        return agents == 1 ? String(localized: "1 agent made \(requests) today")
+                           : String(localized: "\(agents) agents made \(requests) today")
+    }
+
+    // MARK: Ask before changes
+
+    func setNewClientApproval(_ mode: ApprovalMode, for kind: ClientKind) {
+        if kind == .cli {
+            newCLIApproval = mode
+            services.defaults.set(mode.rawValue, forKey: Keys.approvalCLI)
+        } else {
+            newAgentApproval = mode
+            services.defaults.set(mode.rawValue, forKey: Keys.approvalAgent)
+        }
+    }
+
+    /// Saved at once, outside the staged grant draft: a different kind of
+    /// setting with a different undo story. Bumps the client's revision.
+    func setApproval(_ clientID: String, _ mode: ApprovalMode) {
+        guard let client = client(clientID), !client.revoked, client.approval != mode else { return }
+        switch services.registry.setApproval(clientID: clientID, mode) {
+        case .success:
+            services.approvals?.withdraw(clientID: clientID)
+            refresh()
+            showBanner(Banner(kind: .success, title: String(localized: "Saved. Applies to the next change.")))
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't change Ask before changes."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
+    func applyApprovalToAll(_ mode: ApprovalMode) {
+        let changing = activeClients.filter { $0.approval != mode }
+        guard !changing.isEmpty else {
+            showBanner(Banner(kind: .info, title: String(localized: "Every client already uses this setting.")))
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = mode == .ask
+            ? String(localized: "Ask before every change from all clients?")
+            : String(localized: "Allow changes from all clients without asking?")
+        alert.informativeText = changing.count == 1
+            ? String(localized: "1 client changes. Each client can still be changed on its page.")
+            : String(localized: "\(changing.count) clients change. Each client can still be changed on its page.")
+        alert.addButton(withTitle: String(localized: "Apply to All Clients"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            var failed: ClientRegistryError?
+            for client in changing {
+                if case .failure(let error) = self.services.registry.setApproval(clientID: client.id, mode) {
+                    failed = error
+                    break
+                }
+                self.services.approvals?.withdraw(clientID: client.id)
+            }
+            self.refresh()
+            if let failed {
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't change every client."),
+                                       code: failed.rawValue))
+            } else {
+                self.showBanner(Banner(kind: .success, title: String(localized: "Saved. Applies to the next change.")))
+            }
+        }
+    }
+
+    var pendingApprovalCount: Int { services.approvals?.pending.count ?? 0 }
+
+    // MARK: MCP access per client
+
+    func tokenFileURL(_ clientID: String) -> URL? { services.credentialFiles.url(for: clientID, kind: .mcpToken) }
+
+    func tokenFileStatus(_ clientID: String) -> CredentialFileStatus {
+        services.credentialFiles.status(clientID: clientID, kind: .mcpToken)
+    }
+
+    func showTokenFile(_ clientID: String) {
+        guard let url = tokenFileURL(clientID) else { return }
+        // Never open the file itself.
+        NSWorkspace.shared.activateFileViewerSelecting(
+            [tokenFileStatus(clientID) == .present ? url : url.deletingLastPathComponent()])
+    }
+
+    /// The client page's connection line (§13.3).
+    func mcpConnection(for client: ClientView) -> MCPConnectionState {
+        let issued = client.mcpIssuedAt ?? .distantPast
+        if let last = activity.first(where: { $0.clientID == client.id && $0.isMCP && $0.at >= issued }),
+           last.isProblem, (mcpConnections[client.id]?.at ?? .distantPast) <= last.at.addingTimeInterval(1) {
+            return .refused(code: last.code, entryID: last.id)
+        }
+        let memory = mcpConnections[client.id].flatMap { $0.at >= issued ? $0 : nil }
+        let logged = activity.first { $0.clientID == client.id && $0.isMCP && $0.at >= issued }
+        switch (memory, logged) {
+        case (let memory?, let logged?) where logged.at > memory.at:
+            return .connected(agent: logged.agent ?? memory.agent, at: logged.at)
+        case (let memory?, _): return .connected(agent: memory.agent, at: memory.at)
+        case (nil, let logged?): return .connected(agent: logged.agent, at: logged.at)
+        case (nil, nil): return .waiting
+        }
+    }
+
+    /// The agent subtitle on Overview and in the sidebar: "Claude Code 2.4.1 · 3 min ago".
+    func agentSubtitle(_ client: ClientView) -> String? {
+        guard client.hasMCPToken else { return nil }
+        switch mcpConnection(for: client) {
+        case .waiting: return String(localized: "Waiting for the agent…")
+        case .connected(let agent, let at):
+            return [agent, RelativeTime.ago(at, now: now)].compactMap { $0 }.joined(separator: " · ")
+        case .refused(let code, _):
+            return String(localized: "Refused: \(OutcomePresentation.of(code).label)")
+        }
+    }
+
+    func turnOnMCPAccess(_ clientID: String) {
+        guard let client = client(clientID), !client.revoked, !client.hasMCPToken else { return }
+        issueToken(client, replacing: false)
+    }
+
+    func resetMCPToken(_ clientID: String) {
+        guard let client = client(clientID), !client.revoked, client.hasMCPToken else { return }
+        if tokenFileStatus(clientID) == .unsafe {
+            showBanner(Banner(kind: .warning, title: String(localized: "The token file isn't safe to replace."),
+                              message: String(localized: "Check its permissions in Finder, or remove MCP access and turn it on again."),
+                              actionTitle: String(localized: "Show in Finder"),
+                              action: { [weak self] in self?.showTokenFile(clientID) }))
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Reset the MCP token for “\(client.name)”?")
+        alert.informativeText = String(localized: "Agents set up with the launcher or the token file keep working. Agents you gave the token to directly stop working until you copy the new one.")
+        alert.addButton(withTitle: String(localized: "Reset Token"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.issueToken(client, replacing: true)
+        }
+    }
+
+    private func issueToken(_ client: ClientView, replacing: Bool) {
+        let fileStatus = tokenFileStatus(client.id)
+        switch services.registry.issueMCPToken(clientID: client.id) {
+        case .success(let token):
+            services.approvals?.withdraw(clientID: client.id)
+            let written = fileStatus == .present
+                ? services.credentialFiles.replace(clientID: client.id, token: token)
+                : services.credentialFiles.saveNew(clientID: client.id, token: token)
+            if case .failure(let error) = written {
+                // Never leave a token in the registry that no file holds.
+                _ = services.registry.removeMCPToken(clientID: client.id)
+                _ = services.credentialFiles.remove(clientID: client.id, kind: .mcpToken)
+                refresh()
+                showBanner(Banner(kind: .warning, title: String(localized: "Couldn't save the token file."),
+                                  message: String(localized: "MCP access is off for this client. Check that Application Support isn’t full or locked, then try again."),
+                                  code: error.rawValue))
+                return
+            }
+            refresh()
+            connectTab[client.id] = .agent
+            showBanner(Banner(kind: .success,
+                              title: replacing ? String(localized: "Token reset.")
+                                               : String(localized: "MCP access is on for \(client.name)."),
+                              message: replacing
+                                ? String(localized: "The old token no longer works.")
+                                : String(localized: "Copy the setup below into your agent.")))
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't change MCP access."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
+    func removeMCPAccess(_ clientID: String) {
+        guard let client = client(clientID), !client.revoked, client.hasMCPToken else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Remove MCP access for “\(client.name)”?")
+        alert.informativeText = String(localized: "Agents using it stop working now. Its access settings are kept, so you can turn MCP access on again later.")
+        let remove = alert.addButton(withTitle: String(localized: "Remove"))
+        remove.hasDestructiveAction = true
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            switch self.services.registry.removeMCPToken(clientID: client.id) {
+            case .success:
+                self.services.approvals?.withdraw(clientID: client.id)
+                let removed = self.services.credentialFiles.remove(clientID: client.id, kind: .mcpToken)
+                self.refresh()
+                if case .failure(let error) = removed {
+                    self.showBanner(Banner(kind: .warning, title: String(localized: "MCP access was removed, but the token file couldn’t be removed."),
+                                           message: String(localized: "The token no longer works. Check the file before continuing."),
+                                           code: error.rawValue, actionTitle: String(localized: "Show in Finder"),
+                                           action: { [weak self] in self?.showTokenFile(client.id) }))
+                } else {
+                    self.showBanner(Banner(kind: .success, title: String(localized: "MCP access removed for \(client.name).")))
+                }
+            case .failure(let error):
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't remove MCP access."),
+                                       message: String(localized: "Nothing was changed."), code: error.rawValue))
+            }
+        }
+    }
+
+    func addSigningKey(_ clientID: String) {
+        guard let client = client(clientID), !client.revoked, !client.hasSigningKey else { return }
+        switch services.registry.addSigningKey(clientID: client.id) {
+        case .success(let key):
+            services.approvals?.withdraw(clientID: client.id)
+            let existing = keyFileStatus(client.id)
+            let written = existing == .present
+                ? services.credentialFiles.replace(clientID: client.id, key: key)
+                : services.credentialFiles.saveNew(clientID: client.id, key: key)
+            if case .failure(let error) = written {
+                _ = services.registry.removeSigningKey(clientID: client.id)
+                refresh()
+                showBanner(Banner(kind: .warning, title: String(localized: "Couldn't save the key file."),
+                                  message: String(localized: "The command-line key wasn't added. Check that Application Support isn’t full or locked, then try again."),
+                                  code: error.rawValue))
+                return
+            }
+            refresh()
+            connectTab[client.id] = .cli
+            showBanner(Banner(kind: .success, title: String(localized: "Command-line key added for \(client.name).")))
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't add a command-line key."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
+    func removeSigningKey(_ clientID: String) {
+        guard let client = client(clientID), !client.revoked, client.hasSigningKey else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Remove the command-line key for “\(client.name)”?")
+        alert.informativeText = String(localized: "Scripts using it stop working now. MCP access isn't affected.")
+        let remove = alert.addButton(withTitle: String(localized: "Remove"))
+        remove.hasDestructiveAction = true
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            switch self.services.registry.removeSigningKey(clientID: client.id) {
+            case .success:
+                self.services.approvals?.withdraw(clientID: client.id)
+                _ = self.services.credentialFiles.remove(clientID: client.id, kind: .signingKey)
+                self.refresh()
+                self.showBanner(Banner(kind: .success, title: String(localized: "Command-line key removed for \(client.name).")))
+            case .failure(let error):
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't remove the key."),
+                                       message: String(localized: "Nothing was changed."), code: error.rawValue))
+            }
+        }
+    }
+
+    /// Copies the token only after the user confirms. The token is never
+    /// displayed; the pasteboard copy is concealed, transient and cleared
+    /// after 90 s if it's still there.
+    func copyToken(_ clientID: String) {
+        guard let client = client(clientID), client.hasMCPToken, let url = tokenFileURL(clientID) else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Copy the MCP token for “\(client.name)”?")
+        alert.informativeText = String(localized: "Anyone with this token can use \(client.name)'s access while the bridge is on. Paste it only into the agent's settings, and don't share it. The clipboard is cleared in 90 seconds.")
+        alert.addButton(withTitle: String(localized: "Copy Token"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            // Same checks as bridge-mcp: owned, private, small, token-shaped.
+            guard let data = try? SafePath.readFile(url.path, maxBytes: CredentialKind.mcpToken.maxBytes),
+                  let token = String(data: data, encoding: .utf8), ClientRegistry.validMCPToken(token) else {
+                self.showBanner(Banner(kind: .warning, title: String(localized: "Couldn't read the token file."),
+                                       message: String(localized: "Reset the token to create a new one."),
+                                       actionTitle: String(localized: "Show in Finder"),
+                                       action: { [weak self] in self?.showTokenFile(clientID) }))
+                return
+            }
+            Pasteboard.copySecret(token, clearAfter: 90)
+            self.announce(String(localized: "Token copied. The clipboard is cleared in 90 seconds."))
+        }
+    }
+
     // MARK: Developer tools
 
     private func updateTestCollectionsState() {
@@ -987,11 +1500,33 @@ final class BridgeAppModel {
     }
 }
 
-/// Copies only the given text. The key itself is never put on the pasteboard.
+/// Copies only the given text. The CLI key is never put on the pasteboard;
+/// the MCP token only through `copySecret`, after a confirmation.
 enum Pasteboard {
     @MainActor static func copy(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }
+
+    /// Marks the copy concealed and transient so clipboard managers skip it,
+    /// and clears it after `seconds` unless something else was copied since.
+    @MainActor static func copySecret(_ text: String, clearAfter seconds: TimeInterval) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        pasteboard.writeObjects([item])
+        let count = pasteboard.changeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+            if NSPasteboard.general.changeCount == count { NSPasteboard.general.clearContents() }
+        }
+    }
+}
+
+enum MCPDefaults {
+    static let port = 47615
+    static let validPorts = 1024...65535
 }

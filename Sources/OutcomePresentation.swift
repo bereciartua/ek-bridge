@@ -181,6 +181,8 @@ struct OutcomePresentation: Equatable {
 // Request labels shown in Activity, the menu and the setup checklist.
 enum CommandPresentation {
     static func label(_ command: String) -> String {
+        // Failed MCP authentication has no command to name.
+        if command == "mcp" { return String(localized: "Connect over MCP") }
         guard let known = BridgeCommand(rawValue: command) else { return command }
         switch known {
         case .authorizationStatus: return String(localized: "Check macOS access")

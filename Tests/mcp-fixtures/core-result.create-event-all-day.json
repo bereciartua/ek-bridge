@@ -1,0 +1,22 @@
+{
+  "tool": "create_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "title": "Holidays",
+    "all_day": true,
+    "start_date": "2026-12-24",
+    "end_date": "2026-12-26",
+    "notes": "Out of office"
+  },
+  "core": {
+    "item": {
+      "id": "EV3",
+      "version": "1791216002.000000",
+      "allDayVerified": true,
+      "notesVerified": true,
+      "start": 1798088400,
+      "end": 1798347599,
+      "endExclusive": 1798347600
+    }
+  }
+}

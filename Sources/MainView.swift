@@ -19,6 +19,7 @@ struct MainView: View {
             case .rename(let id): RenameClientSheet(model: model, clientID: id)
             case .unavailableGrants(let id): UnavailableGrantsSheet(model: model, clientID: id)
             case .collectionIDs: CollectionIDsSheet(model: model)
+            case .mcpPort: MCPPortSheet(model: model)
             }
         }
     }
@@ -139,7 +140,12 @@ struct ClientSidebarRow: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditing() })
         .contextMenu {
             Button(String(localized: "Rename…")) { model.sheet = .rename(client.id) }
-            Button(String(localized: "Show Key File in Finder")) { model.showKeyFile(client.id) }
+            if client.hasMCPToken {
+                Button(String(localized: "Show Token File in Finder")) { model.showTokenFile(client.id) }
+            }
+            if client.hasSigningKey {
+                Button(String(localized: "Show Key File in Finder")) { model.showKeyFile(client.id) }
+            }
             Divider()
             Button(String(localized: "Revoke Client…"), role: .destructive) { model.revokeClient(client.id) }
         }
@@ -150,8 +156,15 @@ struct ClientSidebarRow: View {
 
     private var subtitle: String {
         if editing, let issue { return NameIssueText.message(issue) }
-        if let last = model.lastRequest(for: client.id) { return RelativeTime.ago(last, now: model.now) }
-        return client.grants.isEmpty ? String(localized: "New") : String(localized: "No requests yet")
+        let state: String
+        if let last = model.lastRequest(for: client.id) {
+            state = RelativeTime.ago(last, now: model.now)
+        } else if client.hasMCPToken && !client.grants.isEmpty {
+            state = String(localized: "waiting")
+        } else {
+            state = client.grants.isEmpty ? String(localized: "New") : String(localized: "No requests yet")
+        }
+        return [ClientTransport(client).badge, state].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func beginEditing() {

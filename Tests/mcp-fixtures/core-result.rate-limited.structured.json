@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Too many requests: this agent is calling faster than EventKit Bridge allows. Wait 12 seconds before the next call, and don't loop. (code: rate_limited)"
+}
