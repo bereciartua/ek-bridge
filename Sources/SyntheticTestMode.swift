@@ -25,6 +25,7 @@ enum SyntheticTestMode {
         case "--synthetic-phone-sync-complete": SyntheticPhoneSyncProbe.completeAfterPhoneObservation()
         case "--synthetic-phone-sync-verify": SyntheticPhoneSyncProbe.verifyAfterCompletion()
         case "--synthetic-phone-sync-cleanup": SyntheticPhoneSyncProbe.cleanupAfterPhoneObservation()
+        case "--synthetic-phone-sync-verify-cleanup": SyntheticPhoneSyncProbe.verifyCleanup()
         case "--synthetic-all-day-probe": SyntheticAllDayProbe.run()
         case "--synthetic-all-day-cleanup": SyntheticAllDayProbe.cleanupOnly()
         default: report("invalid_arguments")

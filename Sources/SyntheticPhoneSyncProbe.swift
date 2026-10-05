@@ -153,6 +153,19 @@ enum SyntheticPhoneSyncProbe {
         report("cleanup_checked", fields)
     }
 
+    static func verifyCleanup() {
+        guard ready() else { report("cleanup_verify_precondition_failed"); return }
+        let store = EKEventStore()
+        store.refreshSourcesIfNecessary()
+        let remaining = store.calendars(for: .reminder).filter {
+            $0.title == listName && $0.source.title == "iCloud" && !$0.source.isDelegate
+        }
+        let markerAbsent = UserDefaults.standard.string(forKey: key) == nil
+        report(remaining.isEmpty && markerAbsent ? "cleanup_absence_verified" :
+            "cleanup_absence_unverified", ["matchingListCount": remaining.count,
+                                           "markerAbsent": markerAbsent])
+    }
+
     private static func ready() -> Bool {
         EKEventStore.authorizationStatus(for: .reminder) == .fullAccess &&
             !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json")
