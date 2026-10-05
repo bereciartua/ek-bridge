@@ -25,14 +25,21 @@ enum CommandPolicy {
             (reminders ? scope.reminderListID : scope.calendarID) == id
     }
 
+    /// The parameter keys a command accepts. `validate` checks keys against
+    /// this same table before any value checks.
+    static func parameterKeys(for command: BridgeCommand) -> CommandParameterKeys {
+        command.parameterKeys
+    }
+
     static func validate(_ request: BridgeRequest, scope: BridgeScope) -> String? {
         let p = request.parameters
         let command = request.command
+        let keysAccepted = command.acceptsKeys(of: p)
         switch command {
         case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
-            return p.isEmpty ? nil : "invalid_parameters"
+            return keysAccepted ? nil : "invalid_parameters"
         case .readEvents:
-            guard keys(p, ["calendarID", "start", "end", "limit"]),
+            guard keysAccepted,
                   target(p, "calendarID", scope.calendarID),
                   let start = number(p["start"]), let end = number(p["end"]),
                   validTimestamp(start), validTimestamp(end),
@@ -40,15 +47,13 @@ enum CommandPolicy {
                   let limit = integer(p["limit"]), (1...100).contains(limit)
             else { return "invalid_parameters_or_target" }
         case .readReminders:
-            guard (keys(p, ["listID", "limit"]) ||
-                   keys(p, ["listID", "limit", "afterID"])),
+            guard keysAccepted,
                   target(p, "listID", scope.reminderListID),
                   let limit = integer(p["limit"]), (1...100).contains(limit),
                   p["afterID"] == nil || item(p["afterID"])
             else { return "invalid_parameters_or_target" }
         case .createEvent:
-            guard keys(p, required: ["calendarID", "title", "start", "end", "idempotencyKey"],
-                       optional: ["allDay", "timeZone", "notes"]),
+            guard keysAccepted,
                   target(p, "calendarID", scope.calendarID),
                   title(p["title"]),
                   EventCreationDetails.parse(p) != nil,
@@ -56,21 +61,20 @@ enum CommandPolicy {
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .updateEvent:
-            guard keys(p, ["calendarID", "itemID", "expectedVersion", "title", "start", "end", "idempotencyKey"]),
+            guard keysAccepted,
                   target(p, "calendarID", scope.calendarID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   title(p["title"]), dateRange(p["start"], p["end"]),
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .deleteEvent:
-            guard keys(p, ["calendarID", "itemID", "expectedVersion", "idempotencyKey"]),
+            guard keysAccepted,
                   target(p, "calendarID", scope.calendarID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .createReminder:
-            guard keys(p, required: ["listID", "title", "idempotencyKey"],
-                       optional: ["due", "recurrence"]),
+            guard keysAccepted,
                   target(p, "listID", scope.reminderListID),
                   title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil,
                   let due = ReminderDueChange.parse(parameters: p),
@@ -78,8 +82,7 @@ enum CommandPolicy {
                   validReminderCreation(due: due, recurrence: recurrence)
             else { return "invalid_parameters_or_target" }
         case .updateReminder:
-            guard keys(p, required: ["listID", "itemID", "expectedVersion", "title", "idempotencyKey"],
-                       optional: ["due", "recurrence"]),
+            guard keysAccepted,
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   title(p["title"]), WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil,
@@ -87,8 +90,7 @@ enum CommandPolicy {
                   ReminderRecurrenceChange.parse(parameters: p) != nil
             else { return "invalid_parameters_or_target" }
         case .completeReminder:
-            guard keys(p, required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
-                       optional: ["recurrenceScope", "occurrenceDue", "occurrenceFingerprint"]),
+            guard keysAccepted,
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   (p["recurrenceScope"] == nil ||
@@ -101,8 +103,7 @@ enum CommandPolicy {
                   WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
             else { return "invalid_parameters_or_target" }
         case .deleteReminder:
-            guard keys(p, required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
-                       optional: ["recurrenceScope"]),
+            guard keysAccepted,
                   target(p, "listID", scope.reminderListID),
                   item(p["itemID"]), version(p["expectedVersion"]),
                   (p["recurrenceScope"] == nil ||
@@ -113,14 +114,6 @@ enum CommandPolicy {
         return nil
     }
 
-    private static func keys(_ p: [String: Any], _ expected: Set<String>) -> Bool {
-        Set(p.keys) == expected
-    }
-    private static func keys(_ p: [String: Any], required: Set<String>,
-                             optional: Set<String>) -> Bool {
-        let actual = Set(p.keys)
-        return required.isSubset(of: actual) && actual.isSubset(of: required.union(optional))
-    }
     private static func validReminderCreation(due: ReminderDueChange,
                                               recurrence: ReminderRecurrenceChange) -> Bool {
         if case .set = recurrence {

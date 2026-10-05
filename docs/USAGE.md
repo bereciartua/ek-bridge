@@ -19,7 +19,7 @@ The app writes the private credential to the following path, using the lower-cas
 ~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json
 ```
 
-The directory is mode 0700 and the file is mode 0600. The file contains the client UUID and an `ekb_v1_` signing seed. The app stores only the matching public verifier, client metadata, grants, revision, and bounded activity history in `client-registry.json`. Pass the **file path** to `client.py`; never paste the seed into a command, chat, issue, screenshot, or repository. Anyone with the file and access to this macOS user account can sign requests within its current grants.
+The directory is mode 0700 and the file is mode 0600. The file contains the client UUID and an `ekb_v1_` signing seed. The app stores only the matching public verifier, client metadata, grants, revision, and bounded activity history in `client-registry.json`. Pass the client's name or ID (`--client`) or the **file path** (`--credentials-file`) to `client.py`; never paste the seed into a command, chat, issue, screenshot, or repository. Anyone with the file and access to this macOS user account can sign requests within its current grants.
 
 - **Rotate key…** replaces the app-managed credential file and verifier for the selected client. The old key stops working for future requests. Update any task that points to a moved or copied credential; the app cannot remove copies it does not know about.
 - **Revoke…** invalidates that client's verifier and tries to remove the app-managed file. Check the UI result: a removal failure needs manual follow-up. Future requests and asynchronous replies that recheck the client revision are denied; revocation cannot undo a write that EventKit already committed.
@@ -30,25 +30,26 @@ An agent or script using a saved grant still needs authorization for the **parti
 
 ## A safe first CLI check
 
-After enrollment and bridge enablement, start with metadata and a bounded read from an empty temporary collection you own. Derive the credential path from the displayed client UUID, and use the collection ID shown in the UI; do not inspect the credential contents:
+After enrollment and bridge enablement, start with metadata and a bounded read from an empty temporary collection you own. Use the client name shown in the app, and the collection ID shown in the UI; do not inspect the credential contents:
+
+```sh
+python3 client.py scope_status --client "<client name>"
+```
+
+`--client` also accepts the client UUID. Clients can be renamed, so a script meant to last should use the UUID or the explicit key file path:
 
 ```sh
 python3 client.py scope_status \
   --credentials-file "$HOME/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json"
 ```
 
-`scope_status` returns the client's saved grants. `authorization_status` returns macOS Calendar and Reminders access. To read at most one reminder from a granted test list, create a private parameter file:
+`scope_status` returns the client's saved grants. `authorization_status` returns macOS Calendar and Reminders access. To read at most one reminder from a granted test list, pass the parameters on stdin so they need no temporary file:
 
 ```sh
-umask 077
-params_file=$(mktemp /tmp/eventkit-read.XXXXXX)
-cat > "$params_file" <<'JSON'
-{"listID":"<ID of your temporary test list>","limit":1}
-JSON
-python3 client.py read_reminders \
-  --credentials-file "$HOME/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json" \
-  --params-file "$params_file"
-rm "$params_file"
+echo '{"listID":"<ID of your temporary test list>","limit":1}' |
+  python3 client.py read_reminders --client "<client name>" --params-file -
 ```
+
+`python3 client.py --help` lists every command and the access it needs; `python3 client.py read_reminders --help` lists its parameters. Errors go to stderr with a short fix, and the exit code says what kind of problem it was (see [API and CLI](API.md)).
 
 The client prints its response to the terminal; use only a terminal and log destination appropriate for the data. The bridge will return `forbidden` if the list has no Read grant. A safe synthetic **write** recipe and the complete parameter reference are in [API and CLI](API.md#synthetic-example).

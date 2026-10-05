@@ -53,6 +53,7 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$output_dir/bridge-client"
 

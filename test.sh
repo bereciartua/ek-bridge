@@ -134,4 +134,15 @@ codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.impostor \
     "$project_dir/build/test-peer-bad"
 "$project_dir/build/signed-xpc-boundary-tests" \
     "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
+# Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
+# fake bridge and key files in temporary directories.
+xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -D EVENTKIT_CLIENT_TEST \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/BridgeClient.swift" \
+    -o "$project_dir/build/bridge-client-test"
+PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/cli_test.py" \
+    "$project_dir/build/bridge-client-test"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"

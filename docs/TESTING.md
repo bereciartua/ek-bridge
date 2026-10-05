@@ -4,7 +4,7 @@
 
 | Check | Command | What it establishes |
 | --- | --- | --- |
-| Offline Swift/Python suite | `sh test.sh` | Command shape, grant/signature/replay policy, due/recurrence guards, journal behavior, credential files, timer, and an ad hoc signed XPC requirement **candidate**. No live EventKit data is required. |
+| Offline Swift/Python suite | `sh test.sh` | Command shape, grant/signature/replay policy, due/recurrence guards, journal behavior, credential files, timer, CLI errors, help and exit codes against a fake bridge in a temporary directory (`Tests/cli_test.py`, using a separate `-D EVENTKIT_CLIENT_TEST` build), and an ad hoc signed XPC requirement **candidate**. No live EventKit data is required. |
 | Ordinary app and CLI build | `sh build.sh` | Source compiles, emits an ad hoc signed app and matching CLI. Does not install or launch the app. |
 | Native window fixture | `sh ui_test.sh` from a logged-in GUI session | Eight real AppKit close/reopen cycles for Controls, Clients & Permissions, and Activity, including repeated Activity opens. Uses fake clients and collections; no EventKit permission request or live bridge. |
 
@@ -37,7 +37,7 @@ This is a redacted session record, **not** a checked-in raw test log or a claim 
 | Symptom | Read-only checks and next step |
 | --- | --- |
 | No ◷ icon | Check whether the installed app launched in the current logged-in GUI session. Inspect macOS Login Items status if Launch at Login was expected. Do not start a second copy while one is running. |
-| `Bridge request failed or session is unavailable` | Check ◷ → **Bridge:** and Controls → **Local bridge**; confirm the app is running and enabled. Check that `client.py` uses the matching `bridge-client` and the app-managed credential path. A stale `/tmp` descriptor after a crash is not proof that the bridge is active. |
+| CLI exits 3: `isn't running, or the bridge is off` or `the bridge session changed` | Check ◷ → **Bridge:** and Controls → **Local bridge**; confirm the app is running and enabled. Check that `client.py` uses the matching `bridge-client` (`sh build.sh`). A stale `/tmp` descriptor after a crash is not proof that the bridge is active. Exit 4 means a missing or unsafe key, parameter or registry file; the message names the file. |
 | `forbidden` | Confirm the exact Calendar or Reminders ID and the client's saved action boxes. Names can repeat; a Read grant does not imply Create, and vice versa. |
 | `full_access_required` | Check both the app status and macOS Privacy & Security settings for the installed signed app. A differently signed or relocated build may be treated differently. Do not reset TCC blindly. |
 | `conflict`, `item_unavailable`, or `occurrence_conflict` | Read the item again and use its current ID, version, due instant, and fingerprint. Provider sync can change them. |

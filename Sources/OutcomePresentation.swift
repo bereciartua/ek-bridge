@@ -202,9 +202,5 @@ enum CommandPresentation {
     }
 
     /// Commands named in docs/API.md, for the "Did you mean" suggestion.
-    static let allCommands: [String] = [
-        "authorization_status", "calendar_count", "reminder_list_count", "scope_status",
-        "read_events", "read_reminders", "create_event", "update_event", "delete_event",
-        "create_reminder", "update_reminder", "complete_reminder", "delete_reminder",
-    ]
+    static let allCommands: [String] = BridgeCommand.allCases.map(\.rawValue)
 }
