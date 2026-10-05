@@ -236,7 +236,7 @@ def main() -> int:
             ("symlink key file", ["scope_status", "--credentials-file", str(link)], 4,
              f"error: {link} is a symbolic link.", None, {}, None),
             ("malformed key file", ["scope_status", "--credentials-file", str(junk)], 4,
-             f"error: {junk} isn't an {PRODUCT} key file.", None, {}, None),
+             f"error: {junk} isn't a key file for {PRODUCT}.", None, {}, None),
             ("params not an object", ["read_reminders", *cred, "--params-file",
                                       str(params_list)], 2, PARAMS_INVALID, None, {}, None),
             ("params too big", ["read_reminders", *cred, "--params-file", str(params_big)],

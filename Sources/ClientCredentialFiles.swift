@@ -1,6 +1,13 @@
 import Darwin
 import Foundation
 
+enum CredentialFileStatus: Equatable {
+    case present
+    case missing
+    /// Wrong owner, mode, type or size: never replaced automatically.
+    case unsafe
+}
+
 enum CredentialFileError: String, Error {
     case invalidCredential
     case unsafeDirectory
@@ -28,6 +35,14 @@ final class ClientCredentialFiles {
     func url(for clientID: String) -> URL? {
         guard let uuid = UUID(uuidString: clientID) else { return nil }
         return directory.appendingPathComponent(uuid.uuidString.lowercased() + ".json")
+    }
+
+    /// Whether the key file exists and is safe, without reading it.
+    func status(clientID: String) -> CredentialFileStatus {
+        guard let destination = url(for: clientID) else { return .unsafe }
+        var info = stat()
+        if lstat(destination.path, &info) != 0 { return errno == ENOENT ? .missing : .unsafe }
+        return Self.safe(info) ? .present : .unsafe
     }
 
     func canReplace(clientID: String) -> Result<URL, CredentialFileError> {

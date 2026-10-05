@@ -83,11 +83,11 @@ struct OutcomePresentation: Equatable {
             ("unavailable", Entry(
                 label: String(localized: "Error"), tone: .bad,
                 why: String(localized: "The bridge couldn't read or update its client settings."),
-                fix: String(localized: "Open EventKit Bridge and check Overview."))),
+                fix: String(localized: "Open \(AppIdentity.displayName) and check Overview."))),
             ("full_access_required", Entry(
                 label: String(localized: "Needs Full Access"), tone: .bad,
                 why: String(localized: "macOS isn't giving the bridge Full Access."),
-                fix: String(localized: "Open Privacy Settings and turn on Full Access for EventKit Bridge."))),
+                fix: String(localized: "Open Privacy Settings and turn on Full Access for \(AppIdentity.displayName)."))),
             ("target_not_writable", Entry(
                 label: String(localized: "Read only"), tone: .warn,
                 why: String(localized: "That calendar or list can't be changed."), fix: nil)),

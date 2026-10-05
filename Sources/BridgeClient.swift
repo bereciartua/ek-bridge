@@ -7,9 +7,7 @@ import Foundation
 // exit code per failure class (see ExitCode). No AppKit or EventKit here.
 
 enum CLIIdentity {
-    // Kept apart from AppIdentity.displayName, which lives in a file that
-    // imports EventKit.
-    static let productName = "EventKit Bridge"
+    static var productName: String { AppIdentity.displayName }
     static let launcher = "client.py"
 }
 
@@ -73,7 +71,7 @@ struct CLIError: Error {
     }
     static func notKeyFile(_ path: String) -> CLIError {
         CLIError(exitCode: ExitCode.localFile,
-                 message: "\(path) isn't an \(CLIIdentity.productName) key file.")
+                 message: "\(path) isn't a key file for \(CLIIdentity.productName).")
     }
 
     /// Ownership, mode and type problems for a local file or directory.

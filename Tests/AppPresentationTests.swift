@@ -242,6 +242,11 @@ struct AppPresentationTests {
         let lateToday = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: now)!
         precondition(RelativeTime.clock(noonYesterday, now: lateToday) == "Yesterday")
         precondition(RelativeTime.ago(noonYesterday, now: lateToday) == "Yesterday")
+        precondition(ConnectCommand.scopeStatus(clientName: "Claude Code") ==
+                     #"python3 client.py scope_status --client "Claude Code""#)
+        precondition(ConnectCommand.shellQuoted("It's $HOME") == #"'It'\''s $HOME'"#)
+        precondition(ConnectCommand.shellQuoted("/Users/x/Library/Application Support/k.json") ==
+                     #""/Users/x/Library/Application Support/k.json""#)
     }
 
     static func info(_ resource: ClientResource, _ id: String, _ name: String,

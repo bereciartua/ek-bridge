@@ -4,20 +4,6 @@ import Foundation
 // Pure, testable formatting and state logic used by the menu, the main window
 // and the setup checklist. No AppKit or SwiftUI here.
 
-enum AppIdentity {
-    /// The product name in one place, so a rename is a one-line change.
-    /// Bundle IDs, data paths and protocol prefixes are separate decisions.
-    static let displayName = "EventKit Bridge"
-    static let dataFolderName = "EventKitBridge"
-
-    static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
-    }
-    static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "–"
-    }
-}
-
 struct CollectionColor: Hashable {
     let red: Double
     let green: Double
@@ -420,5 +406,25 @@ enum SetupChecklist {
     /// Complete when no step is pending. Optional and skipped steps don't block.
     static func isComplete(_ input: Input) -> Bool {
         !states(input).values.contains { $0 == .pending || $0 == .current }
+    }
+}
+
+/// The ready-to-run first request shown on the client page and in setup.
+enum ConnectCommand {
+    static func scopeStatus(clientName: String) -> String {
+        "python3 client.py scope_status --client \(shellQuoted(clientName))"
+    }
+
+    static func scopeStatus(keyFile: String) -> String {
+        "python3 client.py scope_status --credentials-file \(shellQuoted(keyFile))"
+    }
+
+    /// Double quotes for ordinary names, single quotes when the text contains
+    /// characters a shell would expand inside double quotes.
+    static func shellQuoted(_ text: String) -> String {
+        if text.rangeOfCharacter(from: CharacterSet(charactersIn: "\"$`\\!")) == nil {
+            return "\"\(text)\""
+        }
+        return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

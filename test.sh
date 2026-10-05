@@ -100,6 +100,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
     "$project_dir/Tests/AppPresentationTests.swift" \
@@ -140,6 +141,7 @@ xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
     -D EVENTKIT_CLIENT_TEST \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$project_dir/build/bridge-client-test"
