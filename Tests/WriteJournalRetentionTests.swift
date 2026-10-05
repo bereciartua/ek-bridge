@@ -105,6 +105,9 @@ struct WriteJournalRetentionTests {
         let firstOccurrence = occurrenceRequest(key: WriteIdempotencyKey.make(now: clock),
                                                due: firstDue)
         expectExecute(occurrence.begin(firstOccurrence))
+        expectError(occurrence.inspect(occurrenceRequest(
+            key: WriteIdempotencyKey.make(now: clock), due: firstDue)),
+            "occurrence_already_requested")
         expectError(occurrence.begin(occurrenceRequest(
             key: WriteIdempotencyKey.make(now: clock), due: firstDue)),
             "occurrence_already_requested")

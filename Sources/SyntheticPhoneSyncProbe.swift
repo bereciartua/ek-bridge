@@ -8,6 +8,8 @@ import Foundation
 @MainActor
 enum SyntheticPhoneSyncProbe {
     private static let key = "phoneProbeReminderListID"
+    private static let clientKey = "phoneProbeBridgeClientID"
+    private static let clientName = "Daily Completion Probe"
     private static let resultKey = "phoneProbeLastResult"
     private static let listName = "EventKit Bridge Phone Sync Test"
     private static let itemTitle = "EventKit Bridge Phone Sync Test — daily"
@@ -17,11 +19,16 @@ enum SyntheticPhoneSyncProbe {
             report("stage_precondition_failed"); return
         }
         let store = EKEventStore()
+        let pinnedSourceID = Bundle.main.object(
+            forInfoDictionaryKey: "EKBridgeVerifiedICloudReminderSourceID") as? String
         guard !store.calendars(for: .reminder).contains(where: { $0.title == listName }),
               let source = store.sources.first(where: {
-                  $0.title == "iCloud" && !$0.isDelegate &&
+                  $0.title == "iCloud" && $0.sourceType == .calDAV &&
+                  $0.sourceIdentifier == pinnedSourceID && !$0.isDelegate &&
                   !$0.calendars(for: .reminder).isEmpty
-              }) else {
+              }),
+              store.sources.filter({ $0.sourceIdentifier == source.sourceIdentifier }).count == 1
+        else {
             report("unique_icloud_source_unavailable"); return
         }
         let list = EKCalendar(for: .reminder, eventStore: store)
@@ -78,6 +85,82 @@ enum SyntheticPhoneSyncProbe {
             cleanup(store, id: id, fields: &fields)
             report("stage_failed", fields)
         }
+    }
+
+    // A test-only client grants read and complete on the app-owned list only.
+    // It has no create, edit, delete, or access to any real collection.
+    static func enrollBridgeClient() {
+        guard ready(), UserDefaults.standard.string(forKey: clientKey) == nil,
+              let id = UserDefaults.standard.string(forKey: key) else {
+            report("client_setup_precondition_failed"); return
+        }
+        let store = EKEventStore()
+        guard let list = matchingList(store, id: id),
+              list.calendarIdentifier == id,
+              list.source.sourceIdentifier == Bundle.main.object(
+                forInfoDictionaryKey: "EKBridgeVerifiedICloudReminderSourceID") as? String,
+              let rows = reminders(store, list), rows.count == 1,
+              rows[0].title == itemTitle, !rows[0].isCompleted,
+              rows[0].hasRecurrenceRules, !rows[0].hasAlarms else {
+            report("client_setup_item_mismatch"); return
+        }
+        let registry = ClientRegistry()
+        guard let clients = registry.clients(),
+              !clients.contains(where: { !$0.revoked && $0.name == clientName }) else {
+            report("client_setup_existing_client"); return
+        }
+        let issued: (id: String, key: String)
+        switch registry.createClient(name: clientName) {
+        case .success(let value): issued = value
+        case .failure: report("client_setup_create_failed"); return
+        }
+        let credentials = ClientCredentialFiles()
+        guard case .success(let path) = credentials.saveNew(
+            clientID: issued.id, key: issued.key) else {
+            _ = registry.revoke(clientID: issued.id)
+            report("client_setup_credential_failed"); return
+        }
+        let grants = [ClientGrant(resource: .reminderList, targetID: id, mask: 17)]
+        guard case .success = registry.replaceGrants(clientID: issued.id, grants: grants) else {
+            _ = registry.revoke(clientID: issued.id)
+            _ = credentials.remove(clientID: issued.id)
+            report("client_setup_grant_failed"); return
+        }
+        UserDefaults.standard.set(issued.id, forKey: clientKey)
+        guard UserDefaults.standard.synchronize() else {
+            _ = registry.revoke(clientID: issued.id)
+            _ = credentials.remove(clientID: issued.id)
+            UserDefaults.standard.removeObject(forKey: clientKey)
+            report("client_setup_state_failed"); return
+        }
+        report("client_setup_complete", ["clientID": issued.id,
+                                         "credentialPath": path.path, "listID": id,
+                                         "grantMask": 17])
+    }
+
+    static func revokeBridgeClient() {
+        guard ready(), let clientID = UserDefaults.standard.string(forKey: clientKey),
+              let id = UserDefaults.standard.string(forKey: key) else {
+            report("client_revoke_precondition_failed"); return
+        }
+        let registry = ClientRegistry()
+        guard let client = registry.clients()?.first(where: { $0.id == clientID }),
+              client.name == clientName, client.grants.count == 1,
+              client.grants[0].resource == .reminderList,
+              client.grants[0].targetID == id, client.grants[0].mask == 17 else {
+            report("client_revoke_identity_mismatch"); return
+        }
+        if !client.revoked {
+            guard case .success = registry.revoke(clientID: clientID) else {
+                report("client_revoke_failed"); return
+            }
+        }
+        guard case .success = ClientCredentialFiles().remove(clientID: clientID) else {
+            report("client_credential_remove_failed"); return
+        }
+        UserDefaults.standard.removeObject(forKey: clientKey)
+        _ = UserDefaults.standard.synchronize()
+        report("client_revoke_complete", ["listID": id])
     }
 
     static func completeAfterPhoneObservation() {

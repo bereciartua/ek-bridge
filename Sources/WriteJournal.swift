@@ -58,6 +58,9 @@ final class WriteJournal {
             else { return .reject("idempotency_pending_review") }
             return .repeatResult(result)
         }
+        if let semantic = semanticDigest(request), state!.entries.values.contains(where: {
+            $0.semanticDigest == semantic
+        }) { return .reject("occurrence_already_requested") }
         guard state!.entries.count < maxEntries else { return .reject("journal_full") }
         return .execute
     }

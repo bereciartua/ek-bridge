@@ -15,6 +15,7 @@ enum SyntheticTestMode {
         guard CommandLine.arguments.count == 2 else { report("invalid_arguments"); return }
         switch argument {
         case "--synthetic-status": status()
+        case "--synthetic-source-check": sourceCheck()
         case "--synthetic-setup": setup()
         case "--synthetic-cleanup": cleanup()
         case "--synthetic-recurrence-probe": SyntheticRecurrenceProbe.run()
@@ -22,6 +23,8 @@ enum SyntheticTestMode {
         case "--synthetic-recurrence-sync-verify": SyntheticRecurrenceProbe.verifyAfterRestart()
         case "--synthetic-recurrence-cleanup": SyntheticRecurrenceProbe.cleanupOnly()
         case "--synthetic-phone-sync-stage": SyntheticPhoneSyncProbe.stage()
+        case "--synthetic-phone-sync-client-setup": SyntheticPhoneSyncProbe.enrollBridgeClient()
+        case "--synthetic-phone-sync-client-revoke": SyntheticPhoneSyncProbe.revokeBridgeClient()
         case "--synthetic-phone-sync-complete": SyntheticPhoneSyncProbe.completeAfterPhoneObservation()
         case "--synthetic-phone-sync-verify": SyntheticPhoneSyncProbe.verifyAfterCompletion()
         case "--synthetic-phone-sync-cleanup": SyntheticPhoneSyncProbe.cleanupAfterPhoneObservation()
@@ -44,6 +47,46 @@ enum SyntheticTestMode {
             "testCalendarID": collections.calendarID ?? "",
             "testReminderListID": collections.reminderListID ?? "",
             "testClientID": UserDefaults.standard.string(forKey: clientIDKey) ?? "",
+        ])
+    }
+
+    // Read only source metadata for the already granted Todo list. No reminder
+    // contents, permission request, client mutation, or EventKit write.
+    private static func sourceCheck() {
+        guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+            report("full_reminders_access_required"); return
+        }
+        guard let clients = ClientRegistry().clients(),
+              clients.filter({ !$0.revoked && $0.name == "T-1000" }).count == 1,
+              let client = clients.first(where: { !$0.revoked && $0.name == "T-1000" }) else {
+            report("existing_client_not_unique"); return
+        }
+        let grants = client.grants.filter { $0.resource == .reminderList }
+        guard grants.count == 1 else { report("reminder_grant_not_unique"); return }
+        let listID = grants[0].targetID
+        let store = EKEventStore()
+        let lists = store.calendars(for: .reminder).filter {
+            $0.calendarIdentifier == listID
+        }
+        guard lists.count == 1, let list = lists.first,
+              list.title == "Todo", list.allowsContentModifications,
+              let source = list.source,
+              source.title == "iCloud", source.sourceType == .calDAV,
+              !source.isDelegate,
+              store.sources.filter({ $0.sourceIdentifier == source.sourceIdentifier }).count == 1,
+              source.calendars(for: .reminder).contains(where: {
+                  $0.calendarIdentifier == listID
+              }) else {
+            report("granted_Todo_iCloud_source_not_verified"); return
+        }
+        report("verified_icloud_reminder_source", [
+            "sourceID": source.sourceIdentifier,
+            "sourceTitle": source.title,
+            "sourceType": "calDAV",
+            "delegated": false,
+            "listID": listID,
+            "listTitle": list.title,
+            "writable": true,
         ])
     }
 
