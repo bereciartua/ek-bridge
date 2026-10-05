@@ -16,6 +16,10 @@ struct ClientDetailView: View {
                     VStack(alignment: .leading, spacing: 26) {
                         ClientHeader(model: model, client: client)
                         ConnectSection(model: model, client: client)
+                        if model.remoteEnabled || client.cloudAccess {
+                            CloudSection(model: model, client: client)
+                                .id("cloud")
+                        }
                         AccessSection(model: model, client: client)
                             .id("access")
                     }

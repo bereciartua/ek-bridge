@@ -29,6 +29,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.needsAttention
             _ = model.statusSubtitle
             _ = model.pendingApprovalCount
+            _ = model.remoteEnabled
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 self?.updateIcon()
@@ -62,13 +63,24 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular))
         image?.isTemplate = true
         button.image = image
-        // The pending count sits beside the icon while approvals wait.
-        button.imagePosition = pending > 0 ? .imageLeading : .imageOnly
-        button.attributedTitle = pending > 0
-            ? NSAttributedString(string: "\(pending)", attributes: [
+        // The pending count, and a globe while Remote Access is on, sit beside
+        // the icon.
+        let title = NSMutableAttributedString()
+        if model.remoteEnabled, let globe = NSImage(systemSymbolName: "globe",
+                                                   accessibilityDescription: String(localized: "Remote Access on")) {
+            let attachment = NSTextAttachment()
+            attachment.image = globe.withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+            title.append(NSAttributedString(attachment: attachment))
+        }
+        if pending > 0 {
+            title.append(NSAttributedString(string: "\(pending)", attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.systemRed])
-            : NSAttributedString(string: "")
+                .foregroundColor: NSColor.systemRed]))
+        }
+        button.imagePosition = title.length > 0 ? .imageLeading : .imageOnly
+        button.attributedTitle = title
+        if model.remoteEnabled { label += ", " + String(localized: "Remote Access on") }
+        button.setAccessibilityLabel(label)
         button.appearsDisabled = !model.bridge.isOn && !model.needsAttention
         button.setAccessibilityLabel(label)
         button.toolTip = "\(AppIdentity.displayName)\n\(model.statusSubtitle)"
@@ -100,10 +112,28 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                 ?? (model.mcpFailureText != nil ? String(localized: "MCP server · couldn't start")
                                                 : String(localized: "MCP server · starting")))
             : String(localized: "MCP server · off")
-        let mcpItem = item(mcpLine) { [weak self] in self?.model.show(.settings) }
+        let mcpItem = item(mcpLine) { [weak self] in
+            self?.model.settingsScrollTarget = "mcp"
+            self?.model.show(.settings)
+        }
         mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: .secondaryLabelColor), mcpLine)
         mcpItem.toolTip = String(localized: "Open Settings ▸ MCP Server")
         menu.addItem(mcpItem)
+        if model.remoteEnabled {
+            let line = model.remoteMenuLine
+            let remoteItem = item(line) { [weak self] in
+                self?.model.settingsScrollTarget = "remote"
+                self?.model.show(.settings)
+            }
+            remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)
+            menu.addItem(remoteItem)
+            // One click cuts all cloud access (R5).
+            let off = item(String(localized: "Turn Off Remote Access")) { [weak self] in
+                self?.model.applyRemoteEnabled(false)
+            }
+            off.attributedTitle = iconTitle(nil, String(localized: "Turn Off Remote Access"))
+            menu.addItem(off)
+        }
         menu.addItem(.separator())
 
         let pending = model.pendingApprovalCount
@@ -177,7 +207,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .calendarAccess: model.openPrivacySettings(.calendar)
         case .remindersAccess: model.openPrivacySettings(.reminderList)
         case .policyStoreUnavailable, .bridgeFailed: model.show(.overview)
-        case .mcpServerFailed: model.show(.settings)
+        case .mcpServerFailed:
+            model.settingsScrollTarget = "mcp"
+            model.show(.settings)
+        case .remoteAccessFailed:
+            model.settingsScrollTarget = "remote"
+            model.show(.settings)
         }
     }
 

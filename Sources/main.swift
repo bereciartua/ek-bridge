@@ -54,6 +54,25 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         service.statusChanged = { [weak self] status in self?.model.mcpStatusDidChange(status) }
         return service
     }()
+    private lazy var cimdFetcher = CIMDFetcher()
+    private lazy var oauth = OAuthServer(
+        directory: Self.dataFolder, fetcher: cimdFetcher,
+        clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
+        clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
+    private let keepAwake = KeepAwake()
+    private lazy var remoteService: RemoteMCPService = {
+        // A second protocol layer over the same pipeline: only credentials,
+        // limits and the gate differ.
+        let server = MCPServer(registry: clientRegistry, pipeline: pipeline, limiter: rateLimiter,
+                               counters: mcpCounters,
+                               didConnect: { [weak self] id, connection in
+                                   self?.model.mcpDidConnect(id, connection) })
+        let service = RemoteMCPService(server: server, registry: clientRegistry, limiter: rateLimiter,
+                                       counters: mcpCounters, oauth: oauth)
+        service.statusChanged = { [weak self] status in self?.model.remoteStatusDidChange(status) }
+        service.didServe = { [weak self] note in self?.model.remoteDidServe(note) }
+        return service
+    }()
     #endif
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
@@ -118,6 +137,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         // Waiting changes are refused, and the endpoint file goes away.
         approvals.shutDown()
         mcpService.stop()
+        remoteService.stop()
+        keepAwake.set(false)
         #endif
         localBridge?.stop()
         localBridge = nil
@@ -172,7 +193,19 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 launcherURL: Bundle.main.bundleURL
                     .appendingPathComponent("Contents/MacOS/\(AppIdentity.launcherName)"),
                 portIsFree: { PortProbe.isFree($0) }),
-            approvals: approvals)
+            approvals: approvals,
+            remote: RemoteControls(
+                start: { [weak self] in self?.remoteService.start($0) },
+                update: { [weak self] in self?.remoteService.update($0) },
+                stop: { [weak self] in self?.remoteService.stop() },
+                test: { [weak self] configuration, completion in
+                    guard let self else { return }
+                    RemoteProbe.test(configuration, nonces: self.remoteService.nonces, completion: completion)
+                },
+                portIsFree: { PortProbe.isFree($0) },
+                setKeepAwake: { [weak self] in self?.keepAwake.set($0) },
+                onACPower: { KeepAwake.onACPower },
+                oauth: oauth))
     }
 
     private func liveCollections() -> [CollectionInfo] {

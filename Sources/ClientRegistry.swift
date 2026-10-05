@@ -53,6 +53,11 @@ struct ClientView: Equatable {
     var hasMCPToken = false
     var mcpIssuedAt: Date? = nil
     var approval = ApprovalMode.allow
+    /// Remote Access: whether cloud agents may use this client, and whether
+    /// it holds a remote token (OAuth connections are kept elsewhere).
+    var cloudAccess = false
+    var hasRemoteToken = false
+    var remoteIssuedAt: Date? = nil
 }
 
 /// How a request reached the bridge. The agent name is what the agent reported
@@ -60,11 +65,25 @@ struct ClientView: Equatable {
 enum RequestOrigin: Equatable {
     case cli
     case mcp(agent: String?)
+    /// Through Remote Access (a tunnel to the remote port).
+    case remote(agent: String?)
 
-    var via: String { self == .cli ? "cli" : "mcp" }
+    var via: String {
+        switch self {
+        case .cli: "cli"
+        case .mcp: "mcp"
+        case .remote: "remote"
+        }
+    }
     var agent: String? {
-        if case .mcp(let agent) = self { return agent }
-        return nil
+        switch self {
+        case .cli: nil
+        case .mcp(let agent), .remote(let agent): agent
+        }
+    }
+    var isRemote: Bool {
+        if case .remote = self { return true }
+        return false
     }
 }
 
@@ -139,6 +158,10 @@ final class ClientRegistry {
         var mcpIssuedAt: Date?
         // Nil decodes as .allow, the behavior before version 4.
         var approval: ApprovalMode?
+        // Remote Access. Off and no token when absent.
+        var remoteEnabled: Bool?
+        var remoteVerifier: String?
+        var remoteIssuedAt: Date?
     }
     private struct State: Codable {
         var version = ClientRegistry.currentVersion
@@ -154,6 +177,7 @@ final class ClientRegistry {
     static let maxActivity = 500
     static let maxAgentBytes = 64
     static let mcpTokenPrefix = "ekb_mcp_v1_"
+    static let remoteTokenPrefix = "ekb_mcpr_v1_"
     // Failed MCP authentications are coalesced so a misconfigured agent can't
     // flush the Activity history.
     static let failedAuthRecordInterval: TimeInterval = 10
@@ -167,7 +191,7 @@ final class ClientRegistry {
     private var failed = false
     // Raw bytes and version of an older file, kept until the one-time backup is written.
     private var pendingBackup: (data: Data, version: Int)?
-    private var lastFailedAuthRecord: Date?
+    private var lastFailedAuthRecord = [String: Date]()
 
     init(directory override: URL? = nil, now: @escaping () -> Date = Date.init) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
@@ -183,7 +207,9 @@ final class ClientRegistry {
             ClientView(id: $0.id, name: $0.name, revoked: $0.revoked,
                        grants: $0.grants, revokedAt: $0.revokedAt,
                        hasSigningKey: !$0.verifier.isEmpty, hasMCPToken: $0.mcpVerifier != nil,
-                       mcpIssuedAt: $0.mcpIssuedAt, approval: $0.approval ?? .allow)
+                       mcpIssuedAt: $0.mcpIssuedAt, approval: $0.approval ?? .allow,
+                       cloudAccess: $0.remoteEnabled ?? false, hasRemoteToken: $0.remoteVerifier != nil,
+                       remoteIssuedAt: $0.remoteIssuedAt)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -257,6 +283,64 @@ final class ClientRegistry {
         }
     }
 
+    /// Remote Access for one client. Turning it off removes the remote token;
+    /// the caller revokes the client's OAuth connections.
+    func setCloudAccess(clientID: String, _ on: Bool) -> Result<Void, ClientRegistryError> {
+        updateActive(clientID) { record in
+            guard (record.remoteEnabled ?? false) != on else { return }
+            record.remoteEnabled = on
+            if !on {
+                record.remoteVerifier = nil
+                record.remoteIssuedAt = nil
+            }
+            record.revision += 1
+        }
+    }
+
+    /// Issues a new remote token (or resets it). Needs cloud access on.
+    func issueRemoteToken(clientID: String) -> Result<String, ClientRegistryError> {
+        if case .success(let client) = activeRecord(clientID), client.remoteEnabled != true {
+            return .failure(.forbidden)
+        }
+        return updateActive(clientID) { record in
+            let token = Self.newToken(prefix: Self.remoteTokenPrefix)
+            record.remoteVerifier = Self.tokenDigest(token)
+            record.remoteIssuedAt = now()
+            record.revision += 1
+            return token
+        }
+    }
+
+    func removeRemoteToken(clientID: String) -> Result<Void, ClientRegistryError> {
+        updateActive(clientID) { record in
+            guard record.remoteVerifier != nil else { return }
+            record.remoteVerifier = nil
+            record.remoteIssuedAt = nil
+            record.revision += 1
+        }
+    }
+
+    /// For changes that live outside the registry but must invalidate work in
+    /// flight, like a cloud app's OAuth connection being added or revoked.
+    func bumpRevision(clientID: String) -> Result<Void, ClientRegistryError> {
+        updateActive(clientID) { $0.revision += 1 }
+    }
+
+    /// Whether a client may be used from Remote Access right now.
+    func cloudAccessAllowed(clientID: String) -> Bool {
+        if case .success(let record) = activeRecord(clientID) { return record.remoteEnabled == true }
+        return false
+    }
+
+    private func activeRecord(_ clientID: String) -> Result<Record, ClientRegistryError> {
+        checkThread()
+        guard load() else { return .failure(.unavailable) }
+        guard let record = state!.clients.first(where: { $0.id == clientID && !$0.revoked }) else {
+            return .failure(.clientMissing)
+        }
+        return .success(record)
+    }
+
     func setApproval(clientID: String, _ mode: ApprovalMode) -> Result<Void, ClientRegistryError> {
         updateActive(clientID) { record in
             guard (record.approval ?? .allow) != mode else { return }
@@ -276,6 +360,9 @@ final class ClientRegistry {
         next.clients[index].verifier = ""
         next.clients[index].mcpVerifier = nil
         next.clients[index].mcpIssuedAt = nil
+        next.clients[index].remoteEnabled = nil
+        next.clients[index].remoteVerifier = nil
+        next.clients[index].remoteIssuedAt = nil
         next.clients[index].revision += 1
         Self.pruneRevoked(&next)
         guard persist(next) else { return .failure(.unavailable) }
@@ -380,10 +467,26 @@ final class ClientRegistry {
     /// Plain SHA-256 is deliberate. The token is 256 random bits, so there is
     /// nothing to brute-force and a slow password hash would add only latency.
     func authenticateMCPToken(_ presented: String) -> Result<String, ClientRegistryError> {
+        authenticate(presented, valid: Self.validMCPToken, verifier: { $0.mcpVerifier },
+                     origin: .mcp(agent: nil))
+    }
+
+    /// Remote Access. Only remote tokens of clients with cloud access on
+    /// match; a local MCP token never works through the tunnel, and a remote
+    /// token never works locally.
+    func authenticateRemoteToken(_ presented: String) -> Result<String, ClientRegistryError> {
+        authenticate(presented, valid: Self.validRemoteToken,
+                     verifier: { $0.remoteEnabled == true ? $0.remoteVerifier : nil },
+                     origin: .remote(agent: nil))
+    }
+
+    private func authenticate(_ presented: String, valid: (String) -> Bool,
+                              verifier: (Record) -> String?, origin: RequestOrigin)
+        -> Result<String, ClientRegistryError> {
         checkThread()
         guard load() else { return .failure(.unavailable) }
-        guard Self.validMCPToken(presented) else {
-            recordFailedMCPAuth()
+        guard valid(presented) else {
+            recordFailedAuth(origin)
             return .failure(.unauthorized)
         }
         let digest = Array(SHA256.hash(data: Data(presented.utf8)))
@@ -391,15 +494,13 @@ final class ClientRegistry {
         // time taken doesn't depend on which client (if any) matched.
         var match: String?
         for record in state!.clients where !record.revoked {
-            guard let stored = record.mcpVerifier.flatMap(Self.unhex), stored.count == 32 else {
-                continue
-            }
+            guard let stored = verifier(record).flatMap(Self.unhex), stored.count == 32 else { continue }
             var difference: UInt8 = 0
             for index in 0..<32 { difference |= stored[index] ^ digest[index] }
             if difference == 0 { match = record.id }
         }
         guard let match else {
-            recordFailedMCPAuth()
+            recordFailedAuth(origin)
             return .failure(.unauthorized)
         }
         return .success(match)
@@ -467,13 +568,22 @@ final class ClientRegistry {
                       targetID: Self.targetID(request), origin: origin)
     }
 
-    private func recordFailedMCPAuth() {
+    /// Failed authentications are coalesced, per transport, so a misconfigured
+    /// agent or an internet scanner can't flush the Activity history.
+    private func recordFailedAuth(_ origin: RequestOrigin) {
         let current = now()
-        if let last = lastFailedAuthRecord,
+        if let last = lastFailedAuthRecord[origin.via],
            current.timeIntervalSince(last) < Self.failedAuthRecordInterval,
            current >= last { return }
-        lastFailedAuthRecord = current
-        _ = record(clientID: nil, command: "mcp", outcome: "unauthorized", origin: .mcp(agent: nil))
+        lastFailedAuthRecord[origin.via] = current
+        _ = record(clientID: nil, command: "mcp", outcome: "unauthorized", origin: origin)
+    }
+
+    /// The failed-auth path for credentials checked elsewhere (OAuth tokens).
+    func recordFailedRemoteAuth() {
+        checkThread()
+        guard load() else { return }
+        recordFailedAuth(.remote(agent: nil))
     }
 
     static func targetID(_ request: BridgeRequest) -> String? {
@@ -531,6 +641,11 @@ final class ClientRegistry {
             token.utf8.dropFirst(11).allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
+    static func validRemoteToken(_ token: String) -> Bool {
+        token.utf8.count == 76 && token.hasPrefix(remoteTokenPrefix) &&
+            token.utf8.dropFirst(12).allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
     static func tokenDigest(_ token: String) -> String {
         hex(Data(SHA256.hash(data: Data(token.utf8))))
     }
@@ -540,11 +655,13 @@ final class ClientRegistry {
         return ("ekb_v1_" + hex(key.rawRepresentation), hex(key.publicKey.rawRepresentation))
     }
 
-    private static func newMCPToken() -> String {
+    private static func newMCPToken() -> String { newToken(prefix: mcpTokenPrefix) }
+
+    private static func newToken(prefix: String) -> String {
         // SystemRandomNumberGenerator reads the kernel CSPRNG.
         var generator = SystemRandomNumberGenerator()
         let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
-        return mcpTokenPrefix + hex(Data(bytes))
+        return prefix + hex(Data(bytes))
     }
 
     /// Applies `change` to an active client and persists only if it changed.
@@ -619,7 +736,7 @@ final class ClientRegistry {
               decoded.activity.count <= Self.maxActivity,
               decoded.activity.allSatisfy({
                   ($0.targetID.map(Self.validTargetID) ?? true) &&
-                  ($0.via == nil || $0.via == "cli" || $0.via == "mcp") &&
+                  ($0.via == nil || ["cli", "mcp", "remote"].contains($0.via!)) &&
                   ($0.agent.map(Self.validAgent) ?? true) &&
                   ($0.approval.map(ClientActivity.approvalDetails.contains) ?? true)
               }),
@@ -640,14 +757,21 @@ final class ClientRegistry {
         guard UUID(uuidString: record.id) != nil, validName(record.name),
               record.revision > 0, record.grants.count <= 100,
               record.grants.allSatisfy(\.isValid) else { return false }
-        if record.revoked { return record.verifier.isEmpty && record.mcpVerifier == nil }
+        if record.revoked {
+            return record.verifier.isEmpty && record.mcpVerifier == nil && record.remoteVerifier == nil
+        }
+        // A remote token exists only while cloud access is on.
+        if record.remoteVerifier != nil && record.remoteEnabled != true { return false }
         return (record.verifier.isEmpty || unhex(record.verifier)?.count == 32) &&
-            (record.mcpVerifier.map { unhex($0)?.count == 32 } ?? true)
+            (record.mcpVerifier.map { unhex($0)?.count == 32 } ?? true) &&
+            (record.remoteVerifier.map { unhex($0)?.count == 32 } ?? true)
     }
 
     private static func uniqueTokenVerifiers(_ records: [Record]) -> Bool {
-        let verifiers = records.filter { !$0.revoked }.compactMap(\.mcpVerifier)
-        return Set(verifiers).count == verifiers.count
+        let active = records.filter { !$0.revoked }
+        let local = active.compactMap(\.mcpVerifier)
+        let remote = active.compactMap(\.remoteVerifier)
+        return Set(local).count == local.count && Set(remote).count == remote.count
     }
 
     // Older builds fail closed on a newer file, so keep the original bytes of

@@ -24,7 +24,9 @@ struct AppPresentationTests {
                 let name = (path as NSString).lastPathComponent
                 return name.hasSuffix(".swift") && !name.hasPrefix("Synthetic") &&
                     name != "TestCollections.swift" && name != "BridgeClient.swift" &&
-                    name != "MCPLauncher.swift"
+                    name != "MCPLauncher.swift" &&
+                    // OAuth protocol errors (RFC 6749), not bridge outcomes.
+                    !name.hasPrefix("OAuth") && name != "CIMDFetcher.swift"
             }
         let patterns = [
             #""error": "([a-z_]+)""#,

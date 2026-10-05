@@ -125,7 +125,8 @@ final class RequestPipeline {
             reject(request, clientID, origin, ["error": "rate_limited", "retryAfter": 1], completion)
             return ticket
         }
-        if case .limited(let wait) = limiter?.allow(clientID, write: request.command.isWrite) {
+        if case .limited(let wait) = limiter?.allow(clientID, write: request.command.isWrite,
+                                                    remote: origin.isRemote) {
             reject(request, clientID, origin, ["error": "rate_limited", "retryAfter": wait], completion)
             return ticket
         }

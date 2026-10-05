@@ -1,0 +1,20 @@
+Tailscale Funnel (recommended)
+preservesHost: true
+detectionHeader: Tailscale-Funnel-Request
+
+commands:
+tailscale funnel --bg 47616
+tailscale funnel --bg 47616 off
+
+steps:
+1. Install Tailscale on this Mac and sign in.
+2. In the Tailscale admin console, turn on MagicDNS and HTTPS certificates, and add the funnel node attribute to your tailnet policy.
+3. Run the first command in Terminal. Funnel prints your public address, such as https://my-mac.tail1234.ts.net.
+4. Paste that address under Address, then click Test. Public DNS can take about 10 minutes the first time.
+5. To turn it off, run the last command.
+
+notes:
+- TLS ends on this Mac, inside Tailscale, so the relays in between can't read the traffic.
+- Funnel keeps the public hostname in Host, so it must match Address.
+- Tailscale Serve isn't enough: cloud agents aren't on your tailnet.
+- Funnel keeps running in the background, even after a restart, until you turn it off.

@@ -20,6 +20,10 @@ struct MainView: View {
             case .unavailableGrants(let id): UnavailableGrantsSheet(model: model, clientID: id)
             case .collectionIDs: CollectionIDsSheet(model: model)
             case .mcpPort: MCPPortSheet(model: model)
+            case .remotePort: RemotePortSheet(model: model)
+            case .remoteAddress: RemoteAddressSheet(model: model)
+            case .pairing(let id): PairingSheet(model: model, id: id)
+            case .oauthClient: OAuthClientSheet(model: model)
             }
         }
     }

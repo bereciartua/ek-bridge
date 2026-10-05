@@ -21,6 +21,7 @@ import EventKit
 //   --ui-max-activity            500 activity rows
 //   --ui-bridge-off              start with the bridge off
 //   --ui-mcp listening|off|port-in-use   the fake MCP server's state (default listening)
+//   --ui-remote                  start with Remote Access on, a tunnel address and a cloud client
 @MainActor
 final class UIReview {
     static let claudeID = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d"
@@ -49,6 +50,12 @@ final class UIReview {
             request, store: nil, collections: Self.collections(many: false))
     })
     private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
+    private(set) lazy var oauth = OAuthServer(
+        directory: directory, fetcher: ReviewFetcher(),
+        clientAllowed: { [unowned self] id in self.registry.cloudAccessAllowed(clientID: id) },
+        clientName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
+    static let remoteSecret = "q7Zk2vN4bXwP9sL1mT6hYa"
+    static let remoteOrigin = "https://my-mac.tail1234.ts.net"
     static var longNames: Bool { CommandLine.arguments.contains("--ui-long-names") }
     private var extraWindows = [MainWindowController]()
     private var extraReviews = [UIReview]()
@@ -61,6 +68,7 @@ final class UIReview {
         many = CommandLine.arguments.contains("--ui-many-collections")
         mcpMode = Self.value(CommandLine.arguments, "--ui-mcp") ?? "listening"
         if mcpMode != "off" && fresh != true { defaults.set(true, forKey: "MCPServerEnabled") }
+        if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
             seed()
             // Requests from the last day and a half count as unseen.
@@ -131,7 +139,67 @@ final class UIReview {
                                                          authFailures: 2) },
                 launcherURL: URL(fileURLWithPath: "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp"),
                 portIsFree: { $0 != 47616 }),
-            approvals: approvals)
+            approvals: approvals,
+            remote: RemoteControls(
+                start: { [unowned self] configuration in
+                    DispatchQueue.main.async { self.model?.remoteStatusDidChange(.listening(port: configuration.port)) }
+                },
+                update: { _ in },
+                stop: {},
+                test: { _, completion in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        completion(.success((rtt: 0.18, tunnel: "Tailscale Funnel")))
+                    }
+                },
+                portIsFree: { $0 != 47615 },
+                setKeepAwake: { _ in },
+                onACPower: { true },
+                oauth: oauth))
+    }
+
+    /// Starts a pairing request the way claude.ai would: register (DCR),
+    /// then open the authorize page. The app then shows the pairing sheet.
+    func startPairing(for clientID: String, reopen: Bool = true) {
+        if reopen { oauth.openPairing(clientID: clientID) }
+        let context = OAuthContext(publicOrigin: Self.remoteOrigin, secretPrefix: "/r/" + Self.remoteSecret)
+        let callback = "https://claude.ai/api/mcp/auth_callback"
+        let registration = try! JSONSerialization.data(withJSONObject: [
+            "redirect_uris": [callback], "client_name": "claude.ai"])
+        let register = Self.request("POST", context.secretPrefix + "/oauth/register", body: registration,
+                                    contentType: "application/json")
+        _ = oauth.handle(register, context: context) { [weak self] response in
+            guard let self,
+                  let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                  let clientID = object["client_id"] as? String else { return }
+            var query = URLComponents()
+            query.queryItems = [
+                .init(name: "response_type", value: "code"), .init(name: "client_id", value: clientID),
+                .init(name: "redirect_uri", value: callback), .init(name: "state", value: "review"),
+                .init(name: "code_challenge", value: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"),
+                .init(name: "code_challenge_method", value: "S256")]
+            let authorize = Self.request("GET", context.secretPrefix + "/oauth/authorize?" + (query.query ?? ""))
+            _ = self.oauth.handle(authorize, context: context) { _ in }
+        }
+    }
+
+    static func request(_ method: String, _ target: String, body: Data = Data(),
+                        contentType: String? = nil) -> HTTPRequest {
+        var head = "\(method) \(target) HTTP/1.1\r\nHost: my-mac.tail1234.ts.net\r\n"
+        if let contentType { head += "Content-Type: \(contentType)\r\n" }
+        head += "Content-Length: \(body.count)\r\n\r\n"
+        var parser = HTTPParser()
+        guard case .request(let request) = parser.feed(Data(head.utf8) + body) else {
+            preconditionFailure("review request didn't parse")
+        }
+        return request
+    }
+
+    /// Remote Access on, with a tunnel address and Claude Code allowed from
+    /// the cloud.
+    func seedRemote() {
+        defaults.set(true, forKey: "RemoteAccessEnabled")
+        defaults.set(Self.remoteSecret, forKey: "RemoteAccessSecretPath")
+        defaults.set(Self.remoteOrigin, forKey: "RemoteAccessPublicAddress")
     }
 
     // Before/after rows for the update snapshot, which has no EventKit to read.
@@ -414,6 +482,14 @@ final class UIReview {
 
 /// Opens and closes the window and its sheets eight times, checking that the
 /// controller keeps the same window and that nothing is released on close.
+/// The review build makes no network requests.
+@MainActor
+final class ReviewFetcher: CIMDFetching {
+    func fetch(_ url: URL, completion: @escaping (Result<ClientMetadata, CIMDError>) -> Void) {
+        completion(.failure(.network("offline review build")))
+    }
+}
+
 @MainActor
 final class WindowLifecycleReview {
     let model: BridgeAppModel
@@ -436,7 +512,8 @@ final class WindowLifecycleReview {
                                .client(UIReview.revokedID)]
         model.navigate(to: routes[number % routes.count])
         model.sheet = number.isMultiple(of: 2) ? .newClient : .rename(UIReview.claudeID)
-        after(0.25) {
+        // Generous: the window server is slower with the display asleep.
+        after(0.6) {
             guard let window = self.controller.window, window.isVisible, window.attachedSheet != nil,
                   !window.isReleasedWhenClosed else { return self.report("sheet_missing", number) }
             self.model.sheet = nil
@@ -778,6 +855,84 @@ final class BehaviorReview {
         step("cancel keeps it on") {
             self.answer(.alertSecondButtonReturn) && self.model.mcpEnabled && self.model.mcpIsListening
         }
+        step("turning on Remote Access asks first") {
+            self.model.setRemoteAccessEnabled(true)
+            return self.window.attachedSheet != nil && !self.model.remoteEnabled
+        }
+        step("Remote Access on, with a secret path") {
+            self.answer(.alertFirstButtonReturn) && self.model.remoteEnabled &&
+                RemoteConfiguration.validSecret(self.model.remoteSecret)
+        }
+        step("address validation") {
+            self.model.remoteIsListening &&
+                self.model.remoteAddressIssue("http://my-mac.example") != nil &&
+                self.model.remoteAddressIssue("https://my-mac.example/path") != nil &&
+                self.model.setRemoteAddress("https://My-Mac.tail1234.ts.net/") == nil &&
+                self.model.remoteMCPURL == "https://my-mac.tail1234.ts.net/r/\(self.model.remoteSecret)/mcp"
+        }
+        step("remote port can't be the MCP port") {
+            self.model.remotePortIssue("47615") != nil && self.model.remotePortIssue("47620") == nil
+        }
+        step("Test reports reachable") {
+            self.model.testRemoteAccess()
+            return self.model.remoteTest == .testing
+        }
+        step("reachable") {
+            if case .reachable = self.model.remoteTest { return true }
+            return false
+        }
+        step("cloud access and Copy Remote Token asks first") {
+            self.model.setCloudAccess(claude, true)
+            guard self.model.client(claude)?.cloudAccess == true else { return false }
+            self.model.copyRemoteToken(claude)
+            return self.window.attachedSheet != nil
+        }
+        step("copying creates the remote token") {
+            NSPasteboard.general.clearContents()
+            guard self.answer(.alertFirstButtonReturn) else { return false }
+            let copied = NSPasteboard.general.string(forType: .string) ?? ""
+            Pasteboard.clearSecret()
+            return ClientRegistry.validRemoteToken(copied) && self.model.client(claude)?.hasRemoteToken == true &&
+                NSPasteboard.general.string(forType: .string) == nil
+        }
+        step("a cloud app asks to pair") {
+            self.review.startPairing(for: claude)
+            return self.model.pairingClientID == claude
+        }
+        step("pairing shows the code") {
+            guard case .pairing(let id) = self.model.sheet, let request = self.model.pairingRequest(id) else {
+                return false
+            }
+            return request.code.count == 7 && request.appName == "claude.ai" && self.window.attachedSheet != nil
+        }
+        var firstPairing: UUID?
+        step("a second request waits instead of replacing the sheet") {
+            guard case .pairing(let id) = self.model.sheet else { return false }
+            firstPairing = id
+            self.review.startPairing(for: claude, reopen: false)
+            return self.model.sheet == .pairing(id) && self.review.oauth.pendingPairings.count == 2
+        }
+        step("answering shows the waiting request") {
+            guard let first = firstPairing else { return false }
+            self.model.answerPairing(first, allow: false)
+            return self.model.sheet == nil
+        }
+        step("deny closes the pairing") {
+            guard case .pairing(let id) = self.model.sheet, id != firstPairing else { return false }
+            self.model.answerPairing(id, allow: false)
+            return self.model.sheet == nil && self.model.oauthConnections(claude).isEmpty
+        }
+        step("turning cloud access off asks, then removes the token") {
+            self.model.setCloudAccess(claude, false)
+            guard self.window.attachedSheet != nil, self.answer(.alertFirstButtonReturn) else { return false }
+            return self.model.client(claude)?.cloudAccess == false &&
+                self.model.client(claude)?.hasRemoteToken == false &&
+                self.model.remoteTokenStatus(claude) == .missing
+        }
+        step("Remote Access off from the menu") {
+            self.model.applyRemoteEnabled(false)
+            return !self.model.remoteEnabled && self.model.remoteStatus == .off
+        }
         step("activity deep link") {
             guard let forbidden = self.model.activity.first(where: { $0.code == "forbidden" }) else { return false }
             self.model.openActivity(selecting: forbidden.id)
@@ -972,7 +1127,47 @@ final class SnapshotReview {
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window
             }
+            step("settings-remote") {
+                self.review.approvals.withdrawAll()
+                self.model.applyRemoteEnabled(true)
+                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                self.model.settingsScrollTarget = "remote"
+                self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-remote-more") {
+                self.model.settingsScrollTarget = "developer"
+                return main
+            }
+            step("client-cloud") {
+                if self.model.client(UIReview.claudeID)?.cloudAccess != true {
+                    self.model.setCloudAccess(UIReview.claudeID, true)
+                }
+                self.model.cloudAgentChoice[UIReview.claudeID] = .claudeAI
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientScrollTarget = "cloud"
+                return main
+            }
+            step("client-cloud-bearer") {
+                self.model.cloudAgentChoice[UIReview.claudeID] = .anthropicAPI
+                return main
+            }
+            step("sheet-pairing") {
+                self.review.startPairing(for: UIReview.claudeID)
+                return main?.attachedSheet ?? main
+            }
+            step("sheet-oauth-client") {
+                self.model.sheet = nil
+                self.model.cloudAgentChoice[UIReview.claudeID] = .geminiEnterprise
+                self.model.setUpOAuthClient(UIReview.claudeID, appName: CloudAgentKind.geminiEnterprise.displayName,
+                                            redirectURI: CloudAgentKind.geminiEnterprise.preRegisteredRedirectURI!)
+                return main?.attachedSheet ?? main
+            }
             step("new-client-sheet-mcp") {
+                self.model.oauthClientDetails = nil
+                self.model.sheet = nil
+                self.model.applyRemoteEnabled(false)
                 self.review.approvals.withdrawAll()
                 self.model.navigate(to: .overview)
                 self.model.sheet = .newClient

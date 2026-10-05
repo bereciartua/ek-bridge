@@ -21,8 +21,12 @@ struct AgentSetupTests {
         syntax()
         installLinks()
         try shellRoundTrip()
+        cloudCatalog()
+        cloudSyntax()
+        try cloudShellRoundTrip()
+        tunnels()
         print("Agent setup: \(count) goldens, catalog, no secrets, identity, JSON/TOML syntax, "
-              + "install links, shell round trip passed")
+              + "install links, shell round trip, cloud catalog, cloud shell round trip, tunnels passed")
     }
 
     static func all(_ context: SetupContext) -> [(AgentKind, SetupMethod, SetupSnippet)] {
@@ -59,6 +63,12 @@ struct AgentSetupTests {
             AgentKind.claudeCode.snippet(.directHTTP, apostrophe).text
         expected["claude-code.launcher.apostrophe.txt"] =
             AgentKind.claudeCode.snippet(.launcher, apostrophe).text
+        for agent in CloudAgentKind.allCases {
+            expected["cloud-\(slug(agent)).txt"] = render(agent, cloud)
+        }
+        for provider in TunnelProvider.allCases {
+            expected["tunnel-\(slug(provider)).txt"] = render(provider)
+        }
 
         let files = FileManager.default
         if ProcessInfo.processInfo.environment["UPDATE_GOLDENS"] == "1" {
@@ -267,16 +277,258 @@ struct AgentSetupTests {
         }
     }
 
+    // MARK: Cloud agents and tunnels (§22)
+
+    static let cloudURL = "https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp"
+    static let cloud = CloudSetupContext(mcpURL: cloudURL, clientName: "claude.ai")
+    static let cloudTricky = CloudSetupContext(
+        mcpURL: cloudURL, clientName: #"O'Brien's "cloud" $HOME `x` \ bot"#)
+    static let cloudOther = CloudSetupContext(
+        serverKey: "test-key", mcpURL: "https://other.example.net/r/AAAAAAAAAAAAAAAAAAAAAA/mcp",
+        clientName: "Other")
+    static let remotePort = TunnelProvider.defaultRemotePort
+    static let tunnelHost = "my-mac.tail1234.ts.net"
+    static let secretPrefixes = ["ekb_mcp_v1_", "ekb_mcpr_v1_", "ekb_oat_v1_", "ekb_ort_v1_"]
+
+    static func slug(_ agent: CloudAgentKind) -> String {
+        switch agent {
+        case .anthropicAPI: return "anthropic-api"
+        case .openAIResponses: return "openai-responses"
+        case .claudeAI: return "claude-ai"
+        case .chatGPT: return "chatgpt"
+        default: return kebab(agent.rawValue)
+        }
+    }
+
+    static func slug(_ provider: TunnelProvider) -> String { kebab(provider.rawValue) }
+
+    static func kebab(_ name: String) -> String {
+        name.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1-$2", options: .regularExpression)
+            .lowercased()
+    }
+
+    // Everything the user reads for one agent, so wording changes show up in review.
+    static func render(_ agent: CloudAgentKind, _ context: CloudSetupContext) -> String {
+        let snippet = agent.snippet(context)
+        var lines = ["\(agent.displayName)", "credential: \(agent.credential)",
+                     "needsLiteralToken: \(snippet.needsLiteralToken)", "", "snippet (\(snippet.kind)):",
+                     snippet.text]
+        for extra in snippet.extraSnippets {
+            lines += ["", "\(extra.title) (\(extra.kind)):", extra.text]
+        }
+        lines += ["", "steps:"] + snippet.steps.enumerated().map { "\($0.offset + 1). \($0.element)" }
+        if !agent.warnings.isEmpty { lines += ["", "warnings:"] + agent.warnings.map { "- \($0)" } }
+        if let footnote = agent.footnote { lines += ["", "footnote: \(footnote)"] }
+        return lines.joined(separator: "\n")
+    }
+
+    static func render(_ provider: TunnelProvider) -> String {
+        var lines = ["\(provider.displayName)", "preservesHost: \(provider.preservesHost)",
+                     "detectionHeader: \(provider.detectionHeader ?? "none")", "", "commands:"]
+        lines += provider.commands(port: remotePort, hostname: tunnelHost)
+        if let config = provider.configFile(port: remotePort, hostname: tunnelHost) {
+            lines += ["", "config.yml:", config]
+        }
+        lines += ["", "steps:"] + provider.steps.enumerated().map { "\($0.offset + 1). \($0.element)" }
+        lines += ["", "notes:"] + provider.notes.map { "- \($0)" }
+        return lines.joined(separator: "\n")
+    }
+
+    static func texts(_ agent: CloudAgentKind, _ context: CloudSetupContext) -> [String] {
+        let snippet = agent.snippet(context)
+        return [snippet.text] + snippet.extraSnippets.map(\.text) + snippet.steps + agent.warnings
+            + [agent.footnote ?? "", agent.displayName]
+    }
+
+    static func cloudCatalog() {
+        precondition(CloudAgentKind.allCases.count == 11 && TunnelProvider.allCases.count == 5)
+        let oauth: Set<CloudAgentKind> = [.claudeAI, .chatGPT, .geminiEnterprise]
+        for context in [cloud, cloudTricky, cloudOther] {
+            for agent in CloudAgentKind.allCases {
+                let snippet = agent.snippet(context)
+                let key = "\(agent)"
+                for text in texts(agent, context) {
+                    for prefix in secretPrefixes { precondition(!text.contains(prefix), "\(key) \(prefix)") }
+                }
+                precondition(!snippet.containsSecret && snippet.installURL == nil, key)
+                precondition(snippet.destination == nil && !snippet.skipsListenerCheck, key)
+                precondition(!snippet.steps.isEmpty && !agent.displayName.isEmpty, key)
+                precondition(snippet.needsLiteralToken == (agent.credential == .bearer), key)
+                precondition((agent.credential == .oauth) == oauth.contains(agent), key)
+                let pieces = [snippet.text] + snippet.extraSnippets.map(\.text)
+                switch agent.credential {
+                case .bearer:
+                    precondition(pieces.allSatisfy { $0.contains(context.mcpURL) }, key)
+                    let placeholders = AgentSetup.remoteTokenPlaceholders
+                    precondition(placeholders.contains { snippet.text.contains($0) }, key)
+                    precondition(pieces.joined().contains(context.serverKey), key)
+                case .oauth:
+                    precondition(snippet.text == context.mcpURL && snippet.extraSnippets.isEmpty, key)
+                    precondition(snippet.steps.contains { $0.contains("Connect a Cloud App") }, key)
+                case .unsupported:
+                    precondition(snippet.text.isEmpty && agent.footnote != nil && agent.warnings.isEmpty, key)
+                }
+                if context.serverKey != AppIdentity.mcpServerKey {
+                    for text in pieces {
+                        for stale in [AppIdentity.mcpServerKey, cloudURL, "tail1234"] {
+                            precondition(!text.contains(stale), "\(key) contains \(stale)")
+                        }
+                    }
+                }
+            }
+        }
+        precondition(CloudAgentKind.copilotAgent.warnings.contains { $0.contains("Read-only") })
+        precondition(CloudAgentKind.claudeCodeCloud.warnings.contains { $0.contains("Anyone who uses") })
+        precondition(CloudAgentKind.allCases.filter { $0.credential != .unsupported }
+            .allSatisfy { $0.warnings.contains(AgentSetup.cloudAskWarning) })
+        precondition(CloudAgentKind.codexCloud.credential == .unsupported)
+        precondition(AgentSetup.readOnlyToolNames.allSatisfy { $0.hasPrefix("read_") || $0.hasPrefix("list_") })
+    }
+
+    static func cloudSyntax() {
+        var count = 0
+        for context in [cloud, cloudTricky, cloudOther] {
+            for agent in CloudAgentKind.allCases {
+                let snippet = agent.snippet(context)
+                let pieces = [(snippet.kind, snippet.text)] + snippet.extraSnippets.map { ($0.kind, $0.text) }
+                for (kind, text) in pieces where kind == .json {
+                    _ = parseJSON(text, "\(agent)")
+                    count += 1
+                }
+            }
+            let key = context.serverKey
+            let copilot = parseJSON(CloudAgentKind.copilotAgent.snippet(context).text, "copilot")
+            let copilotEntry = (copilot["mcpServers"] as! [String: Any])[key] as! [String: Any]
+            precondition(copilotEntry["type"] as? String == "http")
+            precondition(copilotEntry["url"] as? String == context.mcpURL)
+            precondition(copilotEntry["tools"] as? [String] == AgentSetup.readOnlyToolNames)
+            precondition((copilotEntry["headers"] as? [String: String])?["Authorization"]
+                         == "Bearer $COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN")
+
+            let claudeCode = CloudAgentKind.claudeCodeCloud.snippet(context)
+            let entry = (parseJSON(claudeCode.text, "claude code")["mcpServers"] as! [String: Any])[key]
+                as! [String: Any]
+            precondition((entry["headers"] as? [String: String])?["Authorization"]
+                         == "Bearer ${EVENTKIT_BRIDGE_TOKEN}")
+            let bare = (parseJSON(claudeCode.extraSnippets[0].text, "claude code")["mcpServers"]
+                        as! [String: Any])[key] as! [String: Any]
+            precondition(bare.keys.sorted() == ["type", "url"] && bare["url"] as? String == context.mcpURL)
+        }
+        precondition(count == 12)
+    }
+
+    // Runs each curl snippet through /bin/sh with a stub curl and a fake token in the environment:
+    // the body must parse and carry the token exactly, whatever the client name holds.
+    static func cloudShellRoundTrip() throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent("agent-cloud-\(UUID().uuidString)")
+        defer { try? files.removeItem(at: root) }
+        try files.createDirectory(at: root, withIntermediateDirectories: true)
+        try install("#!/bin/sh\nprintf '%s\\0' \"$0\" \"$@\"\n", at: root.appendingPathComponent("curl"))
+        let token = "fake-token-with-'quote-and-$dollar"
+        let environment = [
+            "EVENTKIT_BRIDGE_REMOTE_TOKEN": token, "ANTHROPIC_API_KEY": "fake-anthropic",
+            "OPENAI_API_KEY": "fake-openai", "VAULT_ID": "vlt_test",
+        ]
+        for context in [cloud, cloudTricky] {
+            for agent in [CloudAgentKind.anthropicAPI, .managedAgents, .openAIResponses] {
+                let argv = try run(agent.snippet(context).text, root, environment: environment)
+                let data = argv.firstIndex(of: "-d").map { argv[$0 + 1] }!
+                let body = parseJSON(data, "\(agent) body")
+                switch agent {
+                case .anthropicAPI:
+                    precondition(argv[1] == "https://api.anthropic.com/v1/messages")
+                    precondition(argv.contains("x-api-key: fake-anthropic"))
+                    let server = (body["mcp_servers"] as! [[String: Any]])[0]
+                    precondition(server["authorization_token"] as? String == token)
+                    precondition(server["url"] as? String == context.mcpURL)
+                case .managedAgents:
+                    precondition(argv[1] == "https://api.anthropic.com/v1/vaults/vlt_test/credentials")
+                    let auth = body["auth"] as! [String: Any]
+                    precondition(auth["token"] as? String == token)
+                    precondition(auth["type"] as? String == "static_bearer")
+                    precondition(auth["mcp_server_url"] as? String == context.mcpURL)
+                    precondition((body["display_name"] as! String).contains(context.clientName))
+                default:
+                    precondition(argv.contains("authorization: Bearer fake-openai"))
+                    let tool = (body["tools"] as! [[String: Any]])[0]
+                    precondition(tool["authorization"] as? String == token)
+                    precondition(tool["server_url"] as? String == context.mcpURL)
+                }
+            }
+        }
+    }
+
+    static func tunnels() {
+        for provider in TunnelProvider.allCases {
+            let key = "\(provider)"
+            let commands = provider.commands(port: remotePort, hostname: tunnelHost)
+            let moved = provider.commands(port: 50123, hostname: nil)
+            precondition(commands.isEmpty == (provider == .other), key)
+            if provider != .other {
+                // A named Cloudflare tunnel takes the port from config.yml.
+                let config = { (port: Int) in [provider.configFile(port: port, hostname: nil) ?? ""] }
+                precondition((commands + config(remotePort)).contains { $0.contains("\(remotePort)") }, key)
+                precondition((moved + config(50123)).contains { $0.contains("50123") }, key)
+            }
+            precondition(!moved.contains { $0.contains("47616") || $0.contains(tunnelHost) }, key)
+            precondition(Array(commands.suffix(provider.offCommands(port: remotePort).count))
+                         == provider.offCommands(port: remotePort), key)
+            precondition(!provider.steps.isEmpty && !provider.notes.isEmpty, key)
+            let all = commands + provider.steps + provider.notes
+                + [provider.configFile(port: remotePort, hostname: tunnelHost) ?? ""]
+            for text in all {
+                for prefix in secretPrefixes { precondition(!text.contains(prefix), key) }
+                precondition(!text.contains("47615"), "\(key) points at the local port")
+            }
+        }
+        let tailscale = TunnelProvider.tailscaleFunnel.commands(port: remotePort, hostname: nil)
+        precondition(tailscale == ["tailscale funnel --bg 47616", "tailscale funnel --bg 47616 off"])
+        precondition(TunnelProvider.ngrok.commands(port: remotePort, hostname: nil)[1]
+                     == "ngrok http 47616 --url https://<your-dev-domain> --host-header=rewrite")
+        let config = TunnelProvider.cloudflareTunnel.configFile(port: 50123, hostname: nil)!
+        precondition(config.contains("service: http://127.0.0.1:50123")
+                     && config.contains(#"httpHostHeader: "127.0.0.1:50123""#)
+                     && config.contains("hostname: mcp.example.com"))
+        precondition(TunnelProvider.allCases.filter(\.preservesHost) == [.tailscaleFunnel, .other])
+        precondition(TunnelProvider.ngrok.notes.contains { $0.contains("20,000") && !$0.contains("basic") })
+        precondition(TunnelProvider.cloudflareQuick.notes[0].contains("testing only"))
+
+        let funnel = [("Host", tunnelHost), ("Tailscale-Funnel-Request", "?1"),
+                      ("X-Forwarded-For", "203.0.113.7"), ("X-Forwarded-Host", tunnelHost)]
+        let named = [("Host", "127.0.0.1:47616"), ("cf-ray", "8c1f2a3b4c5d6e7f-SJC"),
+                     ("CF-Connecting-IP", "203.0.113.7")]
+        let quick = [("Host", "random-words-here.trycloudflare.com"), ("CF-Ray", "8c1f2a3b4c5d6e7f-SJC")]
+        let ngrok = [("Host", "localhost:47616"), ("X-Forwarded-For", "203.0.113.7"),
+                     ("X-Forwarded-Host", "calm-otter-42.ngrok-free.app"), ("X-Forwarded-Proto", "https")]
+        let custom = [("Host", "127.0.0.1:47616"), ("X-Forwarded-For", "203.0.113.7")]
+        let cases: [([(String, String)], TunnelProvider?)] = [
+            (funnel, .tailscaleFunnel), (named, .cloudflareTunnel), (quick, .cloudflareQuick),
+            (ngrok, .ngrok), (custom, .other), ([("Host", "127.0.0.1:47616")], nil), ([], nil),
+        ]
+        for (headers, provider) in cases {
+            precondition(TunnelProvider.detect(headers: headers) == provider, "\(headers)")
+        }
+        for provider in TunnelProvider.allCases {
+            guard let header = provider.detectionHeader else { continue }
+            let value = provider == .ngrok ? "x.ngrok.app" : "1"
+            let detected = TunnelProvider.detect(headers: [(header.uppercased(), value)])
+            let expected = provider == .cloudflareQuick ? .cloudflareTunnel : provider
+            precondition(detected == expected, "\(provider)")
+        }
+    }
+
     static func install(_ script: String, at file: URL) throws {
         try Data(script.utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
     }
 
-    static func run(_ command: String, _ bin: URL) throws -> [String] {
+    static func run(_ command: String, _ bin: URL, environment: [String: String] = [:]) throws -> [String] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
-        process.environment = ["PATH": "\(bin.path):/usr/bin:/bin", "HOME": "/nonexistent"]
+        process.environment = environment.merging(
+            ["PATH": "\(bin.path):/usr/bin:/bin", "HOME": "/nonexistent"]) { $1 }
         let output = Pipe()
         process.standardOutput = output
         try process.run()

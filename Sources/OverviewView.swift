@@ -70,6 +70,11 @@ struct BridgeStatusCard: View {
                     Label(model.mcpStatusLine, systemImage: "server.rack")
                         .foregroundStyle(model.mcpFailureText == nil ? Color.secondary : Color.orange)
                         .font(.callout)
+                    if let remote = model.remoteStatusLine {
+                        Label(remote, systemImage: "globe")
+                            .foregroundStyle(model.remoteFailureText == nil ? Color.secondary : Color.orange)
+                            .font(.callout)
+                    }
                     if case .failed = model.bridge {
                         Button(String(localized: "Try Again")) { model.setBridgeEnabled(true) }
                             .padding(.top, 4)

@@ -353,6 +353,655 @@ extension AgentKind {
     }
 }
 
+// MARK: - Cloud agents (§22.2)
+
+/// How a cloud agent proves it may use a client: the client's remote token, pasted into the
+/// vendor's settings, or an OAuth connection approved in the app (Connect a Cloud App…).
+enum CloudCredential { case bearer, oauth, unsupported }
+
+struct CloudSetupContext {
+    let serverKey: String
+    /// The public MCP URL with the secret path: `https://host/r/<secret>/mcp`.
+    let mcpURL: String
+    let clientName: String
+
+    init(serverKey: String = AppIdentity.mcpServerKey, mcpURL: String, clientName: String) {
+        self.serverKey = serverKey
+        self.mcpURL = mcpURL
+        self.clientName = clientName
+    }
+
+    var host: String { URL(string: mcpURL)?.host ?? mcpURL }
+}
+
+enum CloudAgentKind: String, CaseIterable, Identifiable {
+    case anthropicAPI, managedAgents, claudeCodeCloud, cursorCloud, copilotAgent, devin, openAIResponses,
+         claudeAI, chatGPT, geminiEnterprise, codexCloud
+
+    var id: String { rawValue }
+}
+
+extension AgentSetup {
+    static let remoteTokenEnvironmentVariable = "EVENTKIT_BRIDGE_REMOTE_TOKEN"
+    /// Copilot only passes secrets whose names start with COPILOT_MCP_.
+    static let copilotSecretName = "COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN"
+    static var remoteTokenPlaceholder: String { String(localized: "<remote token from Copy Remote Token…>") }
+    /// The tools MCPToolCatalog marks readOnlyHint, for agents that take an allowlist.
+    static let readOnlyToolNames = ["list_collections", "read_events", "read_reminders"]
+
+    /// Every way a cloud snippet refers to the token without containing it.
+    static var remoteTokenPlaceholders: [String] {
+        ["$\(remoteTokenEnvironmentVariable)", "${\(tokenEnvironmentVariable)}", "$\(copilotSecretName)",
+         remoteTokenPlaceholder]
+    }
+
+    static var cloudAskWarning: String {
+        String(localized: """
+            Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for \
+            you at this Mac and are declined otherwise.
+            """)
+    }
+}
+
+extension CloudAgentKind {
+    var displayName: String {
+        switch self {
+        case .anthropicAPI: return String(localized: "Anthropic API (MCP connector)")
+        case .managedAgents: return String(localized: "Claude Managed Agents")
+        case .claudeCodeCloud: return String(localized: "Claude Code on the web")
+        case .cursorCloud: return String(localized: "Cursor cloud agents")
+        case .copilotAgent: return String(localized: "GitHub Copilot coding agent")
+        case .devin: return String(localized: "Devin")
+        case .openAIResponses: return String(localized: "OpenAI Responses API")
+        case .claudeAI: return String(localized: "claude.ai · Claude Desktop · mobile")
+        case .chatGPT: return String(localized: "ChatGPT")
+        case .geminiEnterprise: return String(localized: "Gemini Enterprise")
+        case .codexCloud: return String(localized: "Codex cloud tasks")
+        }
+    }
+
+    /// Apps configured with a client ID and secret rather than discovering the server: Connect a
+    /// Cloud App… sets up a confidential client with this redirect URI.
+    var preRegisteredRedirectURI: String? {
+        // Where Gemini Enterprise returns after authorization (Google's custom MCP server docs).
+        self == .geminiEnterprise ? "https://vertexaisearch.cloud.google.com/oauth-redirect" : nil
+    }
+
+    var credential: CloudCredential {
+        switch self {
+        case .anthropicAPI, .managedAgents, .claudeCodeCloud, .cursorCloud, .copilotAgent, .devin,
+             .openAIResponses:
+            return .bearer
+        case .claudeAI, .chatGPT, .geminiEnterprise: return .oauth
+        case .codexCloud: return .unsupported
+        }
+    }
+
+    var warnings: [String] {
+        let apiRunsTools = String(localized: """
+            The API calls tools without asking you, so this client's grants are the only limit. Give \
+            it only the lists it needs.
+            """)
+        var list: [String]
+        switch self {
+        case .anthropicAPI, .managedAgents, .openAIResponses:
+            list = [apiRunsTools]
+        case .claudeCodeCloud:
+            list = [String(localized: """
+                Anyone who uses that cloud environment can read its environment variables, including \
+                this token. Use an environment only you use, or on Pro and Max plans an API credential.
+                """)]
+        case .copilotAgent:
+            list = [String(localized: """
+                Copilot runs MCP tools without asking for approval. Give this client Read-only grants \
+                and keep the tools list to the read tools.
+                """)]
+        case .cursorCloud, .devin, .claudeAI, .chatGPT, .geminiEnterprise:
+            list = []
+        case .codexCloud:
+            return []
+        }
+        return list + [AgentSetup.cloudAskWarning]
+    }
+
+    var footnote: String? {
+        switch self {
+        case .anthropicAPI:
+            return String(localized: """
+                Keep the remote token with your app's other secrets; every request carries it.
+                """)
+        case .managedAgents:
+            return String(localized: """
+                The vault matches the credential by URL. If you reset the secret path, add the \
+                credential again.
+                """)
+        case .claudeCodeCloud:
+            return String(localized: "Cloud sessions load .mcp.json only when the session has one repository.")
+        case .cursorCloud:
+            return String(localized: """
+                Cursor keeps the header on its servers and relays tool calls, so the agent's machine \
+                never sees the token.
+                """)
+        case .copilotAgent:
+            return String(localized: "Copilot can't sign in with OAuth, so it uses the remote token.")
+        case .devin:
+            return nil
+        case .openAIResponses:
+            return String(localized: "The authorization field takes the bare token, without Bearer.")
+        case .claudeAI:
+            return String(localized: """
+                Once added, the connector also works in Claude Desktop and the Claude mobile app. Claude \
+                signs in with OAuth; sending a fixed header is a limited beta.
+                """)
+        case .chatGPT:
+            return String(localized: "ChatGPT can't send an API key, so it connects with OAuth.")
+        case .geminiEnterprise:
+            return String(localized: """
+                Gemini Enterprise needs an OAuth client set up ahead of time: Set Up OAuth Client… \
+                creates one for this client. Clicking it again replaces a client that hasn't connected.
+                """)
+        case .codexCloud:
+            return String(localized: """
+                Codex cloud tasks can't use your own MCP servers yet. Use Codex on this Mac with the \
+                local setup, or the OpenAI Responses API.
+                """)
+        }
+    }
+
+    func snippet(_ c: CloudSetupContext) -> SetupSnippet {
+        let placeholder = AgentSetup.remoteTokenPlaceholder
+        let copyToken = String(localized: """
+            Paste the token from Copy Remote Token… on the “\(c.clientName)” client.
+            """)
+        let exportToken = String(localized: """
+            In Terminal, set \(AgentSetup.remoteTokenEnvironmentVariable) to the remote token (Copy \
+            Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
+            """)
+        let pairing = String(localized: """
+            When it asks you to sign in, open the client “\(c.clientName)” in \(AppIdentity.displayName), \
+            choose Connect a Cloud App…, and approve the code you see in both places.
+            """)
+
+        switch self {
+        case .anthropicAPI:
+            let body = SetupJSON.object([
+                ("model", .string("claude-opus-5-5")), ("max_tokens", .number(1024)),
+                ("messages", .array([.object([
+                    ("role", .string("user")), ("content", .string("What is on my calendar today?")),
+                ])])),
+                ("mcp_servers", .array([.object([
+                    ("type", .string("url")), ("url", .string(c.mcpURL)), ("name", .string(c.serverKey)),
+                    ("authorization_token", .string(SetupCurl.tokenSentinel)),
+                ])])),
+                ("tools", .array([.object([
+                    ("type", .string("mcp_toolset")), ("mcp_server_name", .string(c.serverKey)),
+                ])])),
+            ])
+            return SetupSnippet(
+                kind: .shellCommand,
+                text: SetupCurl.post("https://api.anthropic.com/v1/messages", headers: [
+                    "content-type: application/json", "x-api-key: $ANTHROPIC_API_KEY",
+                    "anthropic-version: 2023-06-01", "anthropic-beta: mcp-client-2025-11-20",
+                ], body: body),
+                steps: [
+                    exportToken,
+                    String(localized: """
+                        In your own code, send the same mcp_servers entry with each request and keep the \
+                        anthropic-beta header.
+                        """),
+                ],
+                needsLiteralToken: true)
+
+        case .managedAgents:
+            let body = SetupJSON.object([
+                ("display_name", .string("\(AppIdentity.displayName) (\(c.clientName))")),
+                ("auth", .object([
+                    ("type", .string("static_bearer")), ("mcp_server_url", .string(c.mcpURL)),
+                    ("token", .string(SetupCurl.tokenSentinel)),
+                ])),
+            ])
+            let agent = SetupJSON.object([
+                ("mcp_servers", .array([.object([
+                    ("type", .string("url")), ("name", .string(c.serverKey)), ("url", .string(c.mcpURL)),
+                ])])),
+                ("tools", .array([.object([
+                    ("type", .string("mcp_toolset")), ("mcp_server_name", .string(c.serverKey)),
+                ])])),
+            ]).text
+            return SetupSnippet(
+                kind: .shellCommand,
+                text: SetupCurl.post("https://api.anthropic.com/v1/vaults/$VAULT_ID/credentials", headers: [
+                    "content-type: application/json", "x-api-key: $ANTHROPIC_API_KEY",
+                    "anthropic-version: 2023-06-01", "anthropic-beta: managed-agents-2026-04-01",
+                ], body: body),
+                steps: [
+                    String(localized: "Create a vault, or pick an existing one, and set VAULT_ID to its ID."),
+                    exportToken,
+                    String(localized: "Add the mcp_servers and tools entries below to your agent."),
+                    String(localized: "Pass the vault in vault_ids when you create a session."),
+                ],
+                needsLiteralToken: true,
+                extraSnippets: [(String(localized: "In your agent"), .json, agent)])
+
+        case .claudeCodeCloud:
+            func mcpJSON(_ headers: Bool) -> String {
+                var entry: [(String, SetupJSON)] = [("type", .string("http")), ("url", .string(c.mcpURL))]
+                if headers {
+                    entry.append(("headers", .object([
+                        ("Authorization", .string("Bearer ${\(AgentSetup.tokenEnvironmentVariable)}")),
+                    ])))
+                }
+                return SetupJSON.object([("mcpServers", .object([(c.serverKey, .object(entry))]))]).text
+            }
+            return SetupSnippet(
+                kind: .json, text: mcpJSON(true),
+                steps: [
+                    String(localized: """
+                        Add this to .mcp.json at the root of the repository and commit it. It holds no \
+                        token.
+                        """),
+                    String(localized: """
+                        At claude.ai/code, edit the cloud environment and add \
+                        \(AgentSetup.tokenEnvironmentVariable)=\(placeholder) under Environment variables.
+                        """),
+                    String(localized: "Set Network access to Custom and add \(c.host) under Allowed domains."),
+                    String(localized: """
+                        On Pro and Max plans, you can add an API credential for \(c.host) instead (Bearer, \
+                        with the remote token as the value) and commit the version without headers.
+                        """),
+                ],
+                needsLiteralToken: true,
+                extraSnippets: [(String(localized: "With an API credential"), .json, mcpJSON(false))])
+
+        case .cursorCloud:
+            return SetupSnippet(
+                kind: .values,
+                text: SetupValues.lines([
+                    (String(localized: "Name"), c.serverKey), (String(localized: "Type"), "HTTP"),
+                    (String(localized: "URL"), c.mcpURL),
+                    (String(localized: "Header"), "Authorization: Bearer \(placeholder)"),
+                ]),
+                steps: [
+                    String(localized: "At cursor.com/agents, open the MCP menu and add a server."),
+                    String(localized: "Choose HTTP and enter these values."), copyToken,
+                ],
+                needsLiteralToken: true)
+
+        case .copilotAgent:
+            let json = SetupJSON.object([("mcpServers", .object([(c.serverKey, .object([
+                ("type", .string("http")), ("url", .string(c.mcpURL)),
+                ("headers", .object([("Authorization", .string("Bearer $\(AgentSetup.copilotSecretName)"))])),
+                ("tools", .strings(AgentSetup.readOnlyToolNames)),
+            ]))]))]).text
+            return SetupSnippet(
+                kind: .json, text: json,
+                steps: [
+                    String(localized: """
+                        In the repository on GitHub, open Settings ▸ Copilot ▸ MCP servers and paste this \
+                        under MCP configuration.
+                        """),
+                    String(localized: """
+                        Add an Agents secret named \(AgentSetup.copilotSecretName) and paste the remote token \
+                        (Copy Remote Token…) as its value.
+                        """),
+                    String(localized: """
+                        The tools list holds only the read tools. Add a write tool only if you give this \
+                        client a list it may change.
+                        """),
+                ],
+                needsLiteralToken: true)
+
+        case .devin:
+            return SetupSnippet(
+                kind: .values,
+                text: SetupValues.lines([
+                    (String(localized: "Server name"), c.serverKey), (String(localized: "Transport"), "HTTP"),
+                    (String(localized: "Server URL"), c.mcpURL),
+                    (String(localized: "Authentication"), "Auth Header"),
+                    (String(localized: "Header key"), "Authorization"),
+                    (String(localized: "Header value"), "Bearer \(placeholder)"),
+                ]),
+                steps: [
+                    String(localized: """
+                        In Devin, open Customize ▸ MCPs, choose Add MCP, then Add custom MCP.
+                        """),
+                    String(localized: "Enter these values."), copyToken,
+                    String(localized: "Click Test tools."),
+                ],
+                needsLiteralToken: true)
+
+        case .openAIResponses:
+            let body = SetupJSON.object([
+                ("model", .string("gpt-6-astra")), ("input", .string("What is on my calendar today?")),
+                ("tools", .array([.object([
+                    ("type", .string("mcp")), ("server_label", .string(c.serverKey)),
+                    ("server_url", .string(c.mcpURL)), ("authorization", .string(SetupCurl.tokenSentinel)),
+                    ("allowed_tools", .strings(AgentSetup.readOnlyToolNames)),
+                    ("require_approval", .string("never")),
+                ])])),
+            ])
+            return SetupSnippet(
+                kind: .shellCommand,
+                text: SetupCurl.post("https://api.openai.com/v1/responses", headers: [
+                    "content-type: application/json", "authorization: Bearer $OPENAI_API_KEY",
+                ], body: body),
+                steps: [
+                    String(localized: """
+                        In Terminal, set \(AgentSetup.remoteTokenEnvironmentVariable) to the remote token \
+                        (Copy Remote Token…) and OPENAI_API_KEY to your API key, then run the command.
+                        """),
+                    String(localized: """
+                        This example allows only the read tools, without approval. To use the others, \
+                        remove allowed_tools and handle approval requests in your code.
+                        """),
+                ],
+                needsLiteralToken: true)
+
+        case .claudeAI:
+            return SetupSnippet(
+                kind: .values, text: c.mcpURL,
+                steps: [
+                    String(localized: """
+                        In Claude, open Customize ▸ Connectors and click Add custom connector. On Team and \
+                        Enterprise plans, an Owner adds it in Organization settings ▸ Connectors.
+                        """),
+                    String(localized: "Paste this URL, leave the OAuth settings as they are, and click Add."),
+                    pairing,
+                ])
+
+        case .chatGPT:
+            return SetupSnippet(
+                kind: .values, text: c.mcpURL,
+                steps: [
+                    String(localized: "In ChatGPT, open Plugins, click +, then Create custom MCP server."),
+                    String(localized: "Give it a name, paste this URL under Connection, and choose OAuth."),
+                    pairing,
+                ])
+
+        case .geminiEnterprise:
+            return SetupSnippet(
+                kind: .values, text: c.mcpURL,
+                steps: [
+                    String(localized: """
+                        In the Google Cloud console, open Gemini Enterprise ▸ Data stores ▸ Create data \
+                        store and choose Custom MCP Server.
+                        """),
+                    String(localized: """
+                        Paste this URL as the MCP server URL and choose OAuth 2.0. In \
+                        \(AppIdentity.displayName), click Set Up OAuth Client… for “\(c.clientName)” and \
+                        enter the Authorization URL, Token URL, Client ID, Client secret and scope it \
+                        shows. Turn on Enable PKCE Support.
+                        """),
+                    pairing,
+                ])
+
+        case .codexCloud:
+            return SetupSnippet(
+                kind: .values, text: "",
+                steps: [String(localized: """
+                    Codex cloud tasks have no documented way to add an MCP server, so they can't reach \
+                    \(AppIdentity.displayName).
+                    """)])
+        }
+    }
+}
+
+// MARK: - Tunnels (§22.5)
+
+enum TunnelProvider: String, CaseIterable, Identifiable {
+    case tailscaleFunnel, cloudflareTunnel, ngrok, cloudflareQuick, other
+
+    var id: String { rawValue }
+
+    static let defaultRemotePort = 47616
+    static let cloudflareTunnelName = "eventkit-bridge"
+
+    var displayName: String {
+        switch self {
+        case .tailscaleFunnel: return String(localized: "Tailscale Funnel (recommended)")
+        case .cloudflareTunnel: return String(localized: "Cloudflare Tunnel (your own domain)")
+        case .ngrok: return String(localized: "ngrok")
+        case .cloudflareQuick: return String(localized: "Cloudflare quick tunnel (testing only)")
+        case .other: return String(localized: "Other tunnel")
+        }
+    }
+
+    /// The plain name, for chips, Activity and the Test result.
+    var name: String {
+        switch self {
+        case .tailscaleFunnel: return String(localized: "Tailscale Funnel")
+        case .cloudflareTunnel: return String(localized: "Cloudflare Tunnel")
+        case .ngrok: return String(localized: "ngrok")
+        case .cloudflareQuick: return String(localized: "Cloudflare quick tunnel")
+        case .other: return String(localized: "Other")
+        }
+    }
+
+    /// Start commands, then `offCommands`, to run in order in Terminal.
+    func commands(port: Int, hostname: String?) -> [String] {
+        let name = Self.cloudflareTunnelName
+        let start: [String]
+        switch self {
+        case .tailscaleFunnel:
+            start = ["tailscale funnel --bg \(port)"]
+        case .cloudflareTunnel:
+            start = [
+                "brew install cloudflared", "cloudflared tunnel login", "cloudflared tunnel create \(name)",
+                "cloudflared tunnel route dns \(name) \(hostname ?? "mcp.example.com")",
+                "cloudflared tunnel run \(name)",
+            ]
+        case .ngrok:
+            start = [
+                "ngrok config add-authtoken <your ngrok authtoken>",
+                "ngrok http \(port) --url https://\(hostname ?? "<your-dev-domain>") --host-header=rewrite",
+            ]
+        case .cloudflareQuick:
+            // Without the rewrite, the random trycloudflare.com Host fails the remote Host check.
+            start = ["cloudflared tunnel --url http://127.0.0.1:\(port) --http-host-header 127.0.0.1:\(port)"]
+        case .other:
+            start = []
+        }
+        return start + offCommands(port: port)
+    }
+
+    /// Only Funnel keeps running in the background; the others stop with Control-C.
+    func offCommands(port: Int) -> [String] {
+        self == .tailscaleFunnel ? ["tailscale funnel --bg \(port) off"] : []
+    }
+
+    /// `~/.cloudflared/config.yml` for a named Cloudflare tunnel.
+    func configFile(port: Int, hostname: String?) -> String? {
+        guard self == .cloudflareTunnel else { return nil }
+        return """
+            tunnel: \(Self.cloudflareTunnelName)
+            credentials-file: ~/.cloudflared/<tunnel-UUID>.json
+            ingress:
+              - hostname: \(hostname ?? "mcp.example.com")
+                service: http://127.0.0.1:\(port)
+                originRequest:
+                  httpHostHeader: "127.0.0.1:\(port)"
+              - service: http_status:404
+            """
+    }
+
+    var steps: [String] {
+        let paste = { (address: String) in
+            String(localized: "Paste \(address) under Address, then click Test.")
+        }
+        let controlC = { (tool: String) in
+            String(localized: "To turn it off, press Control-C in the Terminal window running \(tool).")
+        }
+        switch self {
+        case .tailscaleFunnel:
+            return [
+                String(localized: "Install Tailscale on this Mac and sign in."),
+                String(localized: """
+                    In the Tailscale admin console, turn on MagicDNS and HTTPS certificates, and add the \
+                    funnel node attribute to your tailnet policy.
+                    """),
+                String(localized: """
+                    Run the first command in Terminal. Funnel prints your public address, such as \
+                    https://my-mac.tail1234.ts.net.
+                    """),
+                paste(String(localized: "that address"))
+                    + " " + String(localized: "Public DNS can take about 10 minutes the first time."),
+                String(localized: "To turn it off, run the last command."),
+            ]
+        case .cloudflareTunnel:
+            return [
+                String(localized: "You need a domain on Cloudflare. The login command opens your browser."),
+                String(localized: """
+                    Before you run the tunnel, save the configuration as ~/.cloudflared/config.yml, with \
+                    <tunnel-UUID> replaced by the ID that tunnel create printed.
+                    """),
+                paste(String(localized: "https:// and your hostname")), controlC("cloudflared"),
+            ]
+        case .ngrok:
+            return [
+                String(localized: """
+                    Sign up at ngrok.com, then put your authtoken and your free dev domain from the \
+                    dashboard into the commands.
+                    """),
+                paste(String(localized: "https:// and your dev domain")), controlC("ngrok"),
+            ]
+        case .cloudflareQuick:
+            return [
+                String(localized: """
+                    Run the command. cloudflared prints a random https://….trycloudflare.com address.
+                    """),
+                paste(String(localized: "that address")), controlC("cloudflared"),
+            ]
+        case .other:
+            return [
+                String(localized: """
+                    Point the tunnel at http://127.0.0.1 and the Remote Access port, never at the port \
+                    local agents use.
+                    """),
+                String(localized: """
+                    Have it rewrite Host to 127.0.0.1 and the port, or add its public hostname under \
+                    Address.
+                    """),
+                paste(String(localized: "its HTTPS address")),
+            ]
+        }
+    }
+
+    var notes: [String] {
+        let edge = { (provider: String) in
+            String(localized: """
+                TLS ends at \(provider)'s edge, so \(provider) can read the traffic, calendar data \
+                included.
+                """)
+        }
+        switch self {
+        case .tailscaleFunnel:
+            return [
+                String(localized: """
+                    TLS ends on this Mac, inside Tailscale, so the relays in between can't read the traffic.
+                    """),
+                String(localized: """
+                    Funnel keeps the public hostname in Host, so it must match Address.
+                    """),
+                String(localized: "Tailscale Serve isn't enough: cloud agents aren't on your tailnet."),
+                String(localized: """
+                    Funnel keeps running in the background, even after a restart, until you turn it off.
+                    """),
+            ]
+        case .cloudflareTunnel:
+            return [
+                edge("Cloudflare"),
+                String(localized: "The configuration rewrites Host to this Mac's address."),
+                String(localized: """
+                    Optionally, put Cloudflare Access service tokens in front for agents that can send \
+                    two extra headers, such as Cursor, Copilot and Devin.
+                    """),
+            ]
+        case .ngrok:
+            return [
+                edge("ngrok"),
+                String(localized: "The free plan allows 20,000 requests a month."),
+                String(localized: """
+                    Don't turn on ngrok's basic auth: it takes over the Authorization header that carries \
+                    the token.
+                    """),
+                String(localized: """
+                    Optionally, allow only your agent's addresses with a Traffic Policy IP restriction, \
+                    for example Anthropic's 160.79.104.0/21.
+                    """),
+            ]
+        case .cloudflareQuick:
+            return [
+                String(localized: """
+                    For testing only: the address changes every time it starts, which breaks every cloud \
+                    agent you set up.
+                    """),
+                edge("Cloudflare"),
+            ]
+        case .other:
+            return [
+                String(localized: "The tunnel must pass the Authorization header through unchanged."),
+                String(localized: "If TLS ends at the provider's edge, the provider can read the traffic."),
+            ]
+        }
+    }
+
+    /// Tailscale can't rewrite Host. An unknown tunnel may not either, so ask for the hostname.
+    var preservesHost: Bool { self == .tailscaleFunnel || self == .other }
+
+    /// The request header that identifies the provider in Activity. ngrok adds none of its own, only
+    /// X-Forwarded-Host, which names an ngrok domain unless you bring your own.
+    var detectionHeader: String? {
+        switch self {
+        case .tailscaleFunnel: return "Tailscale-Funnel-Request"
+        case .cloudflareTunnel, .cloudflareQuick: return "CF-Ray"
+        case .ngrok: return "X-Forwarded-Host"
+        case .other: return nil
+        }
+    }
+
+    static let ngrokDomains = [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.app", ".ngrok.dev", ".ngrok.io"]
+
+    /// For Activity's "tunnel: …". Display only: anything on the Mac can send these headers.
+    static func detect(headers: [(String, String)]) -> TunnelProvider? {
+        func value(_ name: String) -> String? {
+            headers.first { $0.0.caseInsensitiveCompare(name) == .orderedSame }?.1.lowercased()
+        }
+        let forwardedHost = value("X-Forwarded-Host") ?? ""
+        if value("Tailscale-Funnel-Request") != nil { return .tailscaleFunnel }
+        if value("CF-Ray") != nil {
+            // A quick tunnel whose Host was rewritten looks like a named one.
+            let hosts = [forwardedHost, value("Host") ?? ""].map { $0.split(separator: ":").first ?? "" }
+            return hosts.contains { $0.hasSuffix(".trycloudflare.com") } ? .cloudflareQuick : .cloudflareTunnel
+        }
+        let bareHost = forwardedHost.split(separator: ":").first ?? ""
+        if ngrokDomains.contains(where: { bareHost.hasSuffix($0) }) { return .ngrok }
+        if ["X-Forwarded-For", "X-Forwarded-Host", "Forwarded"].contains(where: { value($0) != nil }) {
+            return .other
+        }
+        return nil
+    }
+}
+
+/// `curl` POSTs whose JSON body splices in the remote token from the environment, so the
+/// snippet never holds it.
+private enum SetupCurl {
+    static let tokenSentinel = "@@EVENTKIT_BRIDGE_REMOTE_TOKEN@@"
+
+    static func post(_ url: String, headers: [String], body: SetupJSON) -> String {
+        let quoted = SetupShell.singleQuoted(body.text).replacingOccurrences(
+            of: "\"\(tokenSentinel)\"",
+            with: "\"'\"$\(AgentSetup.remoteTokenEnvironmentVariable)\"'\"")
+        let lines = ["curl \"\(url)\""] + headers.map { "  -H \"\($0)\"" } + ["  -d \(quoted)"]
+        return lines.joined(separator: " \\\n")
+    }
+}
+
+private enum SetupValues {
+    static func lines(_ pairs: [(String, String)]) -> String {
+        pairs.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+    }
+}
+
 /// Compact JSON with a fixed key order, so snippets match the goldens byte for byte.
 /// Strings go through JSONSerialization; only the punctuation is assembled here.
 private indirect enum SetupJSON {

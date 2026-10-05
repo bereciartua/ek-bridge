@@ -6,17 +6,33 @@ struct SettingsView: View {
     let model: BridgeAppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                PaneTitle(title: String(localized: "Settings"))
-                general
-                MCPServerSettings(model: model)
-                developer
-                about
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    PaneTitle(title: String(localized: "Settings"))
+                    general
+                    MCPServerSettings(model: model)
+                        .id("mcp")
+                    RemoteAccessSettings(model: model)
+                        .id("remote")
+                    developer
+                        .id("developer")
+                    about
+                }
+                .padding(24)
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: 860, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear { scroll(proxy) }
+            .onChange(of: model.settingsScrollTarget) { _, _ in scroll(proxy) }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let target = model.settingsScrollTarget else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(target, anchor: .top)
+            model.settingsScrollTarget = nil
         }
     }
 

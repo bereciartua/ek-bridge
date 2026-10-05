@@ -119,6 +119,17 @@ final class MCPTrafficCounters: @unchecked Sendable {
     }
 }
 
+/// How one listener authenticates its callers: the local port takes local
+/// MCP tokens; the Remote Access port takes remote tokens and OAuth access
+/// tokens. Everything after authentication is shared.
+@MainActor
+struct MCPAuthentication {
+    let authenticate: (String) -> Result<String, ClientRegistryError>
+    /// The answer to a missing or wrong credential (may be a lockout).
+    let rejected: () -> MCPServer.Reply
+    let remote: Bool
+}
+
 /// The MCP protocol on top of the HTTP gate: authentication, both protocol
 /// eras, and method dispatch. Stateless: no sessions are minted, so every
 /// request stands alone and a restart loses nothing.
@@ -144,6 +155,8 @@ final class MCPServer {
     struct Connection: Equatable {
         let at: Date
         let agent: String?
+        /// Through Remote Access rather than from this Mac.
+        var remote = false
     }
 
     private let registry: ClientRegistry
@@ -174,11 +187,12 @@ final class MCPServer {
     /// Called on the main actor for a request that passed `MCPHTTPGate`.
     /// `whenClosed` registers work to run if the connection goes away first;
     /// it returns a closure that unregisters it.
-    func handle(_ request: HTTPRequest, token: String,
+    func handle(_ request: HTTPRequest, token: String, auth: MCPAuthentication? = nil,
                 whenClosed: @escaping (@escaping @MainActor () -> Void) -> () -> Void,
                 reply: @escaping (Reply) -> Void) {
+        let auth = auth ?? localAuthentication
         let clientID: String
-        switch registry.authenticateMCPToken(token) {
+        switch auth.authenticate(token) {
         case .success(let id): clientID = id
         case .failure(.unavailable):
             reply(Reply(response: MCPHTTPGate.json(503, JSONRPC.error(
@@ -187,9 +201,10 @@ final class MCPServer {
                     + "Ask the user to open \(AppIdentity.displayName) and check Overview."))))
             return
         case .failure:
-            reply(rejectToken())
+            reply(auth.rejected())
             return
         }
+        let remote = auth.remote
         let message: JSONRPCMessage
         switch JSONRPC.parse(request.body) {
         case .success(let parsed): message = parsed
@@ -270,12 +285,14 @@ final class MCPServer {
             modern = false
         }
 
+        // Local and remote agents of one client are remembered apart.
+        let agentKey = (remote ? "remote|" : "") + clientID
         if let info = (meta?[Self.metaClientInfo] ?? (method == "initialize" ? params["clientInfo"] : nil))
             as? [String: Any], let agent = Self.agentName(info) {
-            agents[clientID] = agent
+            agents[agentKey] = agent
         }
-        let agent = agents[clientID]
-        didConnect(clientID, Connection(at: now(), agent: agent))
+        let agent = agents[agentKey]
+        didConnect(clientID, Connection(at: now(), agent: agent, remote: remote))
 
         guard let id else {
             // Notifications: accepted and, apart from cancellation, ignored.
@@ -324,7 +341,8 @@ final class MCPServer {
             }
             finish(result)
         case "tools/call":
-            callTool(id: id, params: params, clientID: clientID, agent: agent,
+            callTool(id: id, params: params, clientID: clientID,
+                     origin: remote ? .remote(agent: agent) : .mcp(agent: agent),
                      whenClosed: whenClosed, finish: finish,
                      unknownTool: { reply(self.error(200, id, JSONRPC.invalidParams, $0)) })
         default:
@@ -332,7 +350,7 @@ final class MCPServer {
         }
     }
 
-    private func callTool(id: JSONRPCID, params: [String: Any], clientID: String, agent: String?,
+    private func callTool(id: JSONRPCID, params: [String: Any], clientID: String, origin: RequestOrigin,
                           whenClosed: (@escaping @MainActor () -> Void) -> () -> Void,
                           finish: @escaping ([String: Any]) -> Void,
                           unknownTool: (String) -> Void) {
@@ -387,7 +405,7 @@ final class MCPServer {
             }
             finish(result)
         }
-        let started = pipeline.handle(request, clientID: clientID, origin: .mcp(agent: agent)) {
+        let started = pipeline.handle(request, clientID: clientID, origin: origin) {
             [weak self] core in
             guard let self else { return }
             answer(MCPToolMapping.toolResult(tool: name, request: request, core: core,
@@ -404,6 +422,12 @@ final class MCPServer {
             answer(MCPToolMapping.errorResult(tool: name, code: "timeout", detail: nil,
                                               request: request, retryAfter: nil))
         }
+    }
+
+    private var localAuthentication: MCPAuthentication {
+        MCPAuthentication(authenticate: { [registry] in registry.authenticateMCPToken($0) },
+                          rejected: { [weak self] in self?.rejectToken() ?? Reply(response: MCPHTTPGate.unauthorized()) },
+                          remote: false)
     }
 
     private func rejectToken() -> Reply {

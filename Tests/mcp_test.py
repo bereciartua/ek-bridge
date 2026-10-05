@@ -46,6 +46,7 @@ class Harness:
         first = json.loads(self.proc.stdout.readline())
         self.port = first["port"]
         self.clients = first["clients"]
+        self.remote_token = first.get("remoteToken")
         self.lock = threading.Lock()
 
     def control(self, **command):
@@ -252,6 +253,12 @@ def main():
         run_auth_lockout(t)
     finally:
         t.close()
+
+    r = Harness(harness_binary)
+    try:
+        run_remote(r, catalog)
+    finally:
+        r.close()
 
     if failures:
         print("MCP integration tests failed:")
@@ -543,6 +550,8 @@ def run_hardening(h):
             sent += raw.send(chunk)
         except BlockingIOError:
             time.sleep(0.01)
+        except (BrokenPipeError, ConnectionResetError):
+            break  # The server may drop a client that floods it; also bounded.
     grown = rss_kb(h.proc.pid) - before
     raw.close()
     check("pipelined flood is bounded", grown < 50_000, f"sent {sent} bytes, RSS grew {grown} KB")
@@ -820,6 +829,208 @@ def run_auth_lockout(h):
     check("failed auth coalesced", 1 <= len(unauthorized) <= 2, len(unauthorized))
     counters = h.control(cmd="counters")
     check("counters", counters["authFailures"] >= 125 and counters["requests"] > 125, counters)
+
+
+SECRET = "q7Zk2vN4bXwP9sL1mT6hYa"
+PREFIX = "/r/" + SECRET
+REMOTE_HOST = "remote.test"
+
+
+class Remote(Client):
+    """A client of the Remote Access port, as a tunnel would forward it."""
+
+    def __init__(self, harness, port, token=None, host=REMOTE_HOST, forwarded="203.0.113.7"):
+        self.h = harness
+        self.token = token
+        self.host = host
+        self.conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        self.next_id = 1
+        self.forwarded = forwarded
+
+    def raw(self, method="POST", path=PREFIX + "/mcp", body=b"", headers=None, auth=True,
+            content_type="application/json"):
+        all_headers = {"X-Forwarded-For": self.forwarded, "Tailscale-Funnel-Request": "?1"}
+        all_headers.update(headers or {})
+        return Client.raw(self, method, path, body, all_headers, auth, content_type)
+
+
+def form(fields):
+    from urllib.parse import urlencode
+    return urlencode(fields).encode()
+
+
+def run_remote(h, catalog):
+    h.control(cmd="remote_start")
+    wait_for(lambda: h.control(cmd="remote_port")["port"] is not None)
+    port = h.control(cmd="remote_port")["port"]
+    token = h.remote_token
+    ping = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+
+    # The secret path comes first: anything else is 404, even with a bad Host.
+    for path in ["/", "/mcp", "/r/wrong/mcp", "/r/" + SECRET + "x/mcp", "/.well-known/oauth-authorization-server",
+                 "/.well-known/oauth-protected-resource", PREFIX + "/other"]:
+        status, _, _, _ = Remote(h, port, token, host="evil.example").raw(path=path, body=ping)
+        check(f"remote 404 {path}", status == 404, status)
+    status, _, _, _ = Remote(h, port, token, host="evil.example").raw(body=ping)
+    check("remote 421 host", status == 421, status)
+    for host in [REMOTE_HOST, f"127.0.0.1:{port}", f"localhost:{port}"]:
+        status, _, body, _ = Remote(h, port, token, host=host).raw(body=ping)
+        check(f"remote host {host}", status == 200 and "result" in body, (status, body))
+    status, _, _, _ = Remote(h, port, token).raw(body=ping, headers={"Origin": "https://evil.example"})
+    check("remote 403 origin", status == 403, status)
+
+    # Credentials stay apart: local tokens are refused remotely and vice versa.
+    status, headers, body, _ = Remote(h, port, h.token("cloud")).raw(body=ping)
+    challenge = headers.get("WWW-Authenticate", "")
+    check("local token refused remotely", status == 401 and
+          f'resource_metadata="https://{REMOTE_HOST}/.well-known/oauth-protected-resource{PREFIX}/mcp"' in challenge,
+          (status, challenge))
+    status, _, _, _ = Client(h, token).raw(body=ping)
+    check("remote token refused locally", status == 401, status)
+
+    # A remote call: same pipeline, recorded as remote.
+    remote = Remote(h, port, token)
+    _, _, body, _ = remote.raw(body=ping)
+    names = [t["name"] for t in body["result"]["tools"]]
+    check("remote tools follow grants", names == ["list_collections", "read_events", "create_event",
+                                                  "read_reminders", "create_reminder"], names)
+    status, body = remote.call("read_events", {"calendar_id": "CAL-WORK", "start": "2026-10-06T00:00:00Z",
+                                               "end": "2026-10-07T00:00:00Z"})
+    check("remote read", status == 200 and body["result"]["isError"] is False, body)
+    row = h.activity()[0]
+    check("activity via remote", row["via"] == "remote" and row["outcome"] == "success", row)
+
+    # Cloud access off: the remote token stops working at once.
+    h.control(cmd="set_cloud", client="cloud", on=False)
+    status, _, _, _ = Remote(h, port, token).raw(body=ping)
+    check("cloud access off refuses", status == 401, status)
+    h.control(cmd="set_cloud", client="cloud", on=True)
+    token = h.control(cmd="issue_remote_token", client="cloud")["token"]
+    remote = Remote(h, port, token)
+    status, _, _, _ = remote.raw(body=ping)
+    check("new remote token works", status == 200, status)
+
+    # Health: only for a nonce the app issued in the last 30 s, once.
+    status, _, _, _ = Remote(h, port).raw(method="GET", path=PREFIX + "/health?nonce=madeup", body=b"")
+    check("health unknown nonce 404", status == 404, status)
+    nonce = h.control(cmd="nonce")["nonce"]
+    status, _, body, _ = Remote(h, port).raw(method="GET", path=PREFIX + "/health?nonce=" + nonce, body=b"")
+    check("health ok", status == 200 and body["nonce"] == nonce and body["tunnel"] == "Tailscale Funnel", body)
+    status, _, _, _ = Remote(h, port).raw(method="GET", path=PREFIX + "/health?nonce=" + nonce, body=b"")
+    check("health nonce single use", status == 404, status)
+
+    run_oauth(h, port, catalog)
+
+    # Remote limits are stricter: 15 calls in a burst.
+    limited = None
+    for _ in range(30):
+        _, body = remote.call("list_collections", {})
+        if body["result"]["isError"]:
+            limited = text_of(body["result"])
+            break
+    check("remote rate limit", limited is not None and "rate_limited" in limited, limited)
+
+    # Failed authentication locks out one forwarded address, not others.
+    statuses = [Remote(h, port, "ekb_mcpr_v1_" + "0" * 64, forwarded="198.51.100.9").raw(body=ping)[0]
+                for _ in range(32)]
+    check("remote lockout per address", statuses[0] == 401 and statuses[-1] == 429, statuses[-3:])
+    status, _, _, _ = Remote(h, port, "ekb_mcpr_v1_" + "0" * 64, forwarded="198.51.100.10").raw(body=ping)
+    check("other address unaffected", status == 401, status)
+    # A valid credential is never locked out, even from a locked address (anyone can claim one).
+    status, _, _, _ = Remote(h, port, token, forwarded="198.51.100.9").raw(body=ping)
+    check("valid token bypasses lockout", status == 200, status)
+    status, _, _, _ = Remote(h, port, None, forwarded="198.51.100.9").raw(body=ping, auth=False)
+    check("no token from locked address", status == 429, status)
+    # Only the last X-Forwarded-For entry (the one the tunnel appended) counts.
+    status, _, _, _ = Remote(h, port, "ekb_mcpr_v1_" + "0" * 64,
+                             forwarded="198.51.100.9, 198.51.100.11").raw(body=ping)
+    check("spoofed leading X-Forwarded-For ignored", status == 401, status)
+
+
+def status_url(page):
+    """The page polls `authorize/status?request=<id>` relative to itself."""
+    import re
+    found = re.search(rb'data-request="([0-9A-Za-z-]+)"', page)
+    return PREFIX + "/oauth/authorize/status?request=" + found.group(1).decode() if found else None
+
+
+def run_oauth(h, port, catalog):
+    import base64 as b64
+    import hashlib
+    import re
+    from urllib.parse import urlparse, parse_qs, urlencode
+    resource = f"https://{REMOTE_HOST}{PREFIX}/mcp"
+    issuer = f"https://{REMOTE_HOST}{PREFIX}"
+    o = Remote(h, port)
+    status, _, prm, _ = o.raw(method="GET", path=f"/.well-known/oauth-protected-resource{PREFIX}/mcp", body=b"")
+    check("PRM", status == 200 and prm["resource"] == resource and prm["authorization_servers"] == [issuer], prm)
+    status, _, asm, _ = o.raw(method="GET", path=f"/.well-known/oauth-authorization-server{PREFIX}", body=b"")
+    check("AS metadata", status == 200 and asm["issuer"] == issuer and
+          asm["code_challenge_methods_supported"] == ["S256"], asm)
+    callback = "https://claude.ai/api/mcp/auth_callback"
+    register = lambda: o.raw(path=PREFIX + "/oauth/register", body={"redirect_uris": [callback],
+                                                                      "client_name": "claude.ai"})
+    status, _, body, _ = register()
+    check("DCR needs pairing", status == 403, (status, body))
+    h.control(cmd="open_pairing", client="cloud")
+    status, _, reg, _ = register()
+    check("DCR", status == 201 and reg["client_id"].startswith("dcr_"), (status, reg))
+    verifier = "v" * 64
+    challenge = b64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    query = urlencode({"response_type": "code", "client_id": reg["client_id"], "redirect_uri": callback,
+                       "code_challenge": challenge, "code_challenge_method": "S256", "state": "xyz",
+                       "resource": resource})
+    status, headers, _, page = o.raw(method="GET", path=PREFIX + "/oauth/authorize?" + query, body=b"",
+                                     content_type=None)
+    pending = h.control(cmd="pairings")["pending"]
+    check("authorize page", status == 200 and len(pending) == 1 and
+          pending[0]["code"].replace(" ", "").encode() in page.replace(b" ", b""), (status, pending))
+    check("authorize page headers", "DENY" in headers.get("X-Frame-Options", "") and
+          "no-store" in headers.get("Cache-Control", ""), headers)
+    status_path = status_url(page)
+    check("status URL in page", status_path is not None, page[:200])
+    h.control(cmd="answer_pairing", allow=True)
+    status, _, body, _ = o.raw(method="GET", path=status_path, body=b"", content_type=None)
+    redirect = body.get("redirect", "") if isinstance(body, dict) else ""
+    params = parse_qs(urlparse(redirect).query)
+    check("redirect with code", redirect.startswith(callback) and params.get("state") == ["xyz"] and
+          params.get("iss") == [issuer] and "code" in params, body)
+    code = params.get("code", [""])[0]
+    token_request = lambda fields: o.raw(path=PREFIX + "/oauth/token", body=form(fields),
+                                         content_type="application/x-www-form-urlencoded")
+    status, _, bad, _ = token_request({"grant_type": "authorization_code", "code": code, "client_id": reg["client_id"],
+                                       "redirect_uri": callback, "code_verifier": "w" * 64})
+    check("PKCE mismatch", status == 400 and bad["error"] == "invalid_grant", bad)
+    # The code was spent by the failed attempt; start again.
+    h.control(cmd="open_pairing", client="cloud")
+    status, _, _, page = o.raw(method="GET", path=PREFIX + "/oauth/authorize?" + query, body=b"", content_type=None)
+    status_path = status_url(page)
+    h.control(cmd="answer_pairing", allow=True)
+    _, _, body, _ = o.raw(method="GET", path=status_path, body=b"", content_type=None)
+    code = parse_qs(urlparse(body["redirect"]).query)["code"][0]
+    status, _, tokens, _ = token_request({"grant_type": "authorization_code", "code": code,
+                                          "client_id": reg["client_id"], "redirect_uri": callback,
+                                          "code_verifier": verifier, "resource": resource})
+    check("token exchange", status == 200 and tokens["access_token"].startswith("ekb_oat_v1_") and
+          tokens["token_type"].lower() == "bearer", tokens)
+    check("connection listed", h.control(cmd="oauth_connections", client="cloud")["count"] == 1)
+    m = Remote(h, port, tokens["access_token"])
+    status, body = m.call("list_collections", {})
+    check("MCP with OAuth token", status == 200 and body["result"]["isError"] is False, body)
+    # Refresh rotates; presenting the old refresh token again revokes the connection.
+    status, _, rotated, _ = token_request({"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"],
+                                           "client_id": reg["client_id"]})
+    check("refresh", status == 200 and rotated["refresh_token"] != tokens["refresh_token"], rotated)
+    status, _, _, _ = Remote(h, port, rotated["access_token"]).raw(body={"jsonrpc": "2.0", "id": 1,
+                                                                        "method": "tools/list"})
+    check("rotated access works", status == 200, status)
+    status, _, reuse, _ = token_request({"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"],
+                                         "client_id": reg["client_id"]})
+    check("refresh reuse detected", status == 400 and reuse["error"] == "invalid_grant", reuse)
+    status, _, _, _ = Remote(h, port, rotated["access_token"]).raw(body={"jsonrpc": "2.0", "id": 1,
+                                                                        "method": "tools/list"})
+    check("reuse revoked the connection", status == 401, status)
+    check("no connections left", h.control(cmd="oauth_connections", client="cloud")["count"] == 0)
 
 
 def wait_for(condition, seconds=10):

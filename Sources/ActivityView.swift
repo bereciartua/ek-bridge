@@ -91,8 +91,9 @@ struct ActivityView: View {
             let via = switch model.activityVia {
             case .all: true
             case .mcp: entry.via == "mcp"
+            case .remote: entry.via == "remote"
             // Rows from before 0.4.0 have no via, and all came from the command line.
-            case .cli: entry.via != "mcp"
+            case .cli: entry.via == nil || entry.via == "cli"
             }
             return client && via
         }
@@ -267,10 +268,15 @@ struct ActivityInspector: View {
                 if let via = entry.via {
                     GridRow {
                         Text(String(localized: "Via")).foregroundStyle(.secondary)
-                        Text(via == "mcp"
-                             ? (entry.agent.map { String(localized: "MCP (\($0), as reported)") } ?? String(localized: "MCP"))
-                             : String(localized: "Command line"))
+                        Text(viaText(entry, via))
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let note = model.remoteNote(for: entry) {
+                        GridRow {
+                            Text(String(localized: "From")).foregroundStyle(.secondary)
+                            Text(String(localized: "\(note.address) (as the tunnel reported)"))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 if let approval = ApprovalText.detail(entry.approval) {
@@ -334,6 +340,19 @@ struct ActivityInspector: View {
             .background(Color.accentColor.opacity(0.08),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(.trailing, compact ? 28 : 0)
+        }
+    }
+
+    private func viaText(_ entry: ActivityEntry, _ via: String) -> String {
+        let agent = entry.agent.map { String(localized: "\($0), as reported") }
+        switch via {
+        case "mcp": return agent.map { String(localized: "MCP (\($0))") } ?? String(localized: "MCP")
+        case "remote":
+            let tunnel = model.remoteNote(for: entry)?.tunnel.map { String(localized: "tunnel: \($0)") }
+            let detail = [agent, tunnel].compactMap { $0 }.joined(separator: "; ")
+            return detail.isEmpty ? String(localized: "MCP · remote")
+                                  : String(localized: "MCP · remote (\(detail))")
+        default: return String(localized: "Command line")
         }
     }
 
@@ -412,6 +431,10 @@ struct ViaIcon: View {
             Image(systemName: "sparkles").foregroundStyle(.purple)
                 .help(String(localized: "via MCP"))
                 .accessibilityLabel(String(localized: "via MCP"))
+        case "remote":
+            Image(systemName: "cloud").foregroundStyle(.blue)
+                .help(String(localized: "via Remote Access"))
+                .accessibilityLabel(String(localized: "via Remote Access"))
         case "cli":
             Image(systemName: "terminal").foregroundStyle(.secondary)
                 .help(String(localized: "via command line"))
@@ -475,6 +498,7 @@ struct ActivityFilterMenu: View {
         switch via {
         case .all: String(localized: "All")
         case .mcp: String(localized: "MCP")
+        case .remote: String(localized: "Remote Access")
         case .cli: String(localized: "Command line")
         }
     }

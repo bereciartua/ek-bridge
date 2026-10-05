@@ -1,11 +1,11 @@
 # Connecting AI agents (MCP)
 
-EventKit Bridge 0.4.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted.
+EventKit Bridge 0.5.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
 
-The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines, and cloud agents, can't reach it.
+The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines can't reach it. Remote Access is a separate listener on `127.0.0.1:47616`, also off by default, with its own credentials; a tunnel such as Tailscale Funnel gives it a public HTTPS address.
 
-- [User guide](#user-guide): turning it on, creating an agent client, setup for each agent, Ask before changes, troubleshooting.
-- [Reference](#reference): tools, times, idempotency, error codes, limits, HTTP statuses, protocol versions.
+- [User guide](#user-guide): turning it on, creating an agent client, setup for each agent, cloud agents through Remote Access, Ask before changes, troubleshooting.
+- [Reference](#reference): tools, times, idempotency, error codes, limits, HTTP statuses, protocol versions, the Remote Access endpoints and OAuth.
 
 ## User guide
 
@@ -35,7 +35,7 @@ Each client's MCP access is a 256-bit token in a private file, `~/Library/Applic
 - **Reset…** (or **Reset MCP Token…** in the **⋯** menu) issues a new token. Launcher and token-file setups keep working; agents you gave the token to directly stop until you copy the new one.
 - **Remove MCP Access…** deletes the token. Its access settings are kept, so **Turn On MCP Access** can bring it back.
 - **Add Command-Line Key** and **Remove Command-Line Key…** do the same for the `client.py` key, without touching MCP access.
-- **Revoke Client…** removes both credentials and all access.
+- **Revoke Client…** removes every credential, including the [remote token and connected cloud apps](#use-from-cloud-agents), and all access.
 
 Each change takes effect on the next request.
 
@@ -66,7 +66,7 @@ claude mcp add --scope user eventkit-bridge -- "/Applications/EventKit Bridge.ap
 
 #### Claude Desktop
 
-Launcher only. Open `~/Library/Application Support/Claude/claude_desktop_config.json`, add the `eventkit-bridge` entry under `mcpServers`, then restart Claude Desktop. Claude Desktop's *custom connectors* run from Anthropic's cloud and can't reach this Mac; use this local setup instead.
+Launcher only. Open `~/Library/Application Support/Claude/claude_desktop_config.json`, add the `eventkit-bridge` entry under `mcpServers`, then restart Claude Desktop. Claude Desktop's *custom connectors* run from Anthropic's cloud and reach this Mac only through [Remote Access](#use-from-cloud-agents); on this Mac, this local setup is simpler.
 
 ```json
 {"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
@@ -196,7 +196,162 @@ stdio args: --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
 
 #### Cloud agents
 
-claude.ai, Claude Desktop custom connectors, Claude Cowork, ChatGPT and cloud coding agents connect from the vendor's cloud and can't reach EventKit Bridge on this Mac. Remote access through a tunnel is planned future work and isn't in 0.4.0. Don't point a tunnel or reverse proxy at the MCP port: the server refuses requests with a non-local `Host` or with tunnel forwarding headers.
+claude.ai, ChatGPT and cloud coding agents run on their vendor's servers, so the setups above don't apply to them. They connect through Remote Access: see [Use from cloud agents](#use-from-cloud-agents). Don't point a tunnel or reverse proxy at the MCP port: it refuses requests with a non-local `Host` or with tunnel forwarding headers.
+
+### Use from cloud agents
+
+Cloud agents reach EventKit Bridge through **Remote Access**: a second listener on `127.0.0.1:47616` that a tunnel you run, such as Tailscale Funnel, makes reachable at a public HTTPS address. Behind it, nothing changes: the client's grants, Ask before changes, the journal and Activity work as for local agents. The Mac must be awake, logged in and running the app, and the bridge must be on.
+
+1. Turn on Remote Access.
+2. Start a tunnel to its port and add the tunnel's address.
+3. Allow cloud access on a client made for that agent.
+4. Connect the agent, with the client's remote token or by pairing over OAuth.
+
+#### Turn on Remote Access
+
+Open **Settings ▸ Remote Access** and turn on **Remote Access**. It's off by default, and turning it on asks first. The app then listens on `127.0.0.1:47616`, only while Remote Access is on, and creates the URL's secret path the first time. Remote Access works with the MCP server switch off; the two listeners are separate.
+
+| Row | What it shows or does |
+| --- | --- |
+| **Status** | **Waiting for tunnel** until you add an address. Then **Not tested**, **Reachable** (when it was tested, the round trip, and the tunnel it detected) or **Not reachable** with the reason. **Test** fetches this app's health URL through the tunnel. If the port is in use: **Couldn't start**, with **Choose Another Port…**. |
+| **Tunnel** | A provider picker with the commands to copy, numbered steps and notes. The app never runs a tunnel itself. |
+| **Address** | The tunnel's public address: `https://`, a host name and an optional port, with no path (**Add…**, **Edit…**). |
+| **MCP URL** | `https://<host>/r/<secret>/mcp`, with a copy button and **Reset Path…**. |
+| **Port** | 47616 by default. **Change…** accepts 1024–65535 except the MCP server's port, and checks that the port is free. Point the tunnel at the new port afterwards. |
+| **Turn off** | **Turn off automatically**: Never (the default), After 1 hour, After 8 hours or After 1 day, counted from when you turn Remote Access on or change this choice, with the time it will turn off. |
+| **Keep this Mac awake while on power** | Off by default. Prevents idle sleep while Remote Access is on and the Mac runs on power. Closing the lid still sleeps the Mac unless an external display is attached. |
+
+The secret path is 22 random characters (128 bits). Every route on the Remote Access port contains it: the MCP endpoint and OAuth live under `/r/<secret>`, and the OAuth discovery documents end with it (`/.well-known/…/r/<secret>…`). Any other path gets 404 before a credential is even read. It's defense in depth, not the credential: tunnel host names appear in public certificate logs and get scanned. **Reset Path…** makes a new one after a confirmation. Every cloud agent then needs the new URL, and connected cloud apps are disconnected, because their sign-ins are bound to the old URL. Changing the **Address** disconnects them too.
+
+While Remote Access is on, the menu bar icon shows a small globe, and the menu shows **Remote Access on · N cloud clients** (opens Settings) and **Turn Off Remote Access**. Overview adds a line such as *Remote Access · Reachable · my-mac.tail1234.ts.net*.
+
+#### Set up a tunnel
+
+The tunnel must point at `http://127.0.0.1:47616`, the Remote Access port. Never point it at 47615: the local port refuses tunneled requests, and local tokens don't work remotely anyway. Choose the provider under **Tunnel** in Settings ▸ Remote Access; the commands there use your port and address.
+
+| Tunnel | Commands | Notes |
+| --- | --- | --- |
+| **Tailscale Funnel** (recommended) | `tailscale funnel --bg 47616`; to turn it off, `tailscale funnel --bg 47616 off` | Install Tailscale, sign in, and in the admin console turn on MagicDNS and HTTPS certificates and add the `funnel` node attribute to the tailnet policy. Funnel prints the address, such as `https://my-mac.tail1234.ts.net`. TLS ends on this Mac, so the relays can't read the traffic. Funnel keeps the public host name in `Host`, so it must match **Address**. Public DNS can take about 10 minutes the first time. Funnel keeps running, even after a restart, until you turn it off. Tailscale Serve isn't enough: cloud agents aren't on your tailnet. |
+| **Cloudflare Tunnel** (your own domain) | `brew install cloudflared`, `cloudflared tunnel login`, `cloudflared tunnel create eventkit-bridge`, `cloudflared tunnel route dns eventkit-bridge <host name>`, `cloudflared tunnel run eventkit-bridge` | Needs a domain on Cloudflare. Before `run`, save the configuration Settings shows (also below) as `~/.cloudflared/config.yml`, with the tunnel ID that `create` printed. It rewrites `Host` to this Mac's address. TLS ends at Cloudflare's edge, so Cloudflare can read the traffic, calendar data included. Optionally put Cloudflare Access service tokens in front, for agents that can send two extra headers (Cursor, Copilot, Devin). |
+| **ngrok** | `ngrok config add-authtoken <your ngrok authtoken>`, `ngrok http 47616 --url https://<your-dev-domain> --host-header=rewrite` | Use the free dev domain from the ngrok dashboard. TLS ends at ngrok's edge. The free plan allows 20,000 requests a month. Don't turn on ngrok's basic auth: it takes over the `Authorization` header. Optionally allow only your agent's addresses with a Traffic Policy IP restriction, for example Anthropic's `160.79.104.0/21`. |
+| **Cloudflare quick tunnel** (testing only) | `cloudflared tunnel --url http://127.0.0.1:47616 --http-host-header 127.0.0.1:47616` | Prints a random `https://….trycloudflare.com` address that changes every time it starts, which breaks every cloud agent you set up. TLS ends at Cloudflare's edge. |
+| **Other** | none | Point it at `http://127.0.0.1` and the Remote Access port. Have it rewrite `Host` to `127.0.0.1:<port>`, or add its public host name under **Address**. It must pass the `Authorization` header through unchanged. If TLS ends at the provider's edge, the provider can read the traffic. |
+
+```yaml
+tunnel: eventkit-bridge
+credentials-file: ~/.cloudflared/<tunnel-UUID>.json
+ingress:
+  - hostname: mcp.example.com
+    service: http://127.0.0.1:47616
+    originRequest:
+      httpHostHeader: "127.0.0.1:47616"
+  - service: http_status:404
+```
+
+Except for Funnel, the tunnels stop with Control-C in the Terminal window running them. Once the tunnel runs, paste its address under **Address** and click **Test**. The app sends one HTTPS request to `<address>/r/<secret>/health?nonce=…` through the tunnel; the listener answers only a nonce the app issued in the last 30 seconds, once, so **Reachable** means the request reached this app.
+
+OpenAI's Secure MCP Tunnel, which needs no public address, was evaluated and not adopted for 0.5.0; see the [spike note](OPENAI-TUNNEL-SPIKE.md).
+
+#### Allow cloud access for a client
+
+While Remote Access is on, or while the client has cloud access, its page has a **Cloud** section (with Remote Access off, it only says so, with **Open Settings**). **Allow cloud access** is off by default. Use a separate client for each cloud agent, for example "claude.ai" or "Copilot – repo X", with only the access it needs: the caption sums it up as *Cloud agents can use this from the internet: …*. Ask before changes, the rate limits and Activity apply as for local agents.
+
+With cloud access on, the section has:
+
+- **Agent**: the cloud agent picker, marked **Token** or **OAuth**, with the **URL**, the setup to copy, numbered steps and warnings for that agent. The examples below are its test goldens (`Tests/agent-setup/cloud-*.txt`), for the address `https://my-mac.tail1234.ts.net`, secret path `q7Zk2vN4bXwP9sL1mT6hYa` and a client named "claude.ai"; copy yours from the app.
+- **Connected**: the cloud apps signed in with OAuth, each with when it connected and was last used, and **Revoke**.
+- **Last use**: the agent's name as reported, and when.
+- **Reset Remote Token…**, **Copy Remote Token…**, **Set Up OAuth Client…** (for Gemini Enterprise) and **Connect a Cloud App…**. The last two need an **Address**.
+
+Turning **Allow cloud access** off asks first when the client has a remote token or connected apps: its remote token and every connected cloud app stop working at once. Its access on this Mac isn't affected. **Revoke Client…** also removes its remote token file and its cloud apps.
+
+#### Agents that send a token
+
+Most cloud coding agents and the vendor APIs send a fixed header. They use the client's **remote token**: `ekb_mcpr_v1_` and 64 hex digits, one per client, kept in `~/Library/Application Support/EventKitBridge/client-credentials/<client ID>.mcp-remote-token` (mode 600). It's separate from the local token: a remote token never works on this Mac's port, and a local token never works through the tunnel, so a token that leaks from either place is useless in the other.
+
+No launcher can read the file for a cloud agent, so you paste the token into the vendor's settings:
+
+- **Copy Remote Token…** creates the token the first time, asks first, puts it on the clipboard as concealed, transient data, and clears the clipboard after 90 seconds if it still holds it. The app never shows it.
+- **Reset Remote Token…** replaces it. Agents with the old token stop until you paste the new one; connected cloud apps aren't affected.
+
+The setups never contain the token. They refer to it as `$EVENTKIT_BRIDGE_REMOTE_TOKEN`, `${EVENTKIT_BRIDGE_TOKEN}`, `$COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN` or `<remote token from Copy Remote Token…>`. For example, the Anthropic API (set both variables in Terminal first):
+
+```sh
+curl "https://api.anthropic.com/v1/messages" \
+  -H "content-type: application/json" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "anthropic-beta: mcp-client-2025-11-20" \
+  -d '{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":"What is on my calendar today?"}],"mcp_servers":[{"type":"url","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","name":"eventkit-bridge","authorization_token":"'"$EVENTKIT_BRIDGE_REMOTE_TOKEN"'"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"eventkit-bridge"}]}'
+```
+
+Claude Code on the web, in the repository's `.mcp.json` (it holds no token; the token goes in the cloud environment's variables):
+
+```json
+{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer ${EVENTKIT_BRIDGE_TOKEN}"}}}}
+```
+
+GitHub Copilot coding agent, in the repository's Settings ▸ Copilot ▸ MCP servers, limited to the read tools:
+
+```json
+{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer $COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN"},"tools":["list_collections","read_events","read_reminders"]}}}
+```
+
+#### Apps that sign in with OAuth
+
+claude.ai (and with it Claude Desktop and the Claude mobile app), ChatGPT and Gemini Enterprise can't send a fixed token. They sign in with OAuth, and the app is its own OAuth server on the Remote Access port. Nobody on the internet can make the Mac ask you anything: the app considers a sign-in only while you have **pairing** open for one client.
+
+1. On the client's page, choose **Connect a Cloud App…**. Pairing is open for 10 minutes, for that client only.
+2. Add the connector in the cloud app with the MCP URL. In claude.ai: Customize ▸ Connectors ▸ **Add custom connector**, paste the URL and leave the OAuth settings as they are (on Team and Enterprise plans an Owner adds it in Organization settings ▸ Connectors). In ChatGPT: Plugins ▸ **+** ▸ **Create custom MCP server**, paste the URL under Connection and choose OAuth.
+3. Your browser opens EventKit Bridge's sign-in page, which shows a six-digit code such as **482 913**.
+4. The Mac shows a sheet, such as *Claude wants to connect*, with the client whose access it will use, the address of the app's metadata (for apps that publish one), where the browser goes next (*Returns to claude.ai*), and the same code. **Allow** works one second after the sheet appears. Allow only if the codes match.
+5. **Allow** sends the browser back to the app, signed in, and closes pairing: one connection per pairing. **Deny** sends the app a refusal.
+
+Outside pairing, the sign-in page only says *Pairing isn't open*, and nothing is fetched or shown on the Mac. A request that arrives while a sheet is open waits until you answer it; a new request never replaces the sheet under your pointer. At most 3 requests wait (a fourth pushes out the oldest), and each expires after 5 minutes, or when pairing closes.
+
+Connected apps stay signed in: their access tokens last an hour and are renewed automatically, and a connection that isn't renewed for 30 days ends. **Revoke** under the client ends one at once.
+
+#### Gemini Enterprise
+
+Gemini Enterprise needs an OAuth client ID and secret entered ahead of time. Choose **Gemini Enterprise** in the client's agent picker and click **Set Up OAuth Client…**. The app creates an OAuth client for this bridge client, opens pairing for 10 minutes, and shows the values to enter:
+
+| Field | Value |
+| --- | --- |
+| Authorization URL | `https://<host>/r/<secret>/oauth/authorize` |
+| Token URL | `https://<host>/r/<secret>/oauth/token` |
+| Client ID | `cfg_` and 32 hex digits |
+| Client secret | hidden; **Copy Secret** copies it (cleared from the clipboard after 90 s) |
+| Scopes | `calendar` |
+| Redirect URI | `https://vertexaisearch.cloud.google.com/oauth-redirect` |
+
+In the Google Cloud console, open Gemini Enterprise ▸ Data stores ▸ **Create data store**, choose **Custom MCP Server**, paste the MCP URL, choose OAuth 2.0, enter the values and turn on **Enable PKCE Support**. Then pair as above. The secret can be copied only while the sheet is open; the app keeps only its SHA-256. Clicking **Set Up OAuth Client…** again replaces a client that hasn't connected yet. If pairing has closed by the time Gemini asks you to sign in, reopen it with **Connect a Cloud App…**.
+
+#### What each cloud agent needs
+
+| Cloud agent | Credential | Where it goes |
+| --- | --- | --- |
+| Anthropic API (MCP connector) | Remote token | `authorization_token` in the request's `mcp_servers` entry, with the `anthropic-beta: mcp-client-2025-11-20` header. The API calls tools without asking you. |
+| Claude Managed Agents | Remote token | A vault credential (`static_bearer`) for the MCP URL, the agent's `mcp_servers` and `tools` entries, and the vault in `vault_ids` when you create a session. The vault matches by URL: after **Reset Path…**, add the credential again. |
+| Claude Code on the web | Remote token | `.mcp.json` committed at the repository root; `EVENTKIT_BRIDGE_TOKEN` in the cloud environment's variables; Network access set to Custom with the tunnel's host under Allowed domains. Everyone who uses that environment can read its variables; on Pro and Max plans, use an API credential for the host instead. |
+| Cursor cloud agents | Remote token | cursor.com/agents ▸ MCP ▸ add an HTTP server with an `Authorization: Bearer` header. Cursor keeps the header on its servers. |
+| GitHub Copilot coding agent | Remote token | Repository Settings ▸ Copilot ▸ MCP servers, and an Agents secret named `COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN`. Copilot runs tools without approval: give the client Read-only grants and keep the tools list to the read tools. |
+| Devin | Remote token | Customize ▸ MCPs ▸ Add custom MCP, HTTP, Auth Header `Authorization`. |
+| OpenAI Responses API | Remote token | `authorization` in the `mcp` tool entry, without `Bearer`. The example allows only the read tools, with `require_approval: never`. |
+| claude.ai · Claude Desktop · mobile | OAuth | Add a custom connector, then pair. |
+| ChatGPT | OAuth | Create a custom MCP server with OAuth, then pair. |
+| Gemini Enterprise | OAuth, set up ahead | **Set Up OAuth Client…**, a Custom MCP Server data store, then pair. |
+| Codex cloud tasks | Not supported | No documented way to add an MCP server. Use Codex on this Mac, or the OpenAI Responses API. |
+
+#### Cloud agents and Ask before changes
+
+Cloud agents often run while you're away. Ask before changes applies to them exactly as to local agents: with **Ask me first**, each change waits up to 45 seconds for you at this Mac and is declined otherwise (`approval_timed_out`). For unattended runs, either be at the Mac or set a narrowly granted client to *Allow without asking*. The APIs and Copilot call tools without asking you, so the client's grants are the only limit there. What a cloud agent reads goes to its vendor, and may stay in the vendor's logs.
+
+#### Turn it off
+
+- **One token agent:** **Reset Remote Token…** on its client.
+- **One cloud app:** **Revoke** next to it under the client.
+- **One client:** turn off **Allow cloud access**.
+- **Everything:** **Turn Off Remote Access** in the menu bar, or the switch in Settings. The port closes at once and pairing ends. Each client's cloud access, remote token and connected apps are kept for when you turn it on again. Stop the tunnel too.
 
 ### Ask before changes
 
@@ -253,6 +408,24 @@ The check calls `list_collections` to see whether the bridge is on, so it adds a
 | Needs review / timeout after a change | Read the calendar or list before anything else. Retry only with the exact `idempotency_key` the error gave you. |
 | "launcher from this location" warning | Move the app to Applications and copy the setup again. |
 | Nothing happens and no Activity row | Run the check. Requests that fail before authentication (wrong port, Host, Origin) never reach Activity; Settings ▸ Developer shows **MCP traffic since launch** (counts only). |
+
+For cloud agents, start with **Test** in Settings ▸ Remote Access. It shows why the tunnel didn't reach the app:
+
+| Symptom or message | What to do |
+| --- | --- |
+| "The tunnel sent a different host name" (HTTP 421) | The tunnel's `Host` matches neither **Address** nor `127.0.0.1:<port>`. Tailscale Funnel keeps the public host name, so **Address** must be exactly the address Funnel printed. For other tunnels, set them to rewrite `Host` (the commands in Settings do), or add their public host name under **Address**. |
+| "The address doesn't resolve yet" | A new Tailscale Funnel address can take about 10 minutes to appear in public DNS. Test again later. |
+| "No answer within 10 seconds", "The tunnel refused the connection" | The tunnel isn't running, or the Mac's side of it is down. Start it again with the commands in Settings. |
+| "Something answered at that address, but not EventKit Bridge" | The tunnel points at another port, or another service answers at that address. Point it at the Remote Access port (47616 unless you changed it). |
+| "The tunnel's HTTPS certificate wasn't accepted" | Check the address. For Tailscale Funnel, HTTPS certificates must be turned on in the admin console. |
+| Not reachable after a restart or wake | The Mac must be awake, logged in and running the app, with the tunnel running. Funnel restarts on its own; the others need their command again. **Keep this Mac awake while on power** prevents idle sleep. |
+| "doesn't recognize this credential" (HTTP 401) from the remote URL | After **Reset Path…** or an address change, give each agent the new URL; connected cloud apps have to connect again. Otherwise check that the client still has **Allow cloud access** on and that the agent has its *remote* token: a local `ekb_mcp_v1_` token never works remotely. After **Reset Remote Token…**, copy the new one. |
+| "This port is only for agents on this Mac" (HTTP 403) | The tunnel points at the MCP server's port. Point it at the Remote Access port. |
+| HTTP 429 from the remote URL | More than 30 failed sign-ins a minute came from that address, so requests from it without a valid credential are refused for 5 minutes. Agents with a valid token or sign-in aren't affected. |
+| "Pairing isn't open" in the browser | Choose **Connect a Cloud App…** on the client's page, then connect again from the cloud app within 10 minutes. |
+| The cloud app says the connection was declined, or no sheet appeared | The sheet appears only while pairing is open for that client, once your browser opens EventKit Bridge's sign-in page. If a sheet was already open, the new request waits behind it. Answer within 5 minutes. |
+| "Couldn't read the app's details" in the browser | The app fetched the cloud app's metadata document and failed: it must be public HTTPS, at most 16 KB, without redirects, and answer within 5 seconds. Connect again; if it keeps failing, the cloud app's server is the problem. |
+| A cloud agent's changes are always declined | The client is set to **Ask me first** and nobody was at the Mac within 45 seconds. See [Cloud agents and Ask before changes](#cloud-agents-and-ask-before-changes). |
 
 ## Reference
 
@@ -350,8 +523,14 @@ The text the agent sees addresses the model and ends by saying whether to retry,
 | Time to answer a tool call | 55 s | `timeout` (a change may still have happened) |
 | Result size | 200,000 bytes | `response_too_large` |
 | Write journal | 10,000 entries in all, 2,000 per client (one 4 MB file per client) | `journal_full` |
-| Failed authentications, all callers | 120 per minute | Requests without a valid token get 429 for 60 s; valid tokens are never affected |
-| Activity rows for failed MCP sign-ins | at most one per 10 s | coalesced |
+| Failed authentications on the MCP port, all callers | 120 per minute | Requests without a valid token get 429 for 60 s; valid tokens are never affected |
+| Remote tool calls per client | 60 per minute, bursts of 15, counted apart from the client's local calls | `rate_limited` with the seconds to wait |
+| Remote writes per client | 10 per minute, bursts of 5; the 250 per rolling 24 hours is shared with local writes | `rate_limited` |
+| Failed authentications on the Remote Access port | 30 per minute from one forwarded address (or from requests without one, together). Once 1,000 addresses are tracked, new ones share one overflow counter | Requests from that address without a valid credential get 429 for 5 minutes; valid credentials are never affected |
+| OAuth request body (token, register, revoke) | 16 KiB | `invalid_request` or `invalid_client_metadata` |
+| Pairing requests waiting | 3; each up to 5 minutes, within the 10-minute pairing window | the oldest gives way |
+| Connected cloud apps; OAuth registrations | 200; 100 (unused dynamic registrations are pruned oldest first) | `invalid_grant` "Too many connected apps"; `invalid_client_metadata` |
+| Activity rows for failed MCP sign-ins | at most one per 10 s for each port | coalesced |
 | Open connections | 32 | new connections are closed |
 | Request head | 16 KiB, 64 header fields | 431 |
 | Request body | 64 KiB (`Content-Length` or chunked) | 413 |
@@ -360,7 +539,7 @@ The text the agent sees addresses the model and ends by saying whether to retry,
 | Launcher stdin message | 1 MiB per line | skipped, logged on stderr |
 | Launcher reply wait | 60 s | `-32000` "No response … Read before retrying." |
 
-The per-client limits apply to command-line clients too; scripts run far below them.
+The per-client limits apply to command-line clients too; scripts run far below them. The 8 calls in progress, the daily write cap and the journal are shared by a client's local and remote requests. The Remote Access port has the same connection, size and time limits as the MCP port.
 
 ### HTTP
 
@@ -393,7 +572,67 @@ Checks run in this order, and the first failure answers: path, `Host`, `Origin`,
 | Request head too large | 431 | none |
 | Client settings can't be read | 503 | `-32603` |
 
-`Origin` is accepted only when it's listed in the `MCPServerAllowedOrigins` user default, which is empty and has no UI. There are no `/.well-known` routes and the 401 carries no `resource_metadata`, so clients don't start OAuth.
+`Origin` is accepted only when it's listed in the `MCPServerAllowedOrigins` user default, which is empty and has no UI. This port has no `/.well-known` routes and its 401 carries no `resource_metadata`, so local clients don't start OAuth. OAuth exists only on the Remote Access port.
+
+### Remote Access HTTP
+
+The Remote Access listener (`127.0.0.1:47616` by default, only while Remote Access is on) speaks the same HTTP subset, with the same response headers and limits. It takes only remote tokens and OAuth access tokens; the MCP protocol behind it is the same as on the local port.
+
+Checks run in this order: the path must be under `/r/<secret>` (404 for anything else, before the `Host` or any credential is read), then `Host`, then the route's own rules. For `/mcp`: `Origin`, method, `Content-Type`, `Accept`, then the credential.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/r/<secret>/mcp` | POST | MCP |
+| `/r/<secret>/health?nonce=<nonce>` | GET | Settings' **Test**. Answers `{"ok":true,"nonce","headers","tunnel"}` (the tunnel headers that arrived, by name, and the tunnel they suggest) only for a nonce the app issued in the last 30 seconds, once; 404 otherwise |
+| `/.well-known/oauth-protected-resource/r/<secret>/mcp` | GET | Protected resource metadata (RFC 9728) |
+| `/.well-known/oauth-authorization-server/r/<secret>`, also `/.well-known/openid-configuration/r/<secret>` and `/r/<secret>/.well-known/openid-configuration` | GET | Authorization server metadata (RFC 8414) |
+| `/r/<secret>/oauth/authorize` | GET | The browser's sign-in page |
+| `/r/<secret>/oauth/authorize/status?request=<id>` | GET | Polled by that page every 2 s: `pending`, `answered` with the redirect, or `expired` |
+| `/r/<secret>/oauth/token` | POST | Code exchange and refresh (form-encoded) |
+| `/r/<secret>/oauth/register` | POST | Dynamic client registration (JSON), only while pairing is open |
+| `/r/<secret>/oauth/revoke` | POST | Token revocation (RFC 7009); 200 for any well-formed request |
+
+The discovery documents put the resource or issuer path after the well-known name, as RFC 9728 and RFC 8414 specify, so they're behind the secret too. The OAuth routes answer only once **Address** is set; until then they're 404. Paths match exactly: dot segments, encoded slashes and case variants are 404.
+
+| Situation | Status | Body |
+| --- | --- | --- |
+| Path isn't under `/r/<secret>`, or isn't a route above | 404 | text |
+| `Host` isn't the **Address** host (also with `:443`, or with the address's port if it has one), `127.0.0.1:<port>` or `localhost:<port>` | 421 | none, connection closed |
+| `Origin` present on `/mcp` | 403 | `-32600`, no `id` |
+| Wrong method on `/mcp` or an OAuth route | 405 | none, `Allow` |
+| No credential; a local token; a token the app didn't issue or that expired; an OAuth token for another URL; a client without cloud access | 401 | `-32001`, `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/r/<secret>/mcp", scope="calendar"` (before **Address** is set: `Bearer realm="EventKit Bridge"`) |
+| More than 30 failed authentications a minute from one forwarded address | 429 | none, `Retry-After`, connection closed; only for requests without a valid credential |
+
+Other statuses on `/mcp` are as on the local port. Tunnel forwarding headers are accepted here. They're never used for authorization, because anything on the Mac can send them: the caller's address, for the lockout and Activity, is the last `X-Forwarded-For` entry (the one the tunnel appended), else `CF-Connecting-IP`, else "unknown". The tunnel shown in Activity is guessed from `Tailscale-Funnel-Request`, `CF-Ray`, or an ngrok domain in `X-Forwarded-Host`. No route answers CORS.
+
+### OAuth
+
+The authorization server runs on the Remote Access port only. Its issuer is `https://<host>/r/<secret>`, and the protected resource is the MCP URL, `https://<host>/r/<secret>/mcp`. The metadata advertises the `authorization_code` and `refresh_token` grants, `response_type` `code`, PKCE `S256` only, the scope `calendar`, `token_endpoint_auth_methods_supported: ["none"]`, `client_id_metadata_document_supported: true` and `authorization_response_iss_parameter_supported: true`, plus the registration and revocation endpoints. There's no implicit or client-credentials grant.
+
+| Kind of client | `client_id` | Where it comes from | At the token endpoint |
+| --- | --- | --- | --- |
+| Client ID metadata document (CIMD) | the `https` URL of its document | The app fetches it when the browser arrives at `/oauth/authorize` during pairing | public: no secret |
+| Dynamic registration | `dcr_` and 32 hex digits | `POST /oauth/register` while pairing is open (403 `access_denied` otherwise); 1–5 redirect URIs, `client_name` up to 100 bytes, `token_endpoint_auth_method` `none` | public: no secret |
+| Set up in the app | `cfg_` and 32 hex digits | **Set Up OAuth Client…**, bound to one bridge client (Gemini Enterprise) | `client_secret_basic` or `client_secret_post` with its `ekb_ocs_v1_` secret, not both |
+
+`cfg_` clients are entered by hand, not discovered, so the metadata still lists only `none`.
+
+**The metadata fetch** (CIMD) happens only while pairing is open. Apart from **Test**, it's the only outbound request the app makes. The URL must be `https` with a DNS name (never an IP address) and a path. The app resolves the name first and refuses it if any address isn't public (private, loopback, link-local and other special ranges), connects only to a checked address with TLS verified for the name, and checks the connected address again before sending anything. No proxies, no redirects, at most 16 KB, 5 seconds. The document's `client_id` must equal its URL. Documents are cached for an hour.
+
+**Authorization.** Outside pairing, `/oauth/authorize` returns the static *Pairing isn't open* page (403) and fetches nothing. `redirect_uri` must exactly match one the client registered: `https`, or `http` only for `127.0.0.1`, `localhost` or `::1`. Until the client and redirect URI are known good, errors are shown as a page; after that they go back to the app as `error`, with `state` and `iss`. PKCE `S256` is required. `resource` is optional, but if present must be the MCP URL (scheme and host case-insensitive). Parameters must not repeat. Each request gets a six-digit code shown in the browser and on the Mac; **Allow** redirects with `code`, `state` and `iss`, **Deny** with `error=access_denied`.
+
+| Item | Lifetime and rules |
+| --- | --- |
+| Pairing window | 10 minutes, for one client; **Allow** closes it (one connection per window). Opening one for another client replaces it |
+| Pairing request | 5 minutes, within the window; at most 3 wait |
+| Authorization code | 60 seconds, single use, bound to the client, redirect URI, PKCE challenge and resource. Any attempt spends it; presenting it again revokes the connection it produced |
+| Access token (`ekb_oat_v1_` and 64 hex digits) | 1 hour; checked against the MCP URL it was issued for, and against the client's cloud access, on every request |
+| Refresh token (`ekb_ort_v1_` and 64 hex digits) | Rotates on every use; expires 30 days after it was issued. Presenting a rotated one revokes the connection, except an immediate retry of the latest rotation within 30 seconds whose new tokens haven't been used |
+| Connection | Until revoked, expired, or the address or secret path changes (connections for the old URL are removed) |
+
+Token errors are OAuth JSON errors (`invalid_request`, `invalid_client`, `invalid_grant`, `invalid_target`, `unsupported_grant_type`) with `Cache-Control: no-store`. The sign-in pages are self-contained, with a nonce-based content security policy, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`.
+
+Connections and registrations are kept in `remote-connections.json` in the app's data folder (mode 600), with only SHA-256 digests of access and refresh tokens and of `cfg_` secrets. Codes and pairing requests live in memory only. Like the client registry, the file fails closed: if its owner, mode or contents are wrong, no OAuth token is accepted, no new connection is made, and the file isn't overwritten.
 
 ### Protocol versions
 
@@ -404,4 +643,4 @@ Checks run in this order, and the first failure answers: path, `Host`, `Origin`,
 
 `2024-11-05` (the old HTTP+SSE transport) isn't supported. Both eras use the same endpoint and the same token.
 
-Not implemented: SSE responses and GET streams, sessions (`Mcp-Session-Id` is never issued), resumability, `notifications/tools/list_changed`, progress notifications, resources, prompts, logging, completion, subscriptions, sampling, elicitation and OAuth. Agents pick up grant changes when they list tools again. Remote access for cloud agents is future work.
+Not implemented: SSE responses and GET streams, sessions (`Mcp-Session-Id` is never issued), resumability, `notifications/tools/list_changed`, progress notifications, resources, prompts, logging, completion, subscriptions, sampling, elicitation, and OAuth on the local port. Agents pick up grant changes when they list tools again.

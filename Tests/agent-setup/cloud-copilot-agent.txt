@@ -1,0 +1,17 @@
+GitHub Copilot coding agent
+credential: bearer
+needsLiteralToken: true
+
+snippet (json):
+{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer $COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN"},"tools":["list_collections","read_events","read_reminders"]}}}
+
+steps:
+1. In the repository on GitHub, open Settings ▸ Copilot ▸ MCP servers and paste this under MCP configuration.
+2. Add an Agents secret named COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN and paste the remote token (Copy Remote Token…) as its value.
+3. The tools list holds only the read tools. Add a write tool only if you give this client a list it may change.
+
+warnings:
+- Copilot runs MCP tools without asking for approval. Give this client Read-only grants and keep the tools list to the read tools.
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
+
+footnote: Copilot can't sign in with OAuth, so it uses the remote token.

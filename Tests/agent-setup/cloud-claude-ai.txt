@@ -1,0 +1,16 @@
+claude.ai · Claude Desktop · mobile
+credential: oauth
+needsLiteralToken: false
+
+snippet (values):
+https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp
+
+steps:
+1. In Claude, open Customize ▸ Connectors and click Add custom connector. On Team and Enterprise plans, an Owner adds it in Organization settings ▸ Connectors.
+2. Paste this URL, leave the OAuth settings as they are, and click Add.
+3. When it asks you to sign in, open the client “claude.ai” in EventKit Bridge, choose Connect a Cloud App…, and approve the code you see in both places.
+
+warnings:
+- Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
+
+footnote: Once added, the connector also works in Claude Desktop and the Claude mobile app. Claude signs in with OAuth; sending a fixed header is a limited beta.

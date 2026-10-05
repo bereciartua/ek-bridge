@@ -145,6 +145,14 @@ final class FakeExecutor: BridgeCommandExecutor {
     }
 }
 
+/// The harness never fetches client metadata documents; DCR covers OAuth here.
+@MainActor
+final class OfflineFetcher: CIMDFetching {
+    func fetch(_ url: URL, completion: @escaping (Result<ClientMetadata, CIMDError>) -> Void) {
+        DispatchQueue.main.async { completion(.failure(.network("offline harness"))) }
+    }
+}
+
 /// Stands in for the approval panel.
 @MainActor
 final class FakeApprovals: ApprovalGate {
@@ -200,6 +208,10 @@ final class Harness {
     let counters = MCPTrafficCounters()
     var bridgeOn = true
     var service: MCPService!
+    var remote: RemoteMCPService!
+    var oauth: OAuthServer!
+    var remoteConfiguration: RemoteConfiguration!
+    var remoteToken = ""
     var clients = [String: String]()
     var connections = [String: MCPServer.Connection]()
     var lastPort = 0
@@ -221,6 +233,16 @@ final class Harness {
                                    self.connections[id] = connection })
         service = MCPService(server: server, limiter: limiter, counters: counters,
                              endpointFile: MCPEndpointFile(directory: directory))
+        oauth = OAuthServer(directory: directory, fetcher: OfflineFetcher(),
+                            clientAllowed: { [unowned self] in self.registry.cloudAccessAllowed(clientID: $0) },
+                            clientName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
+        oauth.connectionsChanged = { [unowned self] id in _ = self.registry.bumpRevision(clientID: id) }
+        let remoteServer = MCPServer(registry: registry, pipeline: pipeline, limiter: limiter, counters: counters,
+                                     zone: { TimeZone(identifier: "America/New_York")! },
+                                     didConnect: { [unowned self] id, connection in
+                                         self.connections["remote|" + id] = connection })
+        remote = RemoteMCPService(server: remoteServer, registry: registry, limiter: limiter,
+                                  counters: counters, oauth: oauth)
     }
 
     func makeClients() -> [String: Any] {
@@ -235,6 +257,8 @@ final class Harness {
             ("reader", [ClientGrant(resource: .calendar, targetID: work, mask: 1)], .allow),
             ("none", [], .allow),
             ("ghost", [ClientGrant(resource: .calendar, targetID: "CAL-GONE", mask: 1)], .allow),
+            ("cloud", [ClientGrant(resource: .calendar, targetID: work, mask: 3),
+                       ClientGrant(resource: .reminderList, targetID: groceries, mask: 3)], .allow),
         ]
         var result = [String: Any]()
         for (name, grants, approval) in specs {
@@ -246,6 +270,11 @@ final class Harness {
             clients[name] = issued.id
             result[name] = ["id": issued.id, "token": issued.mcpToken!]
         }
+        // Remote Access for "cloud" only.
+        guard case .success = registry.setCloudAccess(clientID: clients["cloud"]!, true),
+              case .success(let token) = registry.issueRemoteToken(clientID: clients["cloud"]!)
+        else { fatalError("couldn't set up cloud access") }
+        remoteToken = token
         return result
     }
 
@@ -303,6 +332,40 @@ final class Harness {
         case "start":
             service.start(port: command["port"] as? Int ?? lastPort)
             return ["ok": true]
+        case "remote_start":
+            remoteConfiguration = RemoteConfiguration(secret: "q7Zk2vN4bXwP9sL1mT6hYa",
+                                                      publicOrigin: "https://remote.test", port: 0)
+            remote.start(remoteConfiguration)
+            return ["ok": true]
+        case "remote_port":
+            if case .listening(let port) = remote.status { return ["port": port] }
+            return ["port": NSNull()]
+        case "set_cloud":
+            guard let client else { return ["ok": false] }
+            if case .success = registry.setCloudAccess(clientID: client, command["on"] as? Bool ?? false) {
+                if command["on"] as? Bool != true { oauth.revokeAll(clientID: client) }
+                return ["ok": true]
+            }
+            return ["ok": false]
+        case "issue_remote_token":
+            guard let client, case .success(let token) = registry.issueRemoteToken(clientID: client)
+            else { return ["ok": false] }
+            return ["ok": true, "token": token]
+        case "nonce":
+            return ["nonce": remote.nonces.issue()]
+        case "open_pairing":
+            guard let client else { return ["ok": false] }
+            oauth.openPairing(clientID: client)
+            return ["ok": true]
+        case "pairings":
+            return ["pending": oauth.pendingPairings.map { ["code": $0.code, "app": $0.appName] }]
+        case "answer_pairing":
+            guard let request = oauth.pendingPairings.last else { return ["ok": false] }
+            oauth.answerPairing(request.id, allow: command["allow"] as? Bool ?? false)
+            return ["ok": true]
+        case "oauth_connections":
+            guard let client else { return ["count": 0] }
+            return ["count": oauth.connections(clientID: client).count]
         case "counters":
             let snapshot = counters.snapshot
             return ["requests": snapshot.requests, "authFailures": snapshot.authFailures,
@@ -352,7 +415,7 @@ struct MCPServerHarness {
                     harness.lastPort = port
                     if !announced {
                         announced = true
-                        Output.line(["port": port, "clients": clients])
+                        Output.line(["port": port, "clients": clients, "remoteToken": harness.remoteToken])
                         startControl(harness)
                     }
                 case .failed(let failure):

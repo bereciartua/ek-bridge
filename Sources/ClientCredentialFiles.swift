@@ -15,8 +15,17 @@ enum CredentialKind: Hashable, CaseIterable {
     /// The MCP bearer token: `<uuid>.mcp-token`, the bare token with no newline,
     /// so agents can read it directly (`${file:…}`, `$(cat …)`, the launcher).
     case mcpToken
+    /// Remote Access: the token a cloud agent sends through a tunnel. Unlike
+    /// the local token, it's pasted into the vendor's settings.
+    case remoteToken
 
-    var fileSuffix: String { self == .signingKey ? ".json" : ".mcp-token" }
+    var fileSuffix: String {
+        switch self {
+        case .signingKey: ".json"
+        case .mcpToken: ".mcp-token"
+        case .remoteToken: ".mcp-remote-token"
+        }
+    }
     var maxBytes: Int { self == .signingKey ? 512 : 128 }
 }
 
@@ -95,6 +104,12 @@ final class ClientCredentialFiles {
 
     func replace(clientID: String, token: String) -> Result<URL, CredentialFileError> {
         write(clientID: clientID, kind: .mcpToken, secret: token, replacing: true)
+    }
+
+    /// Writes a remote token, replacing an existing safe file.
+    func save(clientID: String, remoteToken: String) -> Result<URL, CredentialFileError> {
+        let replacing = status(clientID: clientID, kind: .remoteToken) == .present
+        return write(clientID: clientID, kind: .remoteToken, secret: remoteToken, replacing: replacing)
     }
 
     func remove(clientID: String, kind: CredentialKind = .signingKey)
@@ -220,6 +235,9 @@ final class ClientCredentialFiles {
             ], options: [.sortedKeys])
         case .mcpToken:
             guard validSecret(secret, prefix: "ekb_mcp_v1_") else { return nil }
+            return Data(secret.utf8)
+        case .remoteToken:
+            guard validSecret(secret, prefix: "ekb_mcpr_v1_") else { return nil }
             return Data(secret.utf8)
         }
     }

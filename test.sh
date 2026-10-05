@@ -263,10 +263,38 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
     "$project_dir/Sources/MCP/"*.swift \
     "$project_dir/Tests/MCPGateTests.swift" \
     -o "$project_dir/build/mcp-gate-tests"
 "$project_dir/build/mcp-gate-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/MCP/HTTPMessage.swift" \
+    "$project_dir/Sources/MCP/OAuthTypes.swift" \
+    "$project_dir/Sources/MCP/OAuthStore.swift" \
+    "$project_dir/Sources/MCP/OAuthPages.swift" \
+    "$project_dir/Sources/MCP/OAuthServer.swift" \
+    "$project_dir/Tests/OAuthServerTests.swift" \
+    -o "$project_dir/build/oauth-server-tests"
+"$project_dir/build/oauth-server-tests"
+# -D EVENTKIT_MCP_TEST adds hooks that let a local HTTPS fixture through the
+# fetcher's SSRF guard; normal builds can't disable it.
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" -D EVENTKIT_MCP_TEST \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/MCP/OAuthTypes.swift" \
+    "$project_dir/Sources/MCP/CIMDFetcher.swift" \
+    "$project_dir/Tests/CIMDFetcherTests.swift" \
+    -o "$project_dir/build/cimd-fetcher-tests"
+"$project_dir/build/cimd-fetcher-tests"
 # Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
 # fake bridge and key files in temporary directories.
 xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
@@ -317,6 +345,10 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
     "$project_dir/Sources/MCP/"*.swift \
     "$project_dir/Tests/MCPServerHarness.swift" \
     -o "$project_dir/build/mcp-server-test"

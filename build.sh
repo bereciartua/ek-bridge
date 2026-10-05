@@ -25,7 +25,7 @@ xcrun swiftc -parse-as-library \
     -Xcc "-fmodules-cache-path=$cache_dir" \
     -target arm64-apple-macosx14.0 \
     -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
-    -framework SwiftUI -framework Network \
+    -framework SwiftUI -framework Network -framework IOKit \
     "$project_dir/Sources/main.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
@@ -76,6 +76,14 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
     "$project_dir/Sources/MCP/MCPToolMapping.swift" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Sources/MCP/RemoteMCPService.swift" \
+    "$project_dir/Sources/MCP/OAuthTypes.swift" \
+    "$project_dir/Sources/MCP/OAuthServer.swift" \
+    "$project_dir/Sources/MCP/OAuthStore.swift" \
+    "$project_dir/Sources/MCP/OAuthPages.swift" \
+    "$project_dir/Sources/MCP/CIMDFetcher.swift" \
+    "$project_dir/Sources/RemoteAccessView.swift" \
+    "$project_dir/Sources/RemoteAccessSupport.swift" \
     "$project_dir/Sources/SyntheticTestMode.swift" \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
     "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \

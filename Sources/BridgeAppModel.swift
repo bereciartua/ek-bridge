@@ -30,7 +30,7 @@ enum ActivityClientFilter: Hashable {
 }
 
 enum ActivityViaFilter: Hashable, CaseIterable {
-    case all, mcp, cli
+    case all, mcp, remote, cli
 }
 
 struct Banner: Identifiable {
@@ -53,6 +53,10 @@ enum ModelSheet: Identifiable, Equatable {
     case unavailableGrants(String)
     case collectionIDs
     case mcpPort
+    case remotePort
+    case remoteAddress
+    case pairing(UUID)
+    case oauthClient
 
     var id: String {
         switch self {
@@ -61,6 +65,10 @@ enum ModelSheet: Identifiable, Equatable {
         case .unavailableGrants(let id): "unavailable-\(id)"
         case .collectionIDs: "collection-ids"
         case .mcpPort: "mcp-port"
+        case .remotePort: "remote-port"
+        case .remoteAddress: "remote-address"
+        case .pairing(let id): "pairing-\(id)"
+        case .oauthClient: "oauth-client"
         }
     }
 }
@@ -92,6 +100,32 @@ struct MCPControls {
     var launcherURL: URL
     /// Whether 127.0.0.1:port can be bound right now.
     var portIsFree: (Int) -> Bool
+}
+
+/// Remote Access, as the model drives it. The UI-review build passes fakes.
+@MainActor
+struct RemoteControls {
+    var start: (RemoteConfiguration) -> Void
+    var update: (RemoteConfiguration) -> Void
+    var stop: () -> Void
+    /// Fetches `<public URL>/r/<secret>/health?nonce=…` through the tunnel:
+    /// the round trip and the tunnel the app saw, or why it failed.
+    var test: (RemoteConfiguration, @escaping (Result<(rtt: TimeInterval, tunnel: String?), RemoteTestFailure>) -> Void) -> Void
+    var portIsFree: (Int) -> Bool
+    var setKeepAwake: (Bool) -> Void
+    var onACPower: () -> Bool
+    var oauth: OAuthServer?
+}
+
+struct RemoteTestFailure: Error, Equatable {
+    let reason: String
+}
+
+enum RemoteTestState: Equatable {
+    case notTested
+    case testing
+    case reachable(rtt: TimeInterval, tunnel: String?, at: Date)
+    case notReachable(reason: String, at: Date)
 }
 
 /// What the client page says about an agent's connection.
@@ -133,6 +167,7 @@ struct BridgeServices {
     var testCollections: TestCollections?
     var mcp: MCPControls
     var approvals: ApprovalCenter?
+    var remote: RemoteControls
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -157,7 +192,14 @@ final class BridgeAppModel {
     private(set) var accessRequestDeclined = Set<ClientResource>()
 
     var route: Route = .overview
-    var sheet: ModelSheet?
+    var sheet: ModelSheet? {
+        didSet {
+            // A pairing request that arrived while another sheet was open is shown once it closes.
+            if sheet == nil, oldValue != nil {
+                DispatchQueue.main.async { [weak self] in self?.presentNextPairing() }
+            }
+        }
+    }
     private(set) var banner: Banner?
     private(set) var draft: GrantDraft?
     private(set) var savedToastAt: Date?
@@ -165,6 +207,8 @@ final class BridgeAppModel {
     var accessFocus: GrantKey?
     /// The scroll target inside the client pane ("access" after creating a client).
     var clientScrollTarget: String?
+    /// The scroll target inside Settings ("mcp" or "remote").
+    var settingsScrollTarget: String?
     var accessTab = [String: ClientResource]()
 
     var activityClientFilter: ActivityClientFilter = .all
@@ -192,6 +236,22 @@ final class BridgeAppModel {
     private(set) var mcpConnections = [String: MCPServer.Connection]()
     private(set) var newAgentApproval = ApprovalMode.ask
     private(set) var newCLIApproval = ApprovalMode.allow
+    // Remote Access (Settings ▸ Remote Access, client Cloud sections).
+    private(set) var remoteEnabled = false
+    private(set) var remotePort = RemoteDefaults.port
+    private(set) var remoteSecret = ""
+    private(set) var remoteOrigin: String?
+    private(set) var remoteStatus: RemoteMCPService.Status = .off
+    private(set) var remoteTest = RemoteTestState.notTested
+    private(set) var remoteAutoOff: TimeInterval = 0
+    private(set) var remoteOffAt: Date?
+    private(set) var keepAwake = false
+    private(set) var remoteNotes = [RemoteRequestNote]()
+    private(set) var remoteConnections = [String: MCPServer.Connection]()
+    /// Bumped when OAuth connections or pairing change, so views re-read them.
+    private(set) var oauthChanges = 0
+    var tunnelChoice = TunnelProvider.tailscaleFunnel
+    var cloudAgentChoice = [String: CloudAgentKind]()
     var connectTab = [String: ConnectTab]()
     var agentChoice = [String: AgentKind]()
     /// Keyed by "clientID|agent".
@@ -225,6 +285,13 @@ final class BridgeAppModel {
         static let mcpPort = "MCPServerPort"
         static let approvalAgent = "ApprovalDefaultAgent"
         static let approvalCLI = "ApprovalDefaultCommandLine"
+        static let remoteEnabled = "RemoteAccessEnabled"
+        static let remotePort = "MCPRemotePort"
+        static let remoteSecret = "RemoteAccessSecretPath"
+        static let remoteOrigin = "RemoteAccessPublicAddress"
+        static let remoteAutoOff = "RemoteAccessAutoOff"
+        static let remoteOffAt = "RemoteAccessOffAt"
+        static let keepAwake = "RemoteAccessKeepAwake"
     }
 
     init(services: BridgeServices) {
@@ -244,6 +311,17 @@ final class BridgeAppModel {
         mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
         newAgentApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalAgent) ?? "") ?? .ask
         newCLIApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalCLI) ?? "") ?? .allow
+        remoteEnabled = defaults.bool(forKey: Keys.remoteEnabled)
+        let remote = defaults.integer(forKey: Keys.remotePort)
+        remotePort = MCPDefaults.validPorts.contains(remote) ? remote : RemoteDefaults.port
+        remoteSecret = defaults.string(forKey: Keys.remoteSecret).flatMap {
+            RemoteConfiguration.validSecret($0) ? $0 : nil
+        } ?? ""
+        remoteOrigin = defaults.string(forKey: Keys.remoteOrigin).flatMap(RemoteConfiguration.normalizedOrigin)
+        remoteAutoOff = max(0, defaults.double(forKey: Keys.remoteAutoOff))
+        let offAt = defaults.double(forKey: Keys.remoteOffAt)
+        remoteOffAt = offAt > 0 ? Date(timeIntervalSinceReferenceDate: offAt) : nil
+        keepAwake = defaults.bool(forKey: Keys.keepAwake)
         switch defaults.string(forKey: Keys.lastRoute) {
         case "activity": route = .activity
         case "settings": route = .settings
@@ -267,6 +345,23 @@ final class BridgeAppModel {
     func start() {
         started = true
         if mcpEnabled { services.mcp.start(mcpPort) }
+        if remoteEnabled {
+            if let offAt = remoteOffAt, offAt <= Date() {
+                applyRemoteEnabled(false)
+            } else {
+                services.remote.start(remoteConfiguration)
+            }
+        }
+        services.remote.oauth?.pairingRequested = { [weak self] request in self?.pairingRequested(request) }
+        services.remote.oauth?.pairingChanged = { [weak self] in self?.oauthChanges += 1 }
+        services.remote.oauth?.connectionsChanged = { [weak self] clientID in
+            guard let self else { return }
+            // A connection added or revoked invalidates work in flight.
+            _ = self.services.registry.bumpRevision(clientID: clientID)
+            self.services.approvals?.withdraw(clientID: clientID)
+            self.oauthChanges += 1
+            self.scheduleRefresh()
+        }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                             object: nil, queue: .main) { [weak self] _ in
@@ -341,6 +436,11 @@ final class BridgeAppModel {
             now = Date()
         }
         if let saved = savedToastAt, Date().timeIntervalSince(saved) > 2.5 { savedToastAt = nil }
+        if remoteEnabled, let offAt = remoteOffAt, offAt <= Date() {
+            applyRemoteEnabled(false)
+            showBanner(Banner(kind: .info, title: String(localized: "Remote Access turned off, as scheduled.")))
+        }
+        updateKeepAwake()
     }
 
     private func updateAccess() {
@@ -376,9 +476,11 @@ final class BridgeAppModel {
     }
 
     var problems: [AttentionProblem] {
-        AttentionLogic.problems(bridge: bridge, calendar: calendarAccess, reminders: remindersAccess,
-                                clients: clients, policyStoreAvailable: policyStoreAvailable,
-                                mcpFailure: mcpFailureText)
+        var result = AttentionLogic.problems(bridge: bridge, calendar: calendarAccess, reminders: remindersAccess,
+                                             clients: clients, policyStoreAvailable: policyStoreAvailable,
+                                             mcpFailure: mcpFailureText)
+        if let failure = remoteFailureText { result.append(.remoteAccessFailed(failure)) }
+        return result
     }
 
     var needsAttention: Bool { !problems.isEmpty }
@@ -688,8 +790,10 @@ final class BridgeAppModel {
     private func removeCredentialFiles(_ clientID: String) -> Result<Void, CredentialFileError> {
         let key = services.credentialFiles.remove(clientID: clientID, kind: .signingKey)
         let token = services.credentialFiles.remove(clientID: clientID, kind: .mcpToken)
+        let remote = services.credentialFiles.remove(clientID: clientID, kind: .remoteToken)
         if case .failure = key { return key }
-        return token
+        if case .failure = token { return token }
+        return remote
     }
 
     func rename(_ clientID: String, to name: String) -> ClientNameIssue? {
@@ -799,6 +903,7 @@ final class BridgeAppModel {
             switch self.services.registry.revoke(clientID: client.id) {
             case .success:
                 self.services.approvals?.withdraw(clientID: client.id)
+                self.services.remote.oauth?.revokeAll(clientID: client.id)
                 let removed = self.removeCredentialFiles(client.id)
                 self.clearDraft()
                 self.refresh()
@@ -1105,9 +1210,13 @@ final class BridgeAppModel {
         checkSetupCompletion()
     }
 
-    /// Called for every authenticated MCP request.
+    /// Called for every authenticated MCP request, local or remote.
     func mcpDidConnect(_ clientID: String, _ connection: MCPServer.Connection) {
-        mcpConnections[clientID] = connection
+        if connection.remote {
+            remoteConnections[clientID] = connection
+        } else {
+            mcpConnections[clientID] = connection
+        }
     }
 
     /// `confirm: false` skips the "agents used it recently" question (UI review).
@@ -1154,6 +1263,9 @@ final class BridgeAppModel {
         guard let port = Int(text.trimmingCharacters(in: .whitespaces)),
               MCPDefaults.validPorts.contains(port) else {
             return String(localized: "Use a number from 1024 to 65535.")
+        }
+        if port == remotePort {
+            return String(localized: "That's the Remote Access port. Use a different one.")
         }
         if port == mcpListeningPort { return nil }
         return services.mcp.portIsFree(port) ? nil
@@ -1465,6 +1577,440 @@ final class BridgeAppModel {
         }
     }
 
+    // MARK: Remote Access
+
+    var remoteConfiguration: RemoteConfiguration {
+        RemoteConfiguration(secret: remoteSecret, publicOrigin: remoteOrigin, port: remotePort)
+    }
+
+    var remoteIsListening: Bool {
+        if case .listening = remoteStatus { return true }
+        return false
+    }
+
+    /// The URL cloud agents use, or nil until the tunnel's address is known.
+    var remoteMCPURL: String? { remoteConfiguration.mcpURL }
+
+    var remoteFailureText: String? {
+        guard remoteEnabled, case .failed(let failure) = remoteStatus else { return nil }
+        switch failure {
+        case .portInUse(let port): return String(localized: "Port \(String(port)) is in use by another app.")
+        case .other(let reason): return reason
+        }
+    }
+
+    var cloudClients: [ClientView] { activeClients.filter(\.cloudAccess) }
+
+    /// "Remote Access on · 2 cloud clients", for the menu bar.
+    var remoteMenuLine: String {
+        let count = cloudClients.count
+        return count == 1 ? String(localized: "Remote Access on · 1 cloud client")
+                          : String(localized: "Remote Access on · \(count) cloud clients")
+    }
+
+    /// Overview's line: "Remote Access · Reachable · my-mac.tail1234.ts.net".
+    var remoteStatusLine: String? {
+        guard remoteEnabled else { return nil }
+        let host = remoteOrigin.flatMap(URL.init(string:))?.host
+        let state: String
+        if remoteFailureText != nil {
+            state = String(localized: "Couldn't start")
+        } else if remoteOrigin == nil {
+            state = String(localized: "Waiting for tunnel")
+        } else {
+            switch remoteTest {
+            case .reachable: state = String(localized: "Reachable")
+            case .notReachable: state = String(localized: "Not reachable")
+            case .testing: state = String(localized: "Testing…")
+            case .notTested: state = String(localized: "Not tested")
+            }
+        }
+        return ([String(localized: "Remote Access"), state] + (host.map { [$0] } ?? [])).joined(separator: " · ")
+    }
+
+    func remoteStatusDidChange(_ status: RemoteMCPService.Status) {
+        if remoteStatus != status { remoteStatus = status }
+    }
+
+    func remoteDidServe(_ note: RemoteRequestNote) {
+        remoteNotes.append(note)
+        if remoteNotes.count > 50 { remoteNotes.removeFirst(remoteNotes.count - 50) }
+    }
+
+    /// The tunnel and forwarded address of a remote Activity row, if this
+    /// app saw it since launch (kept in memory only).
+    func remoteNote(for entry: ActivityEntry) -> RemoteRequestNote? {
+        guard entry.via == "remote", let clientID = entry.clientID else { return nil }
+        return remoteNotes.last { $0.clientID == clientID && abs($0.at.timeIntervalSince(entry.at)) < 5 }
+    }
+
+    func setRemoteAccessEnabled(_ on: Bool) {
+        guard on != remoteEnabled else { return }
+        guard on else { applyRemoteEnabled(false); return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Turn on Remote Access?")
+        alert.informativeText = String(localized: "Cloud agents you allow will be able to reach this Mac through a tunnel you set up. Nothing is reachable until you set up a tunnel and allow a client.")
+        alert.addButton(withTitle: String(localized: "Turn On"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.applyRemoteEnabled(true)
+        }
+    }
+
+    func applyRemoteEnabled(_ on: Bool) {
+        remoteEnabled = on
+        services.defaults.set(on, forKey: Keys.remoteEnabled)
+        if on {
+            if remoteSecret.isEmpty {
+                remoteSecret = RemoteConfiguration.newSecret()
+                services.defaults.set(remoteSecret, forKey: Keys.remoteSecret)
+            }
+            scheduleRemoteOff()
+            services.remote.start(remoteConfiguration)
+        } else {
+            services.remote.stop()
+            services.remote.oauth?.closePairing()
+            remoteStatus = .off
+            remoteTest = .notTested
+            setRemoteOffAt(nil)
+        }
+        updateKeepAwake()
+        announce(on ? String(localized: "Remote Access on") : String(localized: "Remote Access off"))
+    }
+
+    func setRemoteAutoOff(_ interval: TimeInterval) {
+        remoteAutoOff = interval
+        services.defaults.set(interval, forKey: Keys.remoteAutoOff)
+        if remoteEnabled { scheduleRemoteOff() }
+    }
+
+    private func scheduleRemoteOff() {
+        setRemoteOffAt(remoteAutoOff > 0 ? Date().addingTimeInterval(remoteAutoOff) : nil)
+    }
+
+    private func setRemoteOffAt(_ date: Date?) {
+        remoteOffAt = date
+        services.defaults.set(date?.timeIntervalSinceReferenceDate ?? 0, forKey: Keys.remoteOffAt)
+    }
+
+    func setKeepAwake(_ on: Bool) {
+        keepAwake = on
+        services.defaults.set(on, forKey: Keys.keepAwake)
+        updateKeepAwake()
+    }
+
+    /// Only while Remote Access is on and the Mac is on power.
+    private func updateKeepAwake() {
+        services.remote.setKeepAwake(remoteEnabled && keepAwake && services.remote.onACPower())
+    }
+
+    /// Nil when the address can be used; otherwise why not.
+    func remoteAddressIssue(_ text: String) -> String? {
+        RemoteConfiguration.normalizedOrigin(text) == nil
+            ? String(localized: "Enter the tunnel's https address, like https://my-mac.tail1234.ts.net, without a path.")
+            : nil
+    }
+
+    func setRemoteAddress(_ text: String) -> String? {
+        if let issue = remoteAddressIssue(text) { return issue }
+        sheet = nil
+        let previous = remoteOrigin
+        remoteOrigin = RemoteConfiguration.normalizedOrigin(text)
+        services.defaults.set(remoteOrigin, forKey: Keys.remoteOrigin)
+        remoteTest = .notTested
+        services.remote.update(remoteConfiguration)
+        if previous != nil, previous != remoteOrigin {
+            let dropped = dropStaleConnections()
+            showBanner(Banner(kind: .info, title: String(localized: "The Remote Access address changed."),
+                              message: dropped > 0
+                                ? String(localized: "Update the URL in each cloud agent. Connected cloud apps were disconnected; connect them again.")
+                                : String(localized: "Update the URL in each cloud agent.")))
+        }
+        return nil
+    }
+
+    /// OAuth connections are bound to the MCP URL, so a new address or secret path ends them.
+    private func dropStaleConnections() -> Int {
+        guard let oauth = services.remote.oauth else { return 0 }
+        let resource = remoteConfiguration.oauthContext?.resource ?? ""
+        let dropped = oauth.revokeConnections(notFor: resource)
+        oauth.closePairing()
+        oauthChanges += 1
+        return dropped
+    }
+
+    func remotePortIssue(_ text: String) -> String? {
+        guard let port = Int(text.trimmingCharacters(in: .whitespaces)),
+              MCPDefaults.validPorts.contains(port) else {
+            return String(localized: "Use a number from 1024 to 65535.")
+        }
+        if port == mcpPort { return String(localized: "That's the local MCP server's port. Use a different one.") }
+        if port == remotePort && remoteIsListening { return nil }
+        return services.remote.portIsFree(port) ? nil
+            : String(localized: "Port \(String(port)) is in use by another app.")
+    }
+
+    func changeRemotePort(_ text: String) -> String? {
+        if let issue = remotePortIssue(text) { return issue }
+        sheet = nil
+        remotePort = Int(text.trimmingCharacters(in: .whitespaces))!
+        services.defaults.set(remotePort, forKey: Keys.remotePort)
+        remoteTest = .notTested
+        if remoteEnabled { services.remote.start(remoteConfiguration) }
+        showBanner(Banner(kind: .success, title: String(localized: "Remote Access now uses port \(String(remotePort))."),
+                          message: String(localized: "Point your tunnel at the new port.")))
+        return nil
+    }
+
+    func resetRemoteSecret() {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Reset the secret path?")
+        alert.informativeText = String(localized: "Every cloud agent setup uses the current URL and stops working until you give it the new one. Connected cloud apps are disconnected and have to connect again.")
+        alert.addButton(withTitle: String(localized: "Reset Path"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            self.remoteSecret = RemoteConfiguration.newSecret()
+            self.services.defaults.set(self.remoteSecret, forKey: Keys.remoteSecret)
+            self.remoteTest = .notTested
+            self.services.remote.update(self.remoteConfiguration)
+            _ = self.dropStaleConnections()
+            self.showBanner(Banner(kind: .success, title: String(localized: "New secret path."),
+                                   message: String(localized: "Update the URL in each cloud agent.")))
+        }
+    }
+
+    /// One outbound HTTPS request to this app's own health URL through the
+    /// tunnel, with a nonce only this app issued.
+    func testRemoteAccess() {
+        guard remoteEnabled, remoteOrigin != nil, remoteTest != .testing else { return }
+        remoteTest = .testing
+        services.remote.test(remoteConfiguration) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let value):
+                self.remoteTest = .reachable(rtt: value.rtt, tunnel: value.tunnel, at: Date())
+            case .failure(let failure):
+                self.remoteTest = .notReachable(reason: failure.reason, at: Date())
+            }
+        }
+    }
+
+    // MARK: Cloud access per client
+
+    func remoteTokenStatus(_ clientID: String) -> CredentialFileStatus {
+        services.credentialFiles.status(clientID: clientID, kind: .remoteToken)
+    }
+
+    /// "This client can read Work and add to Groceries from the internet."
+    func cloudSummary(_ client: ClientView) -> String {
+        let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources)
+        return client.grants.isEmpty
+            ? String(localized: "This client has no access yet, so cloud agents can't use anything.")
+            : String(localized: "Cloud agents can use this from the internet: \(text).")
+    }
+
+    func setCloudAccess(_ clientID: String, _ on: Bool) {
+        guard let client = client(clientID), !client.revoked, client.cloudAccess != on else { return }
+        if on {
+            applyCloudAccess(client, true)
+            return
+        }
+        let connections = services.remote.oauth?.connections(clientID: clientID).count ?? 0
+        guard client.hasRemoteToken || connections > 0 else { applyCloudAccess(client, false); return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Turn off cloud access for “\(client.name)”?")
+        alert.informativeText = String(localized: "Its remote token and every connected cloud app stop working now. Its access on this Mac isn't affected.")
+        let off = alert.addButton(withTitle: String(localized: "Turn Off"))
+        off.hasDestructiveAction = true
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.applyCloudAccess(client, false)
+        }
+    }
+
+    private func applyCloudAccess(_ client: ClientView, _ on: Bool) {
+        switch services.registry.setCloudAccess(clientID: client.id, on) {
+        case .success:
+            if !on {
+                services.remote.oauth?.revokeAll(clientID: client.id)
+                _ = services.credentialFiles.remove(clientID: client.id, kind: .remoteToken)
+            }
+            services.approvals?.withdraw(clientID: client.id)
+            refresh()
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't change cloud access."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
+    /// Creates the remote token if needed, then copies it after confirming.
+    /// Unlike local tokens there's no launcher to read it, so copying is the
+    /// normal way to set a bearer-token cloud agent up.
+    func copyRemoteToken(_ clientID: String) {
+        guard let client = client(clientID), client.cloudAccess else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Copy the remote token for “\(client.name)”?")
+        alert.informativeText = String(localized: "Anyone with this token and the URL can use \(client.name)'s access from the internet while Remote Access and the bridge are on. Paste it only into the cloud agent's settings. The clipboard is cleared in 90 seconds.")
+        alert.addButton(withTitle: String(localized: "Copy Remote Token"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            if !client.hasRemoteToken || self.remoteTokenStatus(clientID) != .present {
+                guard self.issueRemoteToken(client) else { return }
+            }
+            guard let url = self.services.credentialFiles.url(for: clientID, kind: .remoteToken),
+                  let data = try? SafePath.readFile(url.path, maxBytes: CredentialKind.remoteToken.maxBytes),
+                  let token = String(data: data, encoding: .utf8), ClientRegistry.validRemoteToken(token) else {
+                self.showBanner(Banner(kind: .warning, title: String(localized: "Couldn't read the remote token."),
+                                       message: String(localized: "Reset the remote token to create a new one.")))
+                return
+            }
+            Pasteboard.copySecret(token, clearAfter: 90)
+            self.announce(String(localized: "Remote token copied. The clipboard is cleared in 90 seconds."))
+        }
+    }
+
+    func resetRemoteToken(_ clientID: String) {
+        guard let client = client(clientID), client.cloudAccess, client.hasRemoteToken else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Reset the remote token for “\(client.name)”?")
+        alert.informativeText = String(localized: "Cloud agents using the current token stop working until you copy the new one into their settings. Connected cloud apps aren't affected.")
+        alert.addButton(withTitle: String(localized: "Reset Token"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            if self.issueRemoteToken(client) {
+                self.showBanner(Banner(kind: .success, title: String(localized: "Remote token reset."),
+                                       message: String(localized: "The old token no longer works.")))
+            }
+        }
+    }
+
+    @discardableResult
+    private func issueRemoteToken(_ client: ClientView) -> Bool {
+        switch services.registry.issueRemoteToken(clientID: client.id) {
+        case .success(let token):
+            services.approvals?.withdraw(clientID: client.id)
+            if case .failure(let error) = services.credentialFiles.save(clientID: client.id, remoteToken: token) {
+                _ = services.registry.removeRemoteToken(clientID: client.id)
+                refresh()
+                showBanner(Banner(kind: .warning, title: String(localized: "Couldn't save the remote token file."),
+                                  message: String(localized: "No remote token was created."), code: error.rawValue))
+                return false
+            }
+            refresh()
+            return true
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't create a remote token."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+            return false
+        }
+    }
+
+    func oauthConnections(_ clientID: String) -> [OAuthConnectionView] {
+        _ = oauthChanges
+        return services.remote.oauth?.connections(clientID: clientID) ?? []
+    }
+
+    func revokeConnection(_ connection: OAuthConnectionView) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Revoke “\(connection.appName)”?")
+        alert.informativeText = String(localized: "It stops working now. To use it again, connect it again.")
+        let revoke = alert.addButton(withTitle: String(localized: "Revoke"))
+        revoke.hasDestructiveAction = true
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.services.remote.oauth?.revoke(connectionID: connection.id)
+        }
+    }
+
+    /// Opens a 10-minute pairing window for this client (§22.6).
+    /// The OAuth client set up for an app that takes a client ID and secret (Gemini Enterprise).
+    /// In memory only, while its sheet is open; the store keeps only the secret's digest.
+    struct OAuthClientDetails: Equatable {
+        let bridgeClientID: String
+        let clientID: String
+        let secret: String
+        let authorizationURL: String
+        let tokenURL: String
+        let redirectURI: String
+    }
+
+    var oauthClientDetails: OAuthClientDetails? {
+        didSet { if oauthClientDetails == nil, sheet == .oauthClient { sheet = nil } }
+    }
+
+    /// Gemini Enterprise ▸ Connect a Cloud App…: makes a confidential client for this bridge client,
+    /// opens pairing, and shows the values to enter. Each use replaces the client's unused ones.
+    func setUpOAuthClient(_ clientID: String, appName: String, redirectURI: String) {
+        guard let oauth = services.remote.oauth, let client = client(clientID), client.cloudAccess,
+              let context = remoteConfiguration.oauthContext else { return }
+        guard let issued = oauth.registerConfidentialClient(for: clientID, name: appName,
+                                                            redirectURI: redirectURI) else {
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't set up the app."),
+                              message: String(localized: "The list of connected apps can't be saved right now.")))
+            return
+        }
+        oauth.openPairing(clientID: clientID)
+        oauthChanges += 1
+        oauthClientDetails = OAuthClientDetails(
+            bridgeClientID: clientID, clientID: issued.clientID, secret: issued.secret,
+            authorizationURL: context.issuer + "/oauth/authorize", tokenURL: context.issuer + "/oauth/token",
+            redirectURI: redirectURI)
+        sheet = .oauthClient
+    }
+
+    func copyOAuthClientSecret() {
+        guard let secret = oauthClientDetails?.secret else { return }
+        Pasteboard.copySecret(secret, clearAfter: 90)
+        announce(String(localized: "Client secret copied. The clipboard is cleared in 90 seconds."))
+    }
+
+    func connectCloudApp(_ clientID: String) {
+        guard let oauth = services.remote.oauth, client(clientID)?.cloudAccess == true else { return }
+        oauth.openPairing(clientID: clientID)
+        oauthChanges += 1
+        showBanner(Banner(kind: .info, title: String(localized: "Pairing is open for 10 minutes."),
+                          message: String(localized: "Add the connector in the cloud app now. When it asks to connect, check the code and allow it here.")))
+    }
+
+    var pairingClientID: String? {
+        _ = oauthChanges
+        guard let oauth = services.remote.oauth, let expires = oauth.pairingExpiresAt, expires > now else { return nil }
+        return oauth.pairingClientID
+    }
+
+    func pairingRequest(_ id: UUID) -> PairingRequest? {
+        _ = oauthChanges
+        return services.remote.oauth?.pendingPairings.first { $0.id == id }
+    }
+
+    private func pairingRequested(_ request: PairingRequest) {
+        oauthChanges += 1
+        showWindow()
+        presentNextPairing()
+        announce(String(localized: "\(request.appName) wants to connect. Code \(request.code)."))
+    }
+
+    /// Shows the oldest waiting request, but never replaces a sheet the user is looking at: a request
+    /// that arrived just before a click would otherwise put its Allow button under the pointer.
+    private func presentNextPairing() {
+        guard sheet == nil, let next = services.remote.oauth?.pendingPairings.first else { return }
+        sheet = .pairing(next.id)
+    }
+
+    func answerPairing(_ id: UUID, allow: Bool) {
+        services.remote.oauth?.answerPairing(id, allow: allow)
+        oauthChanges += 1
+        sheet = nil
+    }
+
     // MARK: Developer tools
 
     private func updateTestCollectionsState() {
@@ -1542,4 +2088,10 @@ enum Pasteboard {
 enum MCPDefaults {
     static let port = 47615
     static let validPorts = 1024...65535
+}
+
+enum RemoteDefaults {
+    static let port = 47616
+    /// Turn off automatically: never, 1 hour, 8 hours, 1 day.
+    static let autoOffChoices: [TimeInterval] = [0, 3_600, 28_800, 86_400]
 }

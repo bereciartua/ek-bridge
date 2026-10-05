@@ -24,6 +24,7 @@ struct ConnectAgentTab: View {
             EmptyConnectCard(text: String(localized: "The MCP server couldn't start. \(failure)"),
                              button: String(localized: "Open Settings"), prominent: false,
                              warning: true) {
+                model.settingsScrollTarget = "mcp"
                 model.navigate(to: .settings)
             }
         } else {

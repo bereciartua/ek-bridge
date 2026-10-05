@@ -284,6 +284,7 @@ enum AttentionProblem: Equatable, Hashable {
     case policyStoreUnavailable
     case bridgeFailed
     case mcpServerFailed(String)
+    case remoteAccessFailed(String)
 
     var title: String {
         switch self {
@@ -292,6 +293,7 @@ enum AttentionProblem: Equatable, Hashable {
         case .policyStoreUnavailable: String(localized: "Client settings can't be read")
         case .bridgeFailed: String(localized: "The bridge couldn't start")
         case .mcpServerFailed: String(localized: "The MCP server couldn't start")
+        case .remoteAccessFailed: String(localized: "Remote Access couldn't start")
         }
     }
 

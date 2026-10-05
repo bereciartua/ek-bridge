@@ -18,9 +18,91 @@ struct ClientRegistryV4Tests {
         try failedAuthentication()
         try activityRows()
         try roundTrip()
+        try remoteAccess()
         print("Client registry v4: v2/v3 upgrade and one-time backups, tokens, revision bumps, "
               + "MCP-only clients, load validation, agent names, failed-auth coalescing, "
-              + "CLI/MCP rows, round trip passed")
+              + "CLI/MCP rows, round trip, remote access passed")
+    }
+
+    /// Cloud access and remote tokens (§22.4): separate from local tokens in
+    /// both directions, gone with cloud access, and validated on load.
+    @MainActor
+    static func remoteAccess() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eventkit-remote-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registry = ClientRegistry(directory: directory)
+        let issued = value(registry.createClient(name: "claude.ai", credentials: [.mcpToken]))
+        let id = issued.id
+        precondition(registry.clients()?.first?.cloudAccess == false)
+        failure(registry.issueRemoteToken(clientID: id), .forbidden)
+        let probe = BridgeRequest(id: UUID().uuidString.lowercased(), command: .scopeStatus, parameters: [:])
+        let before = value(registry.authorize(clientID: id, request: probe, origin: .cli))
+        success(registry.setCloudAccess(clientID: id, true))
+        precondition(!registry.stillAuthorized(before), "cloud access bumps the revision")
+        precondition(registry.cloudAccessAllowed(clientID: id))
+        let remote = value(registry.issueRemoteToken(clientID: id))
+        precondition(remote.hasPrefix("ekb_mcpr_v1_") && ClientRegistry.validRemoteToken(remote))
+        precondition(value(registry.authenticateRemoteToken(remote)) == id)
+        // Neither token works in the other place.
+        failure(registry.authenticateMCPToken(remote), .unauthorized)
+        failure(registry.authenticateRemoteToken(issued.mcpToken!), .unauthorized)
+        let view = registry.clients()!.first!
+        precondition(view.cloudAccess && view.hasRemoteToken && view.remoteIssuedAt != nil)
+        // Reset replaces; removing or turning cloud access off ends it.
+        let reset = value(registry.issueRemoteToken(clientID: id))
+        failure(registry.authenticateRemoteToken(remote), .unauthorized)
+        precondition(value(registry.authenticateRemoteToken(reset)) == id)
+        success(registry.setCloudAccess(clientID: id, false))
+        failure(registry.authenticateRemoteToken(reset), .unauthorized)
+        precondition(registry.clients()!.first!.hasRemoteToken == false)
+        success(registry.setCloudAccess(clientID: id, true))
+        let again = value(registry.issueRemoteToken(clientID: id))
+        let inFlight = value(registry.authorize(clientID: id, request: probe, origin: .remote(agent: "claude.ai")))
+        success(registry.bumpRevision(clientID: id))
+        precondition(!registry.stillAuthorized(inFlight), "an OAuth connection change invalidates work")
+        success(registry.removeRemoteToken(clientID: id))
+        failure(registry.authenticateRemoteToken(again), .unauthorized)
+        // Remote rows are recorded with via "remote", and failed remote auth is
+        // coalesced apart from local failures.
+        let row = registry.activity()!.first { $0.via == "remote" }
+        precondition(row?.agent == "claude.ai", "remote row")
+        _ = registry.authenticateRemoteToken("ekb_mcpr_v1_" + String(repeating: "0", count: 64))
+        _ = registry.authenticateMCPToken("ekb_mcp_v1_" + String(repeating: "0", count: 64))
+        let failures = registry.activity()!.filter { $0.outcome == "unauthorized" }
+        precondition(Set(failures.compactMap(\.via)) == ["remote", "mcp"], "coalesced per transport")
+        // Revoke clears everything remote.
+        success(registry.setCloudAccess(clientID: id, true))
+        _ = value(registry.issueRemoteToken(clientID: id))
+        success(registry.revoke(clientID: id))
+        let file = try String(contentsOf: directory.appendingPathComponent("client-registry.json"), encoding: .utf8)
+        precondition(!file.contains("ekb_mcpr_v1_"), "only digests are stored")
+        precondition(!file.contains("\"remoteEnabled\":true"), "revoked: no cloud access")
+        // Load validation: a remote token without cloud access, or a duplicate
+        // remote verifier, fails closed.
+        let digest = ClientRegistry.tokenDigest("ekb_mcpr_v1_" + String(repeating: "a", count: 64))
+        for clients in [
+            [record(UUID(), remoteEnabled: false, remoteVerifier: digest)],
+            [record(UUID(), remoteEnabled: true, remoteVerifier: digest),
+             record(UUID(), remoteEnabled: true, remoteVerifier: digest)],
+            [record(UUID(), remoteEnabled: true, remoteVerifier: "nothex")],
+        ] {
+            let bad = FileManager.default.temporaryDirectory
+                .appendingPathComponent("eventkit-remote-bad-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: bad) }
+            try FileManager.default.createDirectory(at: bad, withIntermediateDirectories: false,
+                                                    attributes: [.posixPermissions: 0o700])
+            let data = try JSONSerialization.data(withJSONObject: ["version": 4, "clients": clients, "activity": []])
+            precondition(FileManager.default.createFile(atPath: bad.appendingPathComponent("client-registry.json").path,
+                                                        contents: data, attributes: [.posixPermissions: 0o600]))
+            precondition(ClientRegistry(directory: bad).clients() == nil, "invalid remote fields fail closed")
+        }
+    }
+
+    static func record(_ id: UUID, remoteEnabled: Bool, remoteVerifier: String) -> [String: Any] {
+        ["id": id.uuidString.lowercased(), "name": "Client \(id.uuidString.prefix(4))", "verifier": "",
+         "revoked": false, "revision": 1, "grants": [[String: Any]](), "remoteEnabled": remoteEnabled,
+         "remoteVerifier": remoteVerifier]
     }
 
     // MARK: Migration and backups

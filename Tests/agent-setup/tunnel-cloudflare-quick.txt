@@ -1,0 +1,15 @@
+Cloudflare quick tunnel (testing only)
+preservesHost: false
+detectionHeader: CF-Ray
+
+commands:
+cloudflared tunnel --url http://127.0.0.1:47616 --http-host-header 127.0.0.1:47616
+
+steps:
+1. Run the command. cloudflared prints a random https://….trycloudflare.com address.
+2. Paste that address under Address, then click Test.
+3. To turn it off, press Control-C in the Terminal window running cloudflared.
+
+notes:
+- For testing only: the address changes every time it starts, which breaks every cloud agent you set up.
+- TLS ends at Cloudflare's edge, so Cloudflare can read the traffic, calendar data included.

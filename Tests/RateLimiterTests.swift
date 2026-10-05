@@ -117,6 +117,44 @@ struct RateLimiterTests {
         expect(auth.allow("valid", write: false), .allowed, "authenticated call during lockout")
         checks += 8
 
-        print("Rate limiter: \(checks) checks of bursts, refill, retry-after, isolation, write and daily caps, auth lockout passed")
+        // Remote Access: its own stricter buckets, the shared daily cap, and a
+        // lockout per forwarded address.
+        clock = start + 400_000
+        let remote = RateLimiter(now: { clock })
+        for index in 0..<15 {
+            expect(remote.allow("r", write: false, remote: true), .allowed, "remote call \(index)")
+        }
+        expect(remote.allow("r", write: false, remote: true), .limited(retryAfter: 1), "16th remote call")
+        expect(remote.allow("r", write: false), .allowed, "local bucket is separate")
+        clock += 60
+        for index in 0..<5 {
+            expect(remote.allow("w", write: true, remote: true), .allowed, "remote write \(index)")
+        }
+        expect(remote.allow("w", write: true, remote: true), .limited(retryAfter: 6), "6th remote write")
+        for _ in 0..<250 { remote.recordWrite("d") }
+        expect(remote.allow("d", write: true, remote: true), .limited(retryAfter: 86_400), "daily cap shared")
+        for _ in 0..<30 { remote.recordFailedRemoteAuth("198.51.100.1") }
+        precondition(remote.remoteAuthLockout("198.51.100.1") == nil, "30 a minute is allowed")
+        remote.recordFailedRemoteAuth("198.51.100.1")
+        precondition(remote.remoteAuthLockout("198.51.100.1") == 300, "31st locks that address out")
+        precondition(remote.remoteAuthLockout("198.51.100.2") == nil, "other addresses unaffected")
+        precondition(remote.authLockout() == nil, "the local lockout is separate")
+        clock += 300
+        precondition(remote.remoteAuthLockout("198.51.100.1") == nil, "recovered after 5 min")
+        checks += 6
+
+        // A flood of distinct addresses fills the table; new addresses then share one overflow key,
+        // which never locks out addresses already tracked.
+        let flood = RateLimiter(now: { clock })
+        flood.recordFailedRemoteAuth("203.0.113.7")
+        for index in 0..<999 { flood.recordFailedRemoteAuth("10.0.\(index / 256).\(index % 256)") }
+        for index in 0..<31 { flood.recordFailedRemoteAuth("192.0.2.\(index)") }
+        precondition(flood.remoteAuthLockout("192.0.2.200") == 300, "untracked addresses share the overflow lockout")
+        precondition(flood.remoteAuthLockout("203.0.113.7") == nil, "tracked addresses keep their own count")
+        clock += 61
+        precondition(flood.remoteAuthLockout("192.0.2.200") == nil, "overflow applies only while the table is full")
+        checks += 3
+
+        print("Rate limiter: \(checks) checks of bursts, refill, retry-after, isolation, write and daily caps, auth lockout, remote limits passed")
     }
 }

@@ -16,6 +16,16 @@ final class RateLimiter: @unchecked Sendable {
         var writesPerDay = 250
         var failedAuthsPerMinute = 120
         var failedAuthLockout: TimeInterval = 60
+        // Remote Access is stricter: its own buckets per client (the daily
+        // write cap is shared), and failed authentication per forwarded
+        // address with a longer lockout.
+        var remoteCallsPerMinute = 60.0
+        var remoteCallBurst = 15.0
+        var remoteWritesPerMinute = 10.0
+        var remoteWriteBurst = 5.0
+        var remoteFailedAuthsPerMinute = 30
+        var remoteFailedAuthLockout: TimeInterval = 300
+        var maxRemoteKeys = 1_000
     }
 
     enum Decision: Equatable {
@@ -36,6 +46,8 @@ final class RateLimiter: @unchecked Sendable {
     private var dailyWrites = [String: [TimeInterval]]()
     private var failedAuths = [TimeInterval]()
     private var lockedUntil: TimeInterval = 0
+    private var remoteFailures = [String: [TimeInterval]]()
+    private var remoteLockedUntil = [String: TimeInterval]()
 
     init(policy: Policy = Policy(), now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }) {
         self.policy = policy
@@ -43,36 +55,39 @@ final class RateLimiter: @unchecked Sendable {
     }
 
     /// Takes a token for one call (and one write, for writes) or says how long to wait.
-    func allow(_ clientID: String, write: Bool) -> Decision {
+    func allow(_ clientID: String, write: Bool, remote: Bool = false) -> Decision {
         lock.lock()
         defer { lock.unlock() }
         let current = now()
-        var call = refilled(calls[clientID], capacity: policy.callBurst,
-                            perMinute: policy.callsPerMinute, at: current)
+        let key = remote ? "remote|" + clientID : clientID
+        let callRate = remote ? policy.remoteCallsPerMinute : policy.callsPerMinute
+        let writeRate = remote ? policy.remoteWritesPerMinute : policy.writesPerMinute
+        var call = refilled(calls[key], capacity: remote ? policy.remoteCallBurst : policy.callBurst,
+                            perMinute: callRate, at: current)
         guard call.tokens >= 1 else {
-            calls[clientID] = call
-            return .limited(retryAfter: wait(call, perMinute: policy.callsPerMinute))
+            calls[key] = call
+            return .limited(retryAfter: wait(call, perMinute: callRate))
         }
         if write {
-            var bucket = refilled(writes[clientID], capacity: policy.writeBurst,
-                                  perMinute: policy.writesPerMinute, at: current)
+            var bucket = refilled(writes[key], capacity: remote ? policy.remoteWriteBurst : policy.writeBurst,
+                                  perMinute: writeRate, at: current)
             let day = (dailyWrites[clientID] ?? []).filter { current - $0 < 86_400 }
             dailyWrites[clientID] = day
             if day.count >= policy.writesPerDay {
-                calls[clientID] = call
-                writes[clientID] = bucket
+                calls[key] = call
+                writes[key] = bucket
                 return .limited(retryAfter: max(1, Int((day[0] + 86_400 - current).rounded(.up))))
             }
             guard bucket.tokens >= 1 else {
-                calls[clientID] = call
-                writes[clientID] = bucket
-                return .limited(retryAfter: wait(bucket, perMinute: policy.writesPerMinute))
+                calls[key] = call
+                writes[key] = bucket
+                return .limited(retryAfter: wait(bucket, perMinute: writeRate))
             }
             bucket.tokens -= 1
-            writes[clientID] = bucket
+            writes[key] = bucket
         }
         call.tokens -= 1
-        calls[clientID] = call
+        calls[key] = call
         return .allowed
     }
 
@@ -96,6 +111,45 @@ final class RateLimiter: @unchecked Sendable {
             lockedUntil = current + policy.failedAuthLockout
             failedAuths.removeAll()
         }
+    }
+
+    /// Remote Access: counts a failed authentication from one forwarded
+    /// address (or "unknown"); past the limit that address is refused for
+    /// five minutes. Tunneled requests all come from loopback, so the local
+    /// throttle can't tell callers apart.
+    func recordFailedRemoteAuth(_ address: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = now()
+        remoteFailures = remoteFailures.filter { $0.value.last.map { current - $0 < 60 } ?? false }
+        remoteLockedUntil = remoteLockedUntil.filter { $0.value > current }
+        // Too many distinct addresses at once: new ones share one overflow key. Only requests
+        // without a valid credential ever consult the lockout, so this can't block working agents.
+        let key = remoteFailures.count < policy.maxRemoteKeys || remoteFailures[address] != nil
+            ? address : Self.overflowKey
+        let recent = (remoteFailures[key] ?? []).filter { current - $0 < 60 } + [current]
+        remoteFailures[key] = recent
+        if recent.count > policy.remoteFailedAuthsPerMinute {
+            remoteLockedUntil[key] = current + policy.remoteFailedAuthLockout
+            remoteFailures[key] = nil
+        }
+    }
+
+    private static let overflowKey = "*"
+
+    /// Seconds until requests without a valid credential from `address` are accepted again.
+    /// Addresses the table had no room for share the overflow key's lockout.
+    func remoteAuthLockout(_ address: String) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = now()
+        let tracked = remoteFailures[address] != nil || remoteLockedUntil[address] != nil
+        let full = remoteFailures.filter { $0.value.last.map { current - $0 < 60 } ?? false }.count
+            >= policy.maxRemoteKeys
+        let until = max(remoteLockedUntil[address] ?? 0,
+                        !tracked && full ? remoteLockedUntil[Self.overflowKey] ?? 0 : 0)
+        let remaining = until - now()
+        return remaining > 0 ? max(1, Int(remaining.rounded(.up))) : nil
     }
 
     /// Seconds until unauthenticated requests are accepted again, or nil.
