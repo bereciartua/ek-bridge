@@ -67,7 +67,6 @@ struct SidebarView: View {
                         Text(String(localized: "Revoked (\(model.revokedClients.count))"))
                             .foregroundStyle(.secondary)
                     }
-                    .selectionDisabled()
                 }
             } header: {
                 HStack {

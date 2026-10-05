@@ -53,7 +53,7 @@ The [XPC design note](../Candidate/ARCHITECTURE.md) is historical source-only ex
 Version 3 (app 0.3.0) changes the registry in one step:
 
 - Only active clients count toward the limit of 32. Revoked records are kept for history, capped at 200; when a revoke goes past the cap, the oldest revoked records are dropped first (records revoked before version 3 have no revoke time and go first).
-- Clients can be renamed. The name isn't part of authorization, so renaming doesn't change the revision and requests in flight aren't affected. Names are unique among active clients, ignoring case and surrounding spaces, so `client.py --client NAME` is never ambiguous.
+- Clients can be renamed. The name isn't part of authorization, so renaming doesn't change the revision and requests in flight aren't affected. New and renamed clients must have a name no other active client uses, ignoring case and surrounding spaces. A registry upgraded from version 2 can still hold two active clients with one name; `client.py --client NAME` then refuses and lists their IDs, and the app's copied commands use the client ID instead.
 - Activity rows record the target calendar or list ID (same limits as grant targets: at most 512 bytes, no control characters).
 
 A version 2 file loads unchanged and is written as version 3 on the next change, after a one-time backup to `client-registry.v2.backup.json` (mode 0600). **An older build fails closed on a version 3 registry** ("client settings can't be read"). To roll back, quit the app and restore the backup over `client-registry.json`; changes made since the upgrade are lost.

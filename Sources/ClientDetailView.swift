@@ -139,13 +139,13 @@ struct ConnectSection: View {
                 Divider().padding(.leading, 16)
                 ConnectRow(label: String(localized: "Try it")) {
                     VStack(alignment: .leading, spacing: 2) {
-                        MonoText(text: ConnectCommand.scopeStatus(clientName: client.name), truncation: .tail)
+                        MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients), truncation: .tail)
                         Text(String(localized: "Run it in Terminal, in the eventkit-bridge folder."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } actions: {
-                    CopyButton(text: ConnectCommand.scopeStatus(clientName: client.name),
+                    CopyButton(text: ConnectCommand.scopeStatus(for: client, among: model.clients),
                                title: String(localized: "Copy Command"),
                                help: String(localized: "Copy a command that checks this client's access"))
                 }

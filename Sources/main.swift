@@ -69,8 +69,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard model?.hasUnsavedChanges == true else { return .terminateNow }
-        model.confirmUnsaved({ sender.reply(toApplicationShouldTerminate: true) },
-                             cancelled: { sender.reply(toApplicationShouldTerminate: false) })
+        // The prompt can finish synchronously (an app-modal alert), so reply
+        // only after this method has returned .terminateLater.
+        model.confirmUnsaved({ DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } },
+                             cancelled: { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: false) } })
         return .terminateLater
     }
 

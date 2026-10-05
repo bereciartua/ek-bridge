@@ -232,16 +232,18 @@ final class StatusHeaderView: NSView {
     private let title = NSTextField(labelWithString: AppIdentity.displayName)
     private let subtitle = NSTextField(wrappingLabelWithString: "")
     private let toggle = NSSwitch()
+    private var widthConstraint: NSLayoutConstraint!
+    static let width: CGFloat = 360
 
     init(model: BridgeAppModel, onToggle: @escaping (Bool) -> Void) {
         self.model = model
         self.onToggle = onToggle
-        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 54))
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 54))
         title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
         subtitle.font = .systemFont(ofSize: NSFont.smallSystemFontSize + 1)
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 2
-        subtitle.preferredMaxLayoutWidth = 240
+        subtitle.preferredMaxLayoutWidth = Self.width - 110
         toggle.target = self
         toggle.action = #selector(toggled)
         toggle.setAccessibilityLabel(String(localized: "Bridge"))
@@ -251,6 +253,7 @@ final class StatusHeaderView: NSView {
         labels.spacing = 1
         let row = NSStackView(views: [labels, toggle])
         row.orientation = .horizontal
+        row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 12
         row.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
@@ -263,8 +266,12 @@ final class StatusHeaderView: NSView {
             row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor),
             row.bottomAnchor.constraint(equalTo: bottomAnchor),
-            widthAnchor.constraint(equalToConstant: 320),
         ])
+        // Menus don't stretch item views, so the header sets the menu's width:
+        // wide enough for every standard item, with the switch at the edge.
+        widthConstraint = widthAnchor.constraint(equalToConstant: Self.width)
+        widthConstraint.isActive = true
+
         update()
     }
 
@@ -276,7 +283,7 @@ final class StatusHeaderView: NSView {
         toggle.isEnabled = model.policyStoreAvailable || model.bridge.isOn
         setAccessibilityElement(false)
         layoutSubtreeIfNeeded()
-        setFrameSize(NSSize(width: 320, height: fittingSize.height))
+        setFrameSize(NSSize(width: frame.width, height: fittingSize.height))
     }
 
     @objc private func toggled() {

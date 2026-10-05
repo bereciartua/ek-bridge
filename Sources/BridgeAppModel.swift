@@ -610,7 +610,12 @@ final class BridgeAppModel {
     }
 
     private func confirmRotate(_ client: ClientView) {
-        let fileStatus = keyFileStatus(client.id)
+        var fileStatus = keyFileStatus(client.id)
+        // Check before changing the registry: a failed file write after
+        // rotating would revoke the client.
+        if fileStatus == .present, case .failure = services.credentialFiles.canReplace(clientID: client.id) {
+            fileStatus = .unsafe
+        }
         if fileStatus == .unsafe {
             showBanner(Banner(kind: .warning, title: String(localized: "The key file isn't safe to replace."),
                               message: String(localized: "Check its permissions in Finder, or revoke this client and create a new one."),
@@ -768,6 +773,12 @@ final class BridgeAppModel {
             if let banner, banner.kind == .error { self.banner = nil }
             announce(String(localized: "Saved. Changes apply to the next request."))
             return true
+        case .failure(.unavailable):
+            // The registry stops all access after a write failure until the app restarts.
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't save."),
+                              message: String(localized: "Client settings can't be written, so nothing was changed and clients can't connect. Quit and reopen the app, then make the changes again."),
+                              code: ClientRegistryError.unavailable.rawValue))
+            return false
         case .failure(let error):
             showBanner(Banner(kind: .error, title: String(localized: "Couldn't save."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
@@ -853,7 +864,7 @@ final class BridgeAppModel {
 
     func copyTestCommand() {
         guard let client = SetupChecklist.focusClient(checklistInput) else { return }
-        Pasteboard.copy(ConnectCommand.scopeStatus(clientName: client.name))
+        Pasteboard.copy(ConnectCommand.scopeStatus(for: client, among: clients))
         waitingForTestRequest = true
     }
 

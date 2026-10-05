@@ -244,6 +244,14 @@ struct AppPresentationTests {
         precondition(RelativeTime.ago(noonYesterday, now: lateToday) == "Yesterday")
         precondition(ConnectCommand.scopeStatus(clientName: "Claude Code") ==
                      #"python3 client.py scope_status --client "Claude Code""#)
+        let twinA = ClientView(id: "a", name: "Twin", revoked: false, grants: [])
+        let twinB = ClientView(id: "b", name: "twin ", revoked: false, grants: [])
+        let gone = ClientView(id: "c", name: "Solo", revoked: true, grants: [])
+        let solo = ClientView(id: "d", name: "Solo", revoked: false, grants: [])
+        precondition(ConnectCommand.scopeStatus(for: twinA, among: [twinA, twinB]) ==
+                     "python3 client.py scope_status --client a", "ambiguous names use the ID")
+        precondition(ConnectCommand.scopeStatus(for: solo, among: [twinA, gone, solo]) ==
+                     #"python3 client.py scope_status --client "Solo""#)
         precondition(ConnectCommand.shellQuoted("It's $HOME") == #"'It'\''s $HOME'"#)
         precondition(ConnectCommand.shellQuoted("/Users/x/Library/Application Support/k.json") ==
                      #""/Users/x/Library/Application Support/k.json""#)

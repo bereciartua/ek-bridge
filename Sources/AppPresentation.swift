@@ -415,6 +415,19 @@ enum ConnectCommand {
         "python3 client.py scope_status --client \(shellQuoted(clientName))"
     }
 
+    /// Uses the name when it picks exactly one active client, else the ID.
+    static func scopeStatus(for client: ClientView, among clients: [ClientView]) -> String {
+        let key = client.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive], locale: nil)
+        let sameName = clients.filter {
+            !$0.revoked && $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive], locale: nil) == key
+        }
+        return sameName.count == 1
+            ? scopeStatus(clientName: client.name)
+            : "python3 client.py scope_status --client \(client.id)"
+    }
+
     static func scopeStatus(keyFile: String) -> String {
         "python3 client.py scope_status --credentials-file \(shellQuoted(keyFile))"
     }

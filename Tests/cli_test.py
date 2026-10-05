@@ -181,6 +181,10 @@ def main() -> int:
         f.write_registry(loose_registry, 3, [(f.alpha, "Alpha Tool", False)], mode=0o644)
         bad_registry = f.make_dir(f.tmp / "support-bad")
         f.write_private(bad_registry / "client-registry.json", '{"version": 9, "clients": []}')
+        # A version 2 registry can hold two active clients with one name.
+        twins = f.make_dir(f.tmp / "twins")
+        twin_a, twin_b = str(uuid.uuid4()), str(uuid.uuid4())
+        f.write_registry(twins, 2, [(twin_a, "Twin", False), (twin_b, "twin ", False)])
         v2_registry = f.make_dir(f.tmp / "support-v2")
         f.write_registry(v2_registry, 2, [(f.alpha, "Alpha Tool", False)])
         empty_root = f.make_dir(f.tmp / "empty-root")
@@ -281,6 +285,9 @@ def main() -> int:
             ("--client with version 2 registry", ["scope_status", "--client", "alpha tool"], 4,
              f"error: key file not found: {v2_registry / 'client-credentials' / (f.alpha + '.json')}",
              None, {"env": {"EVENTKIT_TEST_SUPPORT_DIR": v2_registry}}, None),
+            ("--client name shared by two active clients", ["scope_status", "--client", "twin"], 2,
+             f"error: more than one active client is named \"twin\". Use --client with one of these IDs: "
+             f"{twin_a}, {twin_b}", None, {"env": {"EVENTKIT_TEST_SUPPORT_DIR": twins}}, None),
             ("read timeout", ["read_reminders", *cred, "--params-file", str(params_ok)], 5,
              "error: no response after 10 s. Is the Mac awake and the bridge on?", None,
              {"env": {"EVENTKIT_TEST_BRIDGE_ROOT": idle_root}}, None),

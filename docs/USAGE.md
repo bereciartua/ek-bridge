@@ -36,7 +36,7 @@ Only active clients count toward the limit of 32. Revoked clients stay in the si
 
 ## Activity
 
-**Activity** lists the last 500 requests, newest first: time, client, request, calendar or list, and result. Filter by client, show only **Problems**, or search by client, request, result, code or calendar name. Select a row for the details: the exact code, why it happened, what to do, and a button that goes to the fix (for example **Open Claude Code ▸ Groceries** for a request that wasn't allowed). The sidebar and the menu header count problems you haven't seen yet.
+**Activity** lists recent requests, newest first (the registry keeps its last 500 rows; each request has a start row and a result row, so that's about 250 requests): time, client, request, calendar or list, and result. Filter by client, show only **Problems**, or search by client, request, result, code or calendar name. Select a row for the details: the exact code, why it happened, what to do, and a button that goes to the fix (for example **Open Claude Code ▸ Groceries** for a request that wasn't allowed). The sidebar and the menu header count problems you haven't seen yet.
 
 Activity stores the time, client ID, command, result and the target calendar or list **ID**. It never stores titles, parameters, item content or keys; calendar names are looked up when shown.
 

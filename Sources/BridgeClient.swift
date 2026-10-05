@@ -461,7 +461,14 @@ enum ClientLookup {
         if let uuid = UUID(uuidString: value) { return LocalPaths.credentialFile(clientID: uuid) }
         let active = try activeClients()
         let key = nameKey(value)
-        guard let match = active.first(where: { nameKey($0.name) == key }),
+        let matches = active.filter { nameKey($0.name) == key }
+        // Registries from before names were unique can hold two active clients
+        // with one name; never guess which key to use.
+        if matches.count > 1 {
+            throw CLIError.usage("more than one active client is named \"\(value)\". Use --client with one of these IDs: "
+                                 + matches.map(\.id).joined(separator: ", "))
+        }
+        guard let match = matches.first,
               let uuid = UUID(uuidString: match.id) else {
             let names = active.map(\.name)
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }

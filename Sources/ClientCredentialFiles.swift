@@ -41,6 +41,14 @@ final class ClientCredentialFiles {
     func status(clientID: String) -> CredentialFileStatus {
         guard let destination = url(for: clientID) else { return .unsafe }
         var info = stat()
+        // Folders that exist must be private and owned, or nothing is written.
+        for folder in [parent, directory] {
+            if lstat(folder.path, &info) != 0 {
+                if errno == ENOENT { return .missing }
+                return .unsafe
+            }
+            guard Self.safeDirectory(info) else { return .unsafe }
+        }
         if lstat(destination.path, &info) != 0 { return errno == ENOENT ? .missing : .unsafe }
         return Self.safe(info) ? .present : .unsafe
     }
