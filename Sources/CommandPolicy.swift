@@ -86,7 +86,21 @@ enum CommandPolicy {
                   ReminderDueChange.parse(parameters: p) != nil,
                   ReminderRecurrenceChange.parse(parameters: p) != nil
             else { return "invalid_parameters_or_target" }
-        case .completeReminder, .deleteReminder:
+        case .completeReminder:
+            guard keys(p, required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
+                       optional: ["recurrenceScope", "occurrenceDue", "occurrenceFingerprint"]),
+                  target(p, "listID", scope.reminderListID),
+                  item(p["itemID"]), version(p["expectedVersion"]),
+                  (p["recurrenceScope"] == nil ||
+                   ReminderRecurrenceScope.parse(p["recurrenceScope"]) != nil),
+                  ((p["recurrenceScope"] as? String == "occurrence" &&
+                    ReminderDueSpec.timestamp(p["occurrenceDue"]) != nil &&
+                    fingerprint(p["occurrenceFingerprint"])) ||
+                   (p["recurrenceScope"] as? String != "occurrence" &&
+                    p["occurrenceDue"] == nil && p["occurrenceFingerprint"] == nil)),
+                  WriteIdempotencyKey.timestamp(p["idempotencyKey"]) != nil
+            else { return "invalid_parameters_or_target" }
+        case .deleteReminder:
             guard keys(p, required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
                        optional: ["recurrenceScope"]),
                   target(p, "listID", scope.reminderListID),
@@ -131,6 +145,10 @@ enum CommandPolicy {
     private static func version(_ value: Any?) -> Bool {
         guard let value = value as? String else { return false }
         return !value.isEmpty && value.utf8.count <= 64
+    }
+    private static func fingerprint(_ value: Any?) -> Bool {
+        guard let value = value as? String, value.utf8.count == 64 else { return false }
+        return value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
     private static func uuid(_ value: Any?) -> Bool {
         guard let value = value as? String else { return false }

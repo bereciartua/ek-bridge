@@ -14,6 +14,7 @@ final class WriteJournal {
 
     private struct Entry: Codable {
         let digest: String
+        let semanticDigest: String?
         var result: Data?
     }
     private struct State: Codable {
@@ -69,7 +70,11 @@ final class WriteJournal {
         }
         guard let key = request.parameters["idempotencyKey"] as? String,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
-        state!.entries[key] = Entry(digest: digest, result: nil)
+        let semantic = semanticDigest(request)
+        if let semantic, state!.entries.values.contains(where: {
+            $0.semanticDigest == semantic
+        }) { return .reject("occurrence_already_requested") }
+        state!.entries[key] = Entry(digest: digest, semanticDigest: semantic, result: nil)
         state!.highWater = max(state!.highWater, now())
         guard persist() else { return .reject("journal_unavailable") }
         return .execute
@@ -110,6 +115,25 @@ final class WriteJournal {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    // Different transport keys cannot advance the same recurring occurrence
+    // twice. The due instant is part of the identity, so a later day's
+    // occurrence of the same series is a separate, deliberate request.
+    private func semanticDigest(_ request: BridgeRequest) -> String? {
+        guard request.command == .completeReminder,
+              request.parameters["recurrenceScope"] as? String == "occurrence",
+              let list = request.parameters["listID"] as? String,
+              let item = request.parameters["itemID"] as? String,
+              let due = request.parameters["occurrenceDue"] as? NSNumber,
+              CFGetTypeID(due) != CFBooleanGetTypeID(),
+              due.doubleValue.isFinite,
+              due.doubleValue.rounded() == due.doubleValue else { return nil }
+        let object: [String: Any] = ["listID": list, "itemID": item,
+                                     "occurrenceDue": due.int64Value]
+        guard let data = try? JSONSerialization.data(withJSONObject: object,
+                                                      options: [.sortedKeys]) else { return nil }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 

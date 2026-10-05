@@ -46,6 +46,15 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/RecurringReminderCompletion.swift" \
+    "$project_dir/Tests/RecurringReminderCompletionTests.swift" \
+    -o "$project_dir/build/recurring-completion-tests"
+"$project_dir/build/recurring-completion-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ReminderSchedule.swift" \
     "$project_dir/Tests/ReminderScheduleTests.swift" \

@@ -153,20 +153,46 @@ struct BridgeProtocolTests {
         precondition(MutationPolicy.reminderError(recurring: true, completed: false,
             completing: true) == "recurrence_scope_required")
         precondition(MutationPolicy.reminderError(recurring: true, completed: false,
-            completing: false, recurrenceScope: .occurrence) == "recurrence_unsupported")
+            completing: false, recurrenceScope: .occurrence) == "recurrence_delete_unsupported")
         precondition(MutationPolicy.reminderError(recurring: true, completed: false,
-            completing: false, recurrenceScope: .series) == "recurrence_unsupported")
+            completing: false) == "recurrence_delete_unsupported")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: true, recurrenceScope: .occurrence) == nil)
+        precondition(MutationPolicy.reminderError(recurring: true, completed: true,
+            completing: true, recurrenceScope: .occurrence) == "already_completed")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: true, recurrenceScope: .series) == "recurrence_series_unsupported")
+        precondition(MutationPolicy.reminderError(recurring: true, completed: false,
+            completing: false, recurrenceScope: .series) == "recurrence_delete_unsupported")
         precondition(MutationPolicy.reminderError(recurring: false, completed: false,
             completing: false, recurrenceScope: .series) == "recurrence_scope_not_applicable")
         let recurringAction: [String: Any] = [
             "listID": "approved-list", "itemID": "item", "expectedVersion": "version",
             "idempotencyKey": WriteIdempotencyKey.make(), "recurrenceScope": "occurrence",
+            "occurrenceDue": 1_893_456_000,
+            "occurrenceFingerprint": String(repeating: "a", count: 64),
         ]
         precondition(CommandPolicy.validate(request(.completeReminder, recurringAction),
                                             scope: scope) == nil)
         var invalidScope = recurringAction
         invalidScope["recurrenceScope"] = "all"
         precondition(CommandPolicy.validate(request(.deleteReminder, invalidScope),
+                                            scope: scope) != nil)
+        var missingDue = recurringAction
+        missingDue.removeValue(forKey: "occurrenceDue")
+        precondition(CommandPolicy.validate(request(.completeReminder, missingDue),
+                                            scope: scope) != nil)
+        var invalidDue = recurringAction
+        invalidDue["occurrenceDue"] = true
+        precondition(CommandPolicy.validate(request(.completeReminder, invalidDue),
+                                            scope: scope) != nil)
+        var invalidFingerprint = recurringAction
+        invalidFingerprint["occurrenceFingerprint"] = String(repeating: "A", count: 64)
+        precondition(CommandPolicy.validate(request(.completeReminder, invalidFingerprint),
+                                            scope: scope) != nil)
+        var seriesWithOccurrence = recurringAction
+        seriesWithOccurrence["recurrenceScope"] = "series"
+        precondition(CommandPolicy.validate(request(.completeReminder, seriesWithOccurrence),
                                             scope: scope) != nil)
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("eventkit-journal-test-\(UUID().uuidString)")

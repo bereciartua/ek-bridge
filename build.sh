@@ -37,6 +37,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ReminderSchedule.swift" \
+    "$project_dir/Sources/RecurringReminderCompletion.swift" \
     "$project_dir/Sources/TestCollections.swift" \
     "$project_dir/Sources/EventKitCommands.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
