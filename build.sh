@@ -45,6 +45,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/LocalBridge.swift" \
     "$project_dir/Sources/SyntheticTestMode.swift" \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
+    "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
     "$project_dir/Sources/SyntheticAllDayProbe.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
