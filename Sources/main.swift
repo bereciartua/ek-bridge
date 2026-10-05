@@ -270,7 +270,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         switch menuItem.action {
         case #selector(newClient(_:)): model.canCreateClient
         case #selector(saveAccess(_:)), #selector(revertAccess(_:)): model.hasUnsavedChanges
-        case #selector(showSetupChecklist(_:)): !model.showsSetupChecklist
+        case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
         default: true
         }
     }

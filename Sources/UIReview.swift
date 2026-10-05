@@ -16,6 +16,9 @@ import EventKit
 //   --ui-fresh                   start with no clients (setup checklist)
 //   --ui-calendar / --ui-reminders notDetermined|denied|writeOnly|restricted|fullAccess
 //   --ui-many-collections        60 calendars and lists
+//   --ui-long-names              a 60-character client and a 50-character calendar
+//   --ui-max-clients             32 active clients (New Client is disabled)
+//   --ui-max-activity            500 activity rows
 //   --ui-bridge-off              start with the bridge off
 @MainActor
 final class UIReview {
@@ -35,6 +38,7 @@ final class UIReview {
     var remindersStatus: EKAuthorizationStatus
     var bridgeOn: Bool
     let many: Bool
+    static var longNames: Bool { CommandLine.arguments.contains("--ui-long-names") }
     private var extraWindows = [MainWindowController]()
     private var extraReviews = [UIReview]()
 
@@ -103,7 +107,9 @@ final class UIReview {
             CollectionInfo(resource: .calendar, id: "cal-home", name: "Home", account: "iCloud", writable: true, color: color(0x1E88E5)),
             CollectionInfo(resource: .calendar, id: "cal-family", name: "Family", account: "iCloud", writable: true, color: color(0x34C759)),
             CollectionInfo(resource: .calendar, id: "cal-work", name: "Work", account: "iCloud", writable: true, color: color(0xFF9500)),
-            CollectionInfo(resource: .calendar, id: "cal-team", name: "Team calendar", account: "Google", writable: true, color: color(0xAF52DE)),
+            CollectionInfo(resource: .calendar, id: "cal-team",
+                           name: longNames ? "Team calendar for the quarterly planning offsite" : "Team calendar",
+                           account: "Google", writable: true, color: color(0xAF52DE)),
             CollectionInfo(resource: .calendar, id: "cal-holidays", name: "US Holidays", account: "Other", writable: false, color: color(0x8E8E93)),
             CollectionInfo(resource: .calendar, id: "cal-birthdays", name: "Birthdays", account: "Other", writable: false, color: color(0x8E8E93)),
             CollectionInfo(resource: .reminderList, id: "list-reminders", name: "Reminders", account: "iCloud", writable: true, color: color(0x1E88E5)),
@@ -139,7 +145,7 @@ final class UIReview {
         let now = Date()
         var clients = [[String: Any]]()
         let definitions: [(String, String, [[String: Any]])] = [
-            (Self.claudeID, "Claude Code", [
+            (Self.claudeID, Self.longNames ? "Claude Code on the work laptop, with a long descriptive name" : "Claude Code", [
                 grant("calendar", "cal-home", 1), grant("calendar", "cal-work", 7),
                 grant("reminderList", "list-errands", 23), grant("calendar", "cal-signed-out", 1)]),
             (Self.briefingID, "Morning briefing", [
@@ -153,6 +159,12 @@ final class UIReview {
             clients.append(["id": id, "name": name, "verifier": public_, "revoked": false,
                             "revision": 4, "grants": grants])
             _ = credentialFiles.saveNew(clientID: id, key: key)
+        }
+        if CommandLine.arguments.contains("--ui-max-clients") {
+            for index in 1...29 {
+                clients.append(["id": UUID().uuidString.lowercased(), "name": "Script \(index)",
+                                "verifier": verifier().0, "revoked": false, "revision": 1, "grants": []])
+            }
         }
         clients.append(["id": Self.revokedID, "name": "Old shell script", "verifier": "", "revoked": true,
                         "revision": 6, "grants": [],
@@ -203,6 +215,18 @@ final class UIReview {
                 activity.append(accepted)
             }
             activity.append(row)
+        }
+        if CommandLine.arguments.contains("--ui-max-activity") {
+            let commands = ["read_events", "read_reminders", "create_event", "update_reminder", "scope_status"]
+            let outcomes = ["success", "success", "success", "forbidden", "error:conflict", "error:scope_changed"]
+            activity = (0..<500).map { index in
+                var row: [String: Any] = [
+                    "at": now.addingTimeInterval(Double(index - 500) * 400).timeIntervalSinceReferenceDate,
+                    "clientID": [Self.claudeID, Self.briefingID, Self.obsidianID][index % 3],
+                    "command": commands[index % commands.count], "outcome": outcomes[index % outcomes.count]]
+                if index % 5 != 4 { row["targetID"] = index % 5 == 1 ? "list-errands" : "cal-work" }
+                return row
+            }
         }
         let state: [String: Any] = ["version": 3, "clients": clients, "activity": activity]
         let file = directory.appendingPathComponent("client-registry.json")

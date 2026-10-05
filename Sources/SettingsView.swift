@@ -141,9 +141,11 @@ struct SettingsView: View {
                 }
                 RowDivider()
                 SettingsRow(title: String(localized: "Setup checklist"),
-                            caption: String(localized: "The first-run steps on Overview.")) {
+                            caption: model.canShowSetupAgain || model.showsSetupChecklist
+                                ? String(localized: "The first-run steps on Overview.")
+                                : String(localized: "Setup is complete.")) {
                     Button(String(localized: "Show Setup Checklist")) { model.showSetupAgain() }
-                        .disabled(model.showsSetupChecklist)
+                        .disabled(!model.canShowSetupAgain)
                 }
             }
         }

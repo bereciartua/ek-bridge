@@ -64,7 +64,15 @@ struct ActivityView: View {
                                       width: wide && selected != nil ? proxy.size.width - 251 : proxy.size.width)
                             .overlay {
                                 if rows.isEmpty {
-                                    ContentUnavailableView.search(text: model.activitySearch)
+                                    if model.activitySearch.isEmpty {
+                                        ContentUnavailableView(
+                                            model.activityProblemsOnly ? String(localized: "No problems")
+                                                                       : String(localized: "No requests"),
+                                            systemImage: model.activityProblemsOnly ? "checkmark.circle" : "list.bullet",
+                                            description: Text(String(localized: "Nothing matches this filter.")))
+                                    } else {
+                                        ContentUnavailableView.search(text: model.activitySearch)
+                                    }
                                 }
                             }
                         if let selected {

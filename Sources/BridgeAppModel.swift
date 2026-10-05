@@ -828,6 +828,11 @@ final class BridgeAppModel {
             (!setupHidden && !setupCompleted && !SetupChecklist.isComplete(checklistInput)))
     }
 
+    /// Settings and Help can bring the checklist back while steps are left.
+    var canShowSetupAgain: Bool {
+        !showsSetupChecklist && policyStoreAvailable && !SetupChecklist.isComplete(checklistInput)
+    }
+
     func hideSetup() {
         setupHidden = true
         services.defaults.set(true, forKey: Keys.setupHidden)
