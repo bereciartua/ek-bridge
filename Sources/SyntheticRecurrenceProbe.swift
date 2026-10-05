@@ -71,16 +71,18 @@ enum SyntheticRecurrenceProbe {
                   let toDelete = before.first(where: { $0.title == deletion.title }),
                   before.allSatisfy({ $0.calendar.calendarIdentifier == id &&
                       $0.title.hasPrefix(marker) && $0.recurrenceRules?.count == 1 }) else {
-                report("precondition_failed", observations)
+                observations["failure"] = "precondition_failed"
                 cleanup(store, id: id, result: &observations)
+                report("probe_failed", observations)
                 return
             }
             observations["before"] = before.map(snapshot)
             toComplete.isCompleted = true
             try store.save(toComplete, commit: true)
             guard let afterComplete = reminders(store, list) else {
-                report("completion_readback_failed", observations)
+                observations["failure"] = "completion_readback_failed"
                 cleanup(store, id: id, result: &observations)
+                report("probe_failed", observations)
                 return
             }
             observations["afterComplete"] = afterComplete.map(snapshot)
@@ -89,14 +91,16 @@ enum SyntheticRecurrenceProbe {
                 $0.calendarItemIdentifier == toDelete.calendarItemIdentifier &&
                 $0.title == deletion.title && $0.calendar.calendarIdentifier == id
             }) else {
-                report("deletion_target_missing", observations)
+                observations["failure"] = "deletion_target_missing"
                 cleanup(store, id: id, result: &observations)
+                report("probe_failed", observations)
                 return
             }
             try store.remove(deleteAgain, commit: true)
             guard let afterDelete = reminders(store, list) else {
-                report("deletion_readback_failed", observations)
+                observations["failure"] = "deletion_readback_failed"
                 cleanup(store, id: id, result: &observations)
+                report("probe_failed", observations)
                 return
             }
             observations["afterDelete"] = afterDelete.map(snapshot)
@@ -125,7 +129,7 @@ enum SyntheticRecurrenceProbe {
         guard let list = store.calendars(for: .reminder).first(where: {
                   $0.calendarIdentifier == id && $0.title == name
               }),
-              let rows = reminders(store, list), rows.count <= 10,
+              let rows = reminders(store, list),
               rows.allSatisfy({ $0.calendar.calendarIdentifier == id &&
                   $0.title.hasPrefix(marker) }) else {
             result["cleanup"] = "refused_identity_or_contents_mismatch"
