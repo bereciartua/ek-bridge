@@ -111,7 +111,7 @@ enum SyntheticPhoneSyncProbe {
         }
         let issued: (id: String, key: String)
         switch registry.createClient(name: clientName) {
-        case .success(let value): issued = value
+        case .success(let value): issued = (value.id, value.signingKey!)
         case .failure: report("client_setup_create_failed"); return
         }
         let credentials = ClientCredentialFiles()

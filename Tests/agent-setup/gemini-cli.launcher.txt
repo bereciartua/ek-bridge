@@ -1,0 +1,1 @@
+{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"timeout":60000}}}

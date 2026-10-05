@@ -59,6 +59,9 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Sources/LocalBridge.swift" \
+    "$project_dir/Sources/SafePath.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
     "$project_dir/Sources/SyntheticTestMode.swift" \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
     "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
@@ -70,6 +73,7 @@ xcrun swiftc -sdk "$sdk_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$output_dir/bridge-client"
 

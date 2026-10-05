@@ -11,7 +11,7 @@ struct ClientRegistryTests {
         precondition(registry.clients()?.isEmpty == true)
         let issued = value(registry.createClient(name: "Synthetic Client"))
         let id = issued.id
-        let key = issued.key
+        let key = issued.signingKey!
         precondition(key.hasPrefix("ekb_v1_"))
         precondition(registry.clients()?.first?.grants.isEmpty == true)
         let session = "session-\(UUID().uuidString)"
@@ -205,7 +205,7 @@ struct ClientRegistryTests {
         let upgraded = ClientRegistry(directory: legacyDirectory)
         precondition(upgraded.clients()?.count == 2)
         precondition(upgraded.activity()?.first?.targetID == nil)
-        let backup = legacyDirectory.appendingPathComponent(ClientRegistry.backupFileName)
+        let backup = legacyDirectory.appendingPathComponent(ClientRegistry.backupFileName(version: 2))
         precondition(!FileManager.default.fileExists(atPath: backup.path))
         let legacyGrants = upgraded.clients()!.first { $0.name == "Legacy Tool" }!.grants
         precondition(legacyGrants.map(\.mask) == [2, 31])
@@ -219,7 +219,7 @@ struct ClientRegistryTests {
         precondition(backupMode == 0o600)
         let rewritten = try JSONSerialization.jsonObject(with: Data(contentsOf:
             legacyDirectory.appendingPathComponent("client-registry.json"))) as! [String: Any]
-        precondition(rewritten["version"] as? Int == 3)
+        precondition(rewritten["version"] as? Int == ClientRegistry.currentVersion)
         let reloaded = ClientRegistry(directory: legacyDirectory)
         precondition(reloaded.clients()?.first { $0.name == "Legacy Tool" }?.grants == legacyGrants)
         success(reloaded.revoke(clientID: extra.id))
@@ -354,7 +354,8 @@ struct ClientRegistryTests {
         // An unknown version and an invalid activity target fail closed.
         let futureDirectory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: futureDirectory) }
-        try writeRegistry(["version": 4, "clients": [], "activity": []], to: futureDirectory)
+        try writeRegistry(["version": ClientRegistry.currentVersion + 1, "clients": [], "activity": []],
+                          to: futureDirectory)
         precondition(ClientRegistry(directory: futureDirectory).clients() == nil)
         let badTargetDirectory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: badTargetDirectory) }
@@ -400,6 +401,18 @@ struct ClientRegistryTests {
         switch result {
         case .success: preconditionFailure("expected \(expected)")
         case .failure(let actual): precondition(actual == expected)
+        }
+    }
+}
+
+// The CLI path: authenticate the signature, then the shared grant check.
+extension ClientRegistry {
+    func authorize(clientID: String, signature: Data, signedPayload: Data,
+                   request: BridgeRequest) -> Result<AuthorizedClientCall, ClientRegistryError> {
+        switch authenticateSignature(clientID: clientID, signature: signature,
+                                     signedPayload: signedPayload, command: request.command) {
+        case .success(let id): return authorize(clientID: id, request: request, origin: .cli)
+        case .failure(let error): return .failure(error)
         }
     }
 }

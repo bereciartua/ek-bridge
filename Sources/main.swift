@@ -30,6 +30,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     private let review = UIReview()
     #else
     private lazy var clientRegistry = ClientRegistry()
+    private let rateLimiter = RateLimiter()
+    private lazy var pipeline = RequestPipeline(
+        registry: clientRegistry, commands: commands,
+        collections: EventKitCollectionSource(store: store),
+        limiter: rateLimiter,
+        bridgeActive: { [weak self] in self?.localBridge?.active == true },
+        didRecord: { [weak self] in self?.model.scheduleRefresh() })
     #endif
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
@@ -177,76 +184,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
 
     private func handleClient(_ envelope: ClientBridgeEnvelope,
                               completion: @escaping ([String: Any]) -> Void) {
-        let request = envelope.request
-        let checked = clientRegistry.authorize(
+        switch clientRegistry.authenticateSignature(
             clientID: envelope.clientID, signature: envelope.signature,
-            signedPayload: envelope.signedPayload, request: request)
-        guard case .success(let call) = checked else {
-            let error: String
-            if case .failure(let reason) = checked { error = reason.rawValue }
-            else { error = "unauthorized" }
+            signedPayload: envelope.signedPayload, command: envelope.request.command) {
+        case .success(let id):
+            pipeline.handle(envelope.request, clientID: id, origin: .cli, completion: completion)
+        case .failure(let error):
             model.scheduleRefresh()
-            completion(["error": error])
-            return
+            completion(["error": error.rawValue])
         }
-        let selected = BridgeScope(
-            calendarID: call.grant?.resource == .calendar ? call.targetID : nil,
-            reminderListID: call.grant?.resource == .reminderList ? call.targetID : nil,
-            generation: call.revision)
-        if let error = CommandPolicy.validate(request, scope: selected) {
-            finishClient(call, ["error": error], completion)
-            return
-        }
-        guard clientRegistry.stillAuthorized(call), localBridge?.active == true else {
-            finishClient(call, ["error": "scope_changed"], completion)
-            return
-        }
-        switch request.command {
-        case .scopeStatus, .calendarCount, .reminderListCount:
-            guard let client = clientRegistry.clients()?.first(where: { $0.id == call.clientID }) else {
-                finishClient(call, ["error": "client_unavailable"], completion)
-                return
-            }
-            let grants = client.grants
-            if request.command == .scopeStatus {
-                let rows = grants.map { grant -> [String: Any] in
-                    ["resource": grant.resource.rawValue,
-                     "targetID": grant.targetID, "mask": grant.mask]
-                }
-                finishClient(call, ["grants": rows], completion)
-            } else {
-                let type: EKEntityType = request.command == .calendarCount ? .event : .reminder
-                guard EKEventStore.authorizationStatus(for: type) == .fullAccess else {
-                    finishClient(call, ["error": "full_access_required"], completion)
-                    return
-                }
-                let resource: ClientResource = type == .event ? .calendar : .reminderList
-                let allowed = Set(grants.filter { $0.resource == resource }.map(\.targetID))
-                let count = store.calendars(for: type).filter {
-                    allowed.contains($0.calendarIdentifier)
-                }.count
-                finishClient(call, ["count": count], completion)
-            }
-        default:
-            commands.runAuthorized(request, selected: selected,
-                                   stillAuthorized: { [weak self] in
-                guard let self else { return false }
-                return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
-            }) { [weak self] value in
-                self?.finishClient(call, value, completion)
-            }
-        }
-    }
-
-    private func finishClient(_ call: AuthorizedClientCall, _ value: [String: Any],
-                              _ completion: ([String: Any]) -> Void) {
-        let outcome = (value["error"] as? String).map { "error:\($0)" } ?? "success"
-        guard clientRegistry.recordResult(call, outcome: outcome) else {
-            completion(["error": "activity_unavailable"])
-            return
-        }
-        model.scheduleRefresh()
-        completion(value)
     }
     #endif
 

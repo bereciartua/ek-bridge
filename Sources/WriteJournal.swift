@@ -5,6 +5,9 @@ import Foundation
 // A write is recorded as pending before EventKit is called. If the app stops
 // between EventKit and the response, retrying cannot silently create twice.
 // Pending entries require manual reconciliation. No item titles are stored.
+//
+// Capacity is shared, so each client also has its own quota: one busy agent
+// can fill its quota, but never block other clients' writes.
 final class WriteJournal {
     enum Decision {
         case execute
@@ -16,6 +19,9 @@ final class WriteJournal {
         let digest: String
         let semanticDigest: String?
         var result: Data?
+        // Nil for entries written before per-client quotas; those count only
+        // toward the total. Older builds ignore the field.
+        var clientID: String? = nil
     }
     private struct State: Codable {
         var version = 3
@@ -26,21 +32,28 @@ final class WriteJournal {
     private let directory: URL
     private let file: URL
     private let now: () -> TimeInterval
+    static let defaultMaxEntries = 10_000
+    static let defaultMaxEntriesPerClient = 2_000
+    static let maxFileBytes = 8_000_000
+
     private let maxEntries: Int
+    private let maxEntriesPerClient: Int
     private var state: State?
 
     init(directory override: URL? = nil,
-         maxEntries: Int = 1_000,
+         maxEntries: Int = WriteJournal.defaultMaxEntries,
+         maxEntriesPerClient: Int = WriteJournal.defaultMaxEntriesPerClient,
          now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
         directory = override ?? support.appendingPathComponent("EventKitBridge", isDirectory: true)
         file = directory.appendingPathComponent("write-journal.json")
         self.maxEntries = maxEntries
+        self.maxEntriesPerClient = maxEntriesPerClient
         self.now = now
     }
 
-    func inspect(_ request: BridgeRequest) -> Decision {
+    func inspect(_ request: BridgeRequest, clientID: String? = nil) -> Decision {
         guard let key = request.parameters["idempotencyKey"] as? String,
               WriteIdempotencyKey.timestamp(key) != nil,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
@@ -62,11 +75,13 @@ final class WriteJournal {
             $0.semanticDigest == semantic
         }) { return .reject("occurrence_already_requested") }
         guard state!.entries.count < maxEntries else { return .reject("journal_full") }
+        if let clientID, state!.entries.values.lazy.filter({ $0.clientID == clientID })
+            .count >= maxEntriesPerClient { return .reject("journal_full") }
         return .execute
     }
 
-    func begin(_ request: BridgeRequest) -> Decision {
-        switch inspect(request) {
+    func begin(_ request: BridgeRequest, clientID: String? = nil) -> Decision {
+        switch inspect(request, clientID: clientID) {
         case .repeatResult(let result): return .repeatResult(result)
         case .reject(let error): return .reject(error)
         case .execute: break
@@ -77,7 +92,8 @@ final class WriteJournal {
         if let semantic, state!.entries.values.contains(where: {
             $0.semanticDigest == semantic
         }) { return .reject("occurrence_already_requested") }
-        state!.entries[key] = Entry(digest: digest, semanticDigest: semantic, result: nil)
+        state!.entries[key] = Entry(digest: digest, semanticDigest: semantic, result: nil,
+                                    clientID: clientID)
         state!.highWater = max(state!.highWater, now())
         guard persist() else { return .reject("journal_unavailable") }
         return .execute
@@ -169,9 +185,9 @@ final class WriteJournal {
             var info = stat()
             guard fstat(fd, &info) == 0, info.st_uid == getuid(),
                   info.st_mode & S_IFMT == S_IFREG,
-                  info.st_mode & 0o077 == 0, info.st_size <= 1_000_000 else { return false }
+                  info.st_mode & 0o077 == 0, info.st_size <= Self.maxFileBytes else { return false }
             let data = try FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-                .read(upToCount: 1_000_001) ?? Data()
+                .read(upToCount: Self.maxFileBytes + 1) ?? Data()
             if let decoded = try? JSONDecoder().decode(State.self, from: data) {
                 guard decoded.version == 3, decoded.highWater.isFinite,
                       decoded.highWater >= 0, decoded.entries.count <= maxEntries
@@ -191,7 +207,7 @@ final class WriteJournal {
 
     private func persist() -> Bool {
         guard let state, let data = try? JSONEncoder().encode(state),
-              data.count <= 1_000_000 else { return false }
+              data.count <= Self.maxFileBytes else { return false }
         let temporary = directory.appendingPathComponent(".tmp-\(UUID().uuidString)")
         let fd = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { return false }

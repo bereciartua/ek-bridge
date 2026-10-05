@@ -5,6 +5,7 @@ enum BridgeCommand: String, CaseIterable {
     case calendarCount = "calendar_count"
     case reminderListCount = "reminder_list_count"
     case scopeStatus = "scope_status"
+    case listCollections = "list_collections"
     case readEvents = "read_events"
     case readReminders = "read_reminders"
     case createEvent = "create_event"
@@ -22,6 +23,16 @@ enum BridgeCommand: String, CaseIterable {
         default: false
         }
     }
+
+    /// Commands about the client itself rather than one calendar or list.
+    /// They need only an enrolled client and are never checked against a grant.
+    var isClientLevel: Bool {
+        switch self {
+        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus,
+             .listCollections: true
+        default: false
+        }
+    }
 }
 
 // Accepted parameter keys per command. CommandPolicy.validate checks keys
@@ -36,7 +47,8 @@ struct CommandParameterKeys: Equatable {
 extension BridgeCommand {
     var parameterKeys: CommandParameterKeys {
         switch self {
-        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
+        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus,
+             .listCollections:
             CommandParameterKeys(required: [], optional: [])
         case .readEvents:
             CommandParameterKeys(required: ["calendarID", "start", "end", "limit"], optional: [])

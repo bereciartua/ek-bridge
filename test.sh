@@ -78,6 +78,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
@@ -89,6 +90,7 @@ xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
@@ -100,6 +102,7 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -137,6 +140,35 @@ codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.impostor \
     "$project_dir/build/test-peer-bad"
 "$project_dir/build/signed-xpc-boundary-tests" \
     "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/MCP/HTTPMessage.swift" \
+    "$project_dir/Tests/HTTPMessageTests.swift" \
+    -o "$project_dir/build/http-message-tests"
+"$project_dir/build/http-message-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/MCP/MCPTime.swift" \
+    "$project_dir/Tests/MCPTimeTests.swift" \
+    -o "$project_dir/build/mcp-time-tests"
+"$project_dir/build/mcp-time-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
+    "$project_dir/Tests/AgentSetupTests.swift" \
+    -o "$project_dir/build/agent-setup-tests"
+"$project_dir/build/agent-setup-tests" "$project_dir/Tests/agent-setup"
 # Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
 # fake bridge and key files in temporary directories.
 xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
@@ -145,6 +177,7 @@ xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$project_dir/build/bridge-client-test"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/cli_test.py" \

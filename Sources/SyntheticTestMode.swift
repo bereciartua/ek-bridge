@@ -112,7 +112,7 @@ enum SyntheticTestMode {
         }
         let issued: (id: String, key: String)
         switch registry.createClient(name: clientName) {
-        case .success(let value): issued = value
+        case .success(let value): issued = (value.id, value.signingKey!)
         case .failure(let error):
             report("client_creation_failed", ["detail": error.rawValue]); return
         }

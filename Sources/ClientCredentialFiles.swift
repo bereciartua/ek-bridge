@@ -8,6 +8,18 @@ enum CredentialFileStatus: Equatable {
     case unsafe
 }
 
+/// The two secrets a client can hold, each in its own private file.
+enum CredentialKind: Hashable, CaseIterable {
+    /// The CLI's Ed25519 key: `<uuid>.json`, `{"clientID","key":"ekb_v1_…"}`.
+    case signingKey
+    /// The MCP bearer token: `<uuid>.mcp-token`, the bare token with no newline,
+    /// so agents can read it directly (`${file:…}`, `$(cat …)`, the launcher).
+    case mcpToken
+
+    var fileSuffix: String { self == .signingKey ? ".json" : ".mcp-token" }
+    var maxBytes: Int { self == .signingKey ? 512 : 128 }
+}
+
 enum CredentialFileError: String, Error {
     case invalidCredential
     case unsafeDirectory
@@ -18,7 +30,7 @@ enum CredentialFileError: String, Error {
     case removeFailed
 }
 
-// Private signing credentials live outside the server's public-verifier JSON.
+// Private credentials live outside the registry, which stores only verifiers.
 // The path is fixed by client UUID; no caller-supplied path enters file APIs.
 // This protects against other UIDs, not a malicious process with the same UID.
 final class ClientCredentialFiles {
@@ -32,14 +44,14 @@ final class ClientCredentialFiles {
         directory = parent.appendingPathComponent("client-credentials", isDirectory: true)
     }
 
-    func url(for clientID: String) -> URL? {
+    func url(for clientID: String, kind: CredentialKind = .signingKey) -> URL? {
         guard let uuid = UUID(uuidString: clientID) else { return nil }
-        return directory.appendingPathComponent(uuid.uuidString.lowercased() + ".json")
+        return directory.appendingPathComponent(uuid.uuidString.lowercased() + kind.fileSuffix)
     }
 
-    /// Whether the key file exists and is safe, without reading it.
-    func status(clientID: String) -> CredentialFileStatus {
-        guard let destination = url(for: clientID) else { return .unsafe }
+    /// Whether the file exists and is safe, without reading it.
+    func status(clientID: String, kind: CredentialKind = .signingKey) -> CredentialFileStatus {
+        guard let destination = url(for: clientID, kind: kind) else { return .unsafe }
         var info = stat()
         // Folders that exist must be private and owned, or nothing is written.
         for folder in [parent, directory] {
@@ -50,15 +62,18 @@ final class ClientCredentialFiles {
             guard Self.safeDirectory(info) else { return .unsafe }
         }
         if lstat(destination.path, &info) != 0 { return errno == ENOENT ? .missing : .unsafe }
-        return Self.safe(info) ? .present : .unsafe
+        return Self.safe(info, kind: kind) ? .present : .unsafe
     }
 
-    func canReplace(clientID: String) -> Result<URL, CredentialFileError> {
-        guard let destination = url(for: clientID) else { return .failure(.invalidCredential) }
+    func canReplace(clientID: String, kind: CredentialKind = .signingKey)
+        -> Result<URL, CredentialFileError> {
+        guard let destination = url(for: clientID, kind: kind) else {
+            return .failure(.invalidCredential)
+        }
         do {
             let fd = try openDirectory(create: false)
             defer { close(fd) }
-            guard Self.safeFile(name: destination.lastPathComponent, in: fd) else {
+            guard Self.safeFile(name: destination.lastPathComponent, kind: kind, in: fd) else {
                 return .failure(.unsafeExistingFile)
             }
             return .success(destination)
@@ -67,15 +82,26 @@ final class ClientCredentialFiles {
     }
 
     func saveNew(clientID: String, key: String) -> Result<URL, CredentialFileError> {
-        write(clientID: clientID, key: key, replacing: false)
+        write(clientID: clientID, kind: .signingKey, secret: key, replacing: false)
     }
 
     func replace(clientID: String, key: String) -> Result<URL, CredentialFileError> {
-        write(clientID: clientID, key: key, replacing: true)
+        write(clientID: clientID, kind: .signingKey, secret: key, replacing: true)
     }
 
-    func remove(clientID: String) -> Result<Void, CredentialFileError> {
-        guard let destination = url(for: clientID) else { return .failure(.invalidCredential) }
+    func saveNew(clientID: String, token: String) -> Result<URL, CredentialFileError> {
+        write(clientID: clientID, kind: .mcpToken, secret: token, replacing: false)
+    }
+
+    func replace(clientID: String, token: String) -> Result<URL, CredentialFileError> {
+        write(clientID: clientID, kind: .mcpToken, secret: token, replacing: true)
+    }
+
+    func remove(clientID: String, kind: CredentialKind = .signingKey)
+        -> Result<Void, CredentialFileError> {
+        guard let destination = url(for: clientID, kind: kind) else {
+            return .failure(.invalidCredential)
+        }
         var directoryInfo = stat()
         if lstat(directory.path, &directoryInfo) != 0 && errno == ENOENT {
             guard lstat(parent.path, &directoryInfo) == 0,
@@ -90,7 +116,7 @@ final class ClientCredentialFiles {
             if fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
                 return errno == ENOENT ? .success(()) : .failure(.removeFailed)
             }
-            guard Self.safe(info) else { return .failure(.unsafeExistingFile) }
+            guard Self.safe(info, kind: kind) else { return .failure(.unsafeExistingFile) }
             guard unlinkat(fd, name, 0) == 0, fsync(fd) == 0 else {
                 return .failure(.removeFailed)
             }
@@ -99,13 +125,11 @@ final class ClientCredentialFiles {
         catch { return .failure(.unsafeDirectory) }
     }
 
-    private func write(clientID: String, key: String, replacing: Bool)
+    private func write(clientID: String, kind: CredentialKind, secret: String, replacing: Bool)
         -> Result<URL, CredentialFileError> {
-        guard let destination = url(for: clientID), Self.validKey(key),
-              let data = try? JSONSerialization.data(withJSONObject: [
-                "clientID": UUID(uuidString: clientID)!.uuidString.lowercased(),
-                "key": key,
-              ], options: [.sortedKeys]), data.count <= 512 else {
+        guard let destination = url(for: clientID, kind: kind),
+              let data = Self.contents(clientID: clientID, kind: kind, secret: secret),
+              data.count <= kind.maxBytes else {
             return .failure(.invalidCredential)
         }
         do {
@@ -115,7 +139,7 @@ final class ClientCredentialFiles {
             var info = stat()
             let exists = fstatat(directoryFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0
             if replacing {
-                guard exists, Self.safe(info) else { return .failure(.unsafeExistingFile) }
+                guard exists, Self.safe(info, kind: kind) else { return .failure(.unsafeExistingFile) }
             } else if exists {
                 return .failure(.alreadyExists)
             } else if errno != ENOENT {
@@ -176,18 +200,34 @@ final class ClientCredentialFiles {
             info.st_mode & 0o077 == 0
     }
 
-    private static func safeFile(name: String, in directoryFD: Int32) -> Bool {
+    private static func safeFile(name: String, kind: CredentialKind, in directoryFD: Int32) -> Bool {
         var info = stat()
-        return fstatat(directoryFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 && safe(info)
+        return fstatat(directoryFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 && safe(info, kind: kind)
     }
 
-    private static func safe(_ info: stat) -> Bool {
+    private static func safe(_ info: stat, kind: CredentialKind) -> Bool {
         info.st_mode & S_IFMT == S_IFREG && info.st_uid == getuid() &&
-            info.st_mode & 0o777 == 0o600 && info.st_size <= 512
+            info.st_mode & 0o777 == 0o600 && info.st_size <= kind.maxBytes
     }
 
-    private static func validKey(_ key: String) -> Bool {
-        key.hasPrefix("ekb_v1_") && key.utf8.count == 71 &&
-            key.dropFirst(7).utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    private static func contents(clientID: String, kind: CredentialKind, secret: String) -> Data? {
+        switch kind {
+        case .signingKey:
+            guard validSecret(secret, prefix: "ekb_v1_") else { return nil }
+            return try? JSONSerialization.data(withJSONObject: [
+                "clientID": UUID(uuidString: clientID)!.uuidString.lowercased(),
+                "key": secret,
+            ], options: [.sortedKeys])
+        case .mcpToken:
+            guard validSecret(secret, prefix: "ekb_mcp_v1_") else { return nil }
+            return Data(secret.utf8)
+        }
+    }
+
+    private static func validSecret(_ secret: String, prefix: String) -> Bool {
+        secret.hasPrefix(prefix) && secret.utf8.count == prefix.utf8.count + 64 &&
+            secret.utf8.dropFirst(prefix.utf8.count).allSatisfy {
+                (48...57).contains($0) || (97...102).contains($0)
+            }
     }
 }

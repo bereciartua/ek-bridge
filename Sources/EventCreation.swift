@@ -26,10 +26,13 @@ enum EventCreationDetails {
         calendar.timeZone = zone
         let first = Date(timeIntervalSince1970: start)
         let last = Date(timeIntervalSince1970: end)
+        // Count calendar days, not 24-hour spans: a day whose midnight DST
+        // skips (America/Santiago) is 23 hours long but still one day.
         guard calendar.startOfDay(for: first) == first,
               calendar.startOfDay(for: last) == last,
-              let days = calendar.dateComponents([.day], from: first, to: last).day,
-              (1...7).contains(days) else { return nil }
+              let firstDay = calendar.ordinality(of: .day, in: .era, for: first),
+              let lastDay = calendar.ordinality(of: .day, in: .era, for: last),
+              (1...7).contains(lastDay - firstDay) else { return nil }
         let notes: String?
         if let value = parameters["notes"] {
             guard let text = value as? String,

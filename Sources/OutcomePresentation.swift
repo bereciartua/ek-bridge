@@ -91,6 +91,28 @@ struct OutcomePresentation: Equatable {
             ("target_not_writable", Entry(
                 label: String(localized: "Read only"), tone: .warn,
                 why: String(localized: "That calendar or list can't be changed."), fix: nil)),
+            ("bridge_off", Entry(
+                label: String(localized: "Bridge was off"), tone: .neutral,
+                why: String(localized: "The bridge was off, so the request was refused."),
+                fix: String(localized: "Turn on the bridge if you want this tool to work."))),
+            ("rate_limited", Entry(
+                label: String(localized: "Too many requests"), tone: .warn,
+                why: String(localized: "This client sent requests faster than the bridge allows."),
+                fix: String(localized: "If it keeps happening, check what the tool is doing."))),
+            ("approval_denied", Entry(
+                label: String(localized: "Declined by you"), tone: .neutral,
+                why: String(localized: "You declined this change."), fix: nil)),
+            ("approval_timed_out", Entry(
+                label: String(localized: "Not approved in time"), tone: .warn,
+                why: String(localized: "Nobody answered the approval prompt within 45 seconds."),
+                fix: String(localized: "Ask the tool to try again when you're at the Mac, or choose Allow without asking for this client."))),
+            ("cancelled", Entry(
+                label: String(localized: "Cancelled"), tone: .neutral,
+                why: String(localized: "The tool cancelled the request before it finished."), fix: nil)),
+            ("timeout", Entry(
+                label: String(localized: "No answer in time"), tone: .bad,
+                why: String(localized: "The bridge didn't finish within 55 seconds."),
+                fix: String(localized: "Check the item before retrying."))),
             ("too_many_events_narrow_range", Entry(
                 label: String(localized: "Too many results"), tone: .warn,
                 why: String(localized: "More events matched than the limit."),
@@ -103,7 +125,9 @@ struct OutcomePresentation: Equatable {
                 why: String(localized: "The request was too old or was sent twice."),
                 fix: String(localized: "Check the Mac's clock; send a fresh request.")))
             + group(["invalid_request", "invalid_parameters", "invalid_parameters_or_target",
-                     "request_too_large", "invalid_idempotency_key"], invalid)
+                     "request_too_large", "invalid_idempotency_key",
+                     // MCP-layer argument errors; they never reach Activity.
+                     "invalid_arguments", "nonexistent_local_time", "ambiguous_local_time"], invalid)
             + group(["target_unavailable", "item_unavailable"], Entry(
                 label: String(localized: "Not found"), tone: .warn,
                 why: String(localized: "The calendar, list or item isn't available, or its ID changed after sync."),
@@ -161,6 +185,7 @@ enum CommandPresentation {
         switch known {
         case .authorizationStatus: return String(localized: "Check macOS access")
         case .scopeStatus: return String(localized: "Check its access")
+        case .listCollections: return String(localized: "List calendars and lists")
         case .calendarCount: return String(localized: "Count calendars")
         case .reminderListCount: return String(localized: "Count lists")
         case .readEvents: return String(localized: "Read events")

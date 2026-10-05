@@ -560,7 +560,7 @@ final class BridgeAppModel {
         switch services.registry.createClient(name: trimmed) {
         case .success(let issued):
             sheet = nil
-            switch services.credentialFiles.saveNew(clientID: issued.id, key: issued.key) {
+            switch services.credentialFiles.saveNew(clientID: issued.id, key: issued.signingKey!) {
             case .success:
                 refresh()
                 go(.client(issued.id))

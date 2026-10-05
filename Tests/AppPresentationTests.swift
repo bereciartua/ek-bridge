@@ -18,9 +18,14 @@ struct AppPresentationTests {
     // Every code the bridge can return has an entry in the outcome map.
     static func outcomeMapCoversEmittedCodes() throws {
         let sources = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
-        let files = try FileManager.default.contentsOfDirectory(atPath: sources.path)
-            .filter { $0.hasSuffix(".swift") && !$0.hasPrefix("Synthetic") &&
-                $0 != "TestCollections.swift" && $0 != "BridgeClient.swift" }
+        // Recursive, so Sources/MCP is covered too.
+        let files = (FileManager.default.subpaths(atPath: sources.path) ?? [])
+            .filter { path in
+                let name = (path as NSString).lastPathComponent
+                return name.hasSuffix(".swift") && !name.hasPrefix("Synthetic") &&
+                    name != "TestCollections.swift" && name != "BridgeClient.swift" &&
+                    name != "MCPLauncher.swift"
+            }
         let patterns = [
             #""error": "([a-z_]+)""#,
             #"\.reject\("([a-z_]+)"\)"#,

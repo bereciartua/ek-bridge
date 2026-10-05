@@ -1,25 +1,43 @@
 import EventKit
 import Foundation
 
+/// Runs one authorized item command. `EventKitCommands` is the real one; the
+/// MCP test harness injects a fake.
 @MainActor
-final class EventKitCommands {
+protocol BridgeCommandExecutor: AnyObject {
+    /// Client authorization is checked before entry and again by
+    /// `stillAuthorized` after asynchronous reads and before a mutation.
+    /// `isCancelled` is checked before the write is journaled; once it is,
+    /// the write finishes even if the caller has gone away.
+    func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
+                       stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
+                       completion: @escaping ([String: Any]) -> Void)
+}
+
+@MainActor
+final class EventKitCommands: BridgeCommandExecutor {
     private let store: EKEventStore
     private let journal = WriteJournal()
 
     init(store: EKEventStore) { self.store = store }
 
-    // Client authorization is checked before entry and again by the supplied
-    // closure after asynchronous EventKit reads and before a mutation.
-    func runAuthorized(_ request: BridgeRequest, selected: BridgeScope,
-                       stillAuthorized: @escaping () -> Bool,
+    func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
+                       stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
                        completion: @escaping ([String: Any]) -> Void) {
-        run(request, selected: selected,
-            stillAuthorized: stillAuthorized, completion: completion)
+        run(Call(request: request, clientID: clientID, isCancelled: isCancelled),
+            selected: selected, stillAuthorized: stillAuthorized, completion: completion)
     }
 
-    private func run(_ request: BridgeRequest, selected: BridgeScope,
+    private struct Call {
+        let request: BridgeRequest
+        let clientID: String
+        let isCancelled: () -> Bool
+    }
+
+    private func run(_ call: Call, selected: BridgeScope,
                      stillAuthorized: @escaping () -> Bool,
                      completion: @escaping ([String: Any]) -> Void) {
+        let request = call.request
         guard stillAuthorized() else { completion(["error": "scope_changed"]); return }
         if let error = CommandPolicy.validate(request, scope: selected) {
             completion(["error": error])
@@ -34,19 +52,22 @@ final class EventKitCommands {
             default: .event
             }
         }()
-        if command != .authorizationStatus && command != .scopeStatus,
+        if command != .authorizationStatus && command != .scopeStatus && command != .listCollections,
            EKEventStore.authorizationStatus(for: entity) != .fullAccess {
             completion(["error": "full_access_required"])
             return
         }
         if command.isWrite {
-            switch journal.inspect(request) {
+            switch journal.inspect(request, clientID: call.clientID) {
             case .execute: break
-            case .repeatResult(let result): completion(result); return
+            case .repeatResult(let result): completion(Self.repeated(result)); return
             case .reject(let error): completion(["error": error]); return
             }
         }
         switch command {
+        case .listCollections:
+            // Answered by the request pipeline, which knows the client's grants.
+            completion(["error": "invalid_request"])
         case .scopeStatus:
             completion([
                 "calendarID": selected.calendarID as Any? ?? NSNull(),
@@ -105,6 +126,7 @@ final class EventKitCommands {
             store.fetchReminders(matching: predicate) { [weak self] reminders in
                 DispatchQueue.main.async {
                     guard let self else { completion(["error": "app_unavailable"]); return }
+                    guard !call.isCancelled() else { completion(["error": "cancelled"]); return }
                     guard CommandPolicy.scopeStillSelected(
                             id: list.calendarIdentifier, generation: generation,
                             scope: selected, reminders: true),
@@ -154,7 +176,7 @@ final class EventKitCommands {
                 event.isAllDay = true
                 event.notes = notes
             }
-            guard reserveWrite(request, completion) else { return }
+            guard reserveWrite(call, completion) else { return }
             do {
                 try store.save(event, span: .thisEvent)
                 var receipt = eventReceipt(event)
@@ -207,7 +229,7 @@ final class EventKitCommands {
             guard matchesVersion(event.lastModifiedDate, p["expectedVersion"]) else {
                 completion(["error": "conflict"]); return
             }
-            guard reserveWrite(request, completion) else { return }
+            guard reserveWrite(call, completion) else { return }
             do {
                 if command == .deleteEvent {
                     try store.remove(event, span: .thisEvent)
@@ -235,7 +257,7 @@ final class EventKitCommands {
                                                      for: reminder, creating: true) {
                 completion(["error": error]); return
             }
-            guard reserveWrite(request, completion) else { return }
+            guard reserveWrite(call, completion) else { return }
             ReminderSchedule.apply(dueChange, recurrenceChange, to: reminder)
             do {
                 try store.save(reminder, commit: true)
@@ -264,7 +286,7 @@ final class EventKitCommands {
                 completion(["error": "conflict"]); return
             }
             if command == .completeReminder && reminder.hasRecurrenceRules {
-                completeRecurringOccurrence(request, list: list, selected: selected,
+                completeRecurringOccurrence(call, list: list, selected: selected,
                                             stillAuthorized: stillAuthorized,
                                             completion: completion)
                 return
@@ -286,7 +308,7 @@ final class EventKitCommands {
                 dueChange = .keep
                 recurrenceChange = .keep
             }
-            guard reserveWrite(request, completion) else { return }
+            guard reserveWrite(call, completion) else { return }
             do {
                 if command == .deleteReminder {
                     try store.remove(reminder, commit: true)
@@ -307,10 +329,11 @@ final class EventKitCommands {
         }
     }
 
-    private func completeRecurringOccurrence(_ request: BridgeRequest, list: EKCalendar,
+    private func completeRecurringOccurrence(_ call: Call, list: EKCalendar,
                                              selected: BridgeScope,
                                              stillAuthorized: @escaping () -> Bool,
                                              completion: @escaping ([String: Any]) -> Void) {
+        let request = call.request
         let p = request.parameters
         let listID = list.calendarIdentifier
         let itemID = p["itemID"] as! String
@@ -319,6 +342,7 @@ final class EventKitCommands {
             [weak self] fetched in
             DispatchQueue.main.async {
                 guard let self else { completion(["error": "app_unavailable"]); return }
+                guard !call.isCancelled() else { completion(["error": "cancelled"]); return }
                 guard CommandPolicy.scopeStillSelected(id: listID, generation: generation,
                             scope: selected, reminders: true), stillAuthorized(),
                       EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
@@ -346,7 +370,7 @@ final class EventKitCommands {
                     candidate, records: before.map(RecurringReminderCompletion.record)) else {
                     completion(["error": "ambiguous_occurrence"]); return
                 }
-                guard self.reserveWrite(request, completion) else { return }
+                guard self.reserveWrite(call, completion) else { return }
                 target.isCompleted = true
                 do { try self.store.save(target, commit: true) }
                 catch { completion(["error": "completion_pending_reconciliation"]); return }
@@ -416,6 +440,7 @@ final class EventKitCommands {
             "recurring": isRecurring(event),
             "allDay": event.isAllDay,
             "timeZone": event.timeZone?.identifier ?? "",
+            "hasAttendees": event.hasAttendees,
         ]
         if let version = version(event.lastModifiedDate) { row["version"] = version }
         return row
@@ -454,6 +479,8 @@ final class EventKitCommands {
         var receipt: [String: Any] = [
             "id": reminder.calendarItemIdentifier,
             "title": boundedTitle(reminder.title).0,
+            "completed": reminder.isCompleted,
+            "recurring": reminder.hasRecurrenceRules,
         ]
         receipt.merge(ReminderSchedule.describe(reminder)) { _, new in new }
         if let version = version(reminder.lastModifiedDate) { receipt["version"] = version }
@@ -471,13 +498,18 @@ final class EventKitCommands {
         completion(journal.finish(request, result: result)
                    ? result : ["error": "write_committed_journal_pending_review"])
     }
-    private func reserveWrite(_ request: BridgeRequest,
-                              _ completion: ([String: Any]) -> Void) -> Bool {
-        switch journal.begin(request) {
+    private func reserveWrite(_ call: Call, _ completion: ([String: Any]) -> Void) -> Bool {
+        if call.isCancelled() { completion(["error": "cancelled"]); return false }
+        switch journal.begin(call.request, clientID: call.clientID) {
         case .execute: return true
-        case .repeatResult(let result): completion(result); return false
+        case .repeatResult(let result): completion(Self.repeated(result)); return false
         case .reject(let error): completion(["error": error]); return false
         }
+    }
+    /// A journal replay: the recorded result, marked so the caller knows the
+    /// write wasn't done twice.
+    private static func repeated(_ result: [String: Any]) -> [String: Any] {
+        result.merging(["repeated": true]) { _, new in new }
     }
     private func status(_ type: EKEntityType) -> String {
         switch EKEventStore.authorizationStatus(for: type) {
@@ -490,3 +522,36 @@ final class EventKitCommands {
         }
     }
 }
+
+/// macOS access and collections for the request pipeline.
+@MainActor
+final class EventKitCollectionSource: CollectionSource {
+    private let store: EKEventStore
+
+    init(store: EKEventStore) { self.store = store }
+
+    func access(_ resource: ClientResource) -> String {
+        switch EKEventStore.authorizationStatus(for: Self.type(resource)) {
+        case .fullAccess: "full"
+        case .notDetermined: "not_determined"
+        case .writeOnly: "write_only"
+        case .restricted: "restricted"
+        case .denied: "denied"
+        @unknown default: "denied"
+        }
+    }
+
+    func collections(_ resource: ClientResource) -> [CollectionRecord]? {
+        let type = Self.type(resource)
+        guard EKEventStore.authorizationStatus(for: type) == .fullAccess else { return nil }
+        return store.calendars(for: type).map {
+            CollectionRecord(id: $0.calendarIdentifier, name: $0.title, account: $0.source.title,
+                             writable: $0.allowsContentModifications)
+        }
+    }
+
+    private static func type(_ resource: ClientResource) -> EKEntityType {
+        resource == .calendar ? .event : .reminder
+    }
+}
+
