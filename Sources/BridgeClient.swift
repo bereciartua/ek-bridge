@@ -480,11 +480,7 @@ enum ClientLookup {
         return LocalPaths.credentialFile(clientID: uuid)
     }
 
-    // Matches ClientRegistry's uniqueness rule for active client names.
-    private static func nameKey(_ name: String) -> String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive], locale: nil)
-    }
+    private static func nameKey(_ name: String) -> String { ClientNames.key(name) }
 
     private static func activeClients() throws -> [Registry.Client] {
         let path = LocalPaths.supportDirectory + "/client-registry.json"

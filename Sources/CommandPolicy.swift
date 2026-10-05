@@ -25,12 +25,6 @@ enum CommandPolicy {
             (reminders ? scope.reminderListID : scope.calendarID) == id
     }
 
-    /// The parameter keys a command accepts. `validate` checks keys against
-    /// this same table before any value checks.
-    static func parameterKeys(for command: BridgeCommand) -> CommandParameterKeys {
-        command.parameterKeys
-    }
-
     static func validate(_ request: BridgeRequest, scope: BridgeScope) -> String? {
         let p = request.parameters
         let command = request.command

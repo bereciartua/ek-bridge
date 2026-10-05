@@ -21,7 +21,8 @@ struct ActivityView: View {
                         Text(client.name).tag(ActivityClientFilter.client(client.id))
                     }
                     ForEach(model.revokedClients.filter { client in
-                        model.activity.contains { $0.clientID == client.id }
+                        model.activityClientFilter == .client(client.id) ||
+                            model.activity.contains { $0.clientID == client.id }
                     }) { client in
                         Text(model.clientName(client.id)).tag(ActivityClientFilter.client(client.id))
                     }
@@ -54,7 +55,8 @@ struct ActivityView: View {
                 }
             } else {
                 GeometryReader { proxy in
-                    let selected = model.activity.first { $0.id == model.activitySelection }
+                    // Only rows the filters show; a hidden selection closes the details.
+                    let selected = rows.first { $0.id == model.activitySelection }
                     // Beside the table when there's room for both, below it otherwise.
                     let wide = proxy.size.width >= 780
                     let layout = wide

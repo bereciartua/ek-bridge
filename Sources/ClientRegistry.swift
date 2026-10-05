@@ -231,10 +231,7 @@ final class ClientRegistry {
         }
     }
 
-    private static func nameKey(_ name: String) -> String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive], locale: nil)
-    }
+    private static func nameKey(_ name: String) -> String { ClientNames.key(name) }
 
     private static func pruneRevoked(_ state: inout State) {
         let revoked = state.clients.filter(\.revoked)

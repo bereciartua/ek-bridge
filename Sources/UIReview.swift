@@ -505,7 +505,8 @@ final class BehaviorReview {
             guard let client = self.model.client(claude),
                   self.model.unavailableGrants(client) == [gone] else { return false }
             self.model.removeUnavailable(gone)
-            let staged = self.model.draft?.mask(gone) == 0 && self.model.hasUnsavedChanges
+            let staged = self.model.draft?.mask(gone) == 0 && self.model.hasUnsavedChanges &&
+                self.model.unavailableGrants(client).isEmpty
             self.model.restoreSaved(gone)
             return staged && !self.model.hasUnsavedChanges
         }
@@ -538,6 +539,12 @@ final class BehaviorReview {
             self.model.openActivity(selecting: forbidden.id)
             return self.model.route == .activity && self.model.activitySelection == forbidden.id &&
                 self.model.unseenProblemCount == 0
+        }
+        step("Show All Activity clears a client filter") {
+            self.model.openActivity(client: UIReview.obsidianID)
+            let scoped = self.model.activityClientFilter == .client(UIReview.obsidianID)
+            self.model.openActivity()
+            return scoped && self.model.activityClientFilter == .all && self.model.activitySelection == nil
         }
         step("open client at the target row") {
             self.model.openClientAccess(claude, focus: GrantKey(resource: .reminderList, targetID: "list-groceries"))

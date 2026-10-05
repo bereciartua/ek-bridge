@@ -148,6 +148,7 @@ final class BridgeAppModel {
     @ObservationIgnored var dockModeChanged: () -> Void = {}
     @ObservationIgnored var windowIsVisible: () -> Bool = { false }
     @ObservationIgnored private var refreshScheduled = false
+    @ObservationIgnored private var refreshCollectionsPending = false
     @ObservationIgnored private var started = false
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var observers = [NSObjectProtocol]()
@@ -204,7 +205,7 @@ final class BridgeAppModel {
         if let store = services.store {
             observers.append(center.addObserver(forName: .EKEventStoreChanged, object: store,
                                                 queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scheduleRefresh() }
+                MainActor.assumeIsolated { self?.scheduleRefresh(collections: true) }
             })
         }
         // macOS doesn't notify about privacy changes, so poll the cheap
@@ -218,17 +219,24 @@ final class BridgeAppModel {
     // MARK: Refresh
 
     /// Coalesces bursts (for example many requests) to at most about 4 Hz.
-    func scheduleRefresh() {
+    /// Request-driven refreshes skip EventKit and Login Items, which they
+    /// can't change; `collections` is set for EventKit change notifications.
+    func scheduleRefresh(collections: Bool = false) {
+        refreshCollectionsPending = refreshCollectionsPending || collections
         guard !refreshScheduled else { return }
         refreshScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
             self.refreshScheduled = false
-            self.refresh()
+            let full = self.refreshCollectionsPending
+            self.refreshCollectionsPending = false
+            self.refresh(full: full)
         }
     }
 
-    func refresh() {
+    func refresh() { refresh(full: true) }
+
+    private func refresh(full: Bool) {
         now = Date()
         updateAccess()
         if let current = services.registry.clients() {
@@ -241,10 +249,12 @@ final class BridgeAppModel {
             clients = []
             activity = []
         }
-        let listed = services.collections()
-        if listed != collections { collections = listed }
-        loginItem = services.loginItemStatus()
-        isInstalledInApplications = services.isInstalledInApplications()
+        if full {
+            let listed = services.collections()
+            if listed != collections { collections = listed }
+            loginItem = services.loginItemStatus()
+            isInstalledInApplications = services.isInstalledInApplications()
+        }
         reconcileDraft()
         reconcileRoute()
         updateTestCollectionsState()
@@ -328,8 +338,9 @@ final class BridgeAppModel {
     /// Saved grants that EventKit doesn't list right now, for types with Full Access.
     func unavailableGrants(_ client: ClientView, staged: Bool = true) -> [GrantKey] {
         var keys = client.grants.map { GrantKey(resource: $0.resource, targetID: $0.targetID) }
+        // Leave out removals the user has already staged.
         if staged, let draft, draft.clientID == client.id {
-            keys = keys.filter { draft.mask($0) != 0 || draft.savedMask($0) != 0 }
+            keys = keys.filter { draft.mask($0) != 0 }
         }
         return keys.filter { status($0.resource) == .fullAccess && collection($0) == nil }
     }
@@ -546,9 +557,9 @@ final class BridgeAppModel {
     func createClient(name: String) -> ClientNameIssue? {
         if let issue = nameIssue(name) { return issue }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        sheet = nil
         switch services.registry.createClient(name: trimmed) {
         case .success(let issued):
+            sheet = nil
             switch services.credentialFiles.saveNew(clientID: issued.id, key: issued.key) {
             case .success:
                 refresh()
@@ -569,6 +580,7 @@ final class BridgeAppModel {
         case .failure(.invalidName):
             return ClientRegistry.nameShapeIssue(name) ?? .empty
         case .failure(let error):
+            sheet = nil
             showBanner(Banner(kind: .error, title: String(localized: "Couldn't create the client."),
                               message: error == .limitReached
                                 ? String(localized: "You have 32 active clients, the maximum. Revoke one to add another.")
@@ -810,7 +822,7 @@ final class BridgeAppModel {
     func openActivity(selecting id: ActivityEntry.ID? = nil, client: String? = nil) {
         activityProblemsOnly = false
         activitySearch = ""
-        if let client { activityClientFilter = .client(client) } else if id != nil { activityClientFilter = .all }
+        activityClientFilter = client.map { .client($0) } ?? .all
         activitySelection = id
         show(.activity)
     }

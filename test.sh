@@ -79,6 +79,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/ClientRegistryTests.swift" \
     -framework EventKit \
@@ -89,6 +90,7 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Tests/ClientGrantEditingTests.swift" \
     -o "$project_dir/build/client-grant-editing-tests"

@@ -13,3 +13,12 @@ enum AppIdentity {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "–"
     }
 }
+
+/// Client names are unique among active clients, compared this way. Shared by
+/// the registry, the app's copied commands and `client.py --client NAME`.
+enum ClientNames {
+    static func key(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive], locale: nil)
+    }
+}
