@@ -180,6 +180,12 @@ final class BridgeAppModel {
         default: route = .overview
         }
         refresh()
+        // On the first launch with this setting, history counts as seen, so
+        // only problems from now on raise the badge.
+        if activityLastViewed == nil, let latest = activity.first?.at {
+            activityLastViewed = latest
+            defaults.set(latest.timeIntervalSinceReferenceDate, forKey: Keys.activityLastViewed)
+        }
         // Installs that already served a request never see the checklist,
         // even if the bridge is off right now.
         if !setupCompleted, SetupChecklist.isDone(.testRequest, checklistInput) {

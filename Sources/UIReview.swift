@@ -48,7 +48,12 @@ final class UIReview {
         remindersStatus = reminders ?? Self.status(CommandLine.arguments, "--ui-reminders")
         bridgeOn = fresh == true ? false : !CommandLine.arguments.contains("--ui-bridge-off")
         many = CommandLine.arguments.contains("--ui-many-collections")
-        if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) { seed() }
+        if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
+            seed()
+            // Requests from the last day and a half count as unseen.
+            defaults.set(Date().addingTimeInterval(-129_600).timeIntervalSinceReferenceDate,
+                         forKey: "ActivityLastViewed")
+        }
     }
 
     private static func status(_ arguments: [String], _ flag: String) -> EKAuthorizationStatus {
