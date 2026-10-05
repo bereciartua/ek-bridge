@@ -14,7 +14,7 @@ flowchart LR
     F --> C
 ```
 
-The app is a menu bar process in the logged-in user's session. `BridgeAppDelegate` owns the UI, `ClientManagerUI` owns client and grant controls, `ClientRegistry` persists public verifiers and scopes, `LocalBridge` polls the local request directory, `EventKitCommands` performs authorized work, and `WriteJournal` records write identity and outcome. The matching Swift `bridge-client` is invoked by `client.py`. It reads a credential file locally and signs each request with Ed25519. A Python or shell task may call it **only if that task is executing on the Mac** with the user's authorization. There is no implemented MCP wrapper, cloud callback, HTTP server, network listener, or launchd Mach service.
+The app is a menu bar process in the logged-in user's session. `BridgeAppDelegate` owns the bridge and wires the UI. `BridgeAppModel` is the single source of truth for the menu bar extra (`StatusMenuController`), the main window (`MainWindowController`, SwiftUI views hosted in AppKit) and the setup checklist; it refreshes on app activation, EventKit changes, registry changes, bridge start/stop and new activity. `ClientRegistry` persists public verifiers and scopes, `LocalBridge` polls the local request directory, `EventKitCommands` performs authorized work, and `WriteJournal` records write identity and outcome. The matching Swift `bridge-client` is invoked by `client.py`. It reads a credential file locally and signs each request with Ed25519. A Python or shell task may call it **only if that task is executing on the Mac** with the user's authorization. There is no implemented MCP wrapper, cloud callback, HTTP server, network listener, or launchd Mach service.
 
 `LocalBridge` uses `/tmp/eventkit-bridge-<uid>/`: an owned mode-0700 root, one active session with `requests/` and `responses/`, an owned lock file, and a `current.json` descriptor. Request/response files are mode 0600. The descriptor gives the local client a current session name, not an authorization secret. The bridge polls every 0.5 seconds; the client waits up to 10 seconds for reads or 60 seconds for writes. A process may be running while the Mac screen is locked, but actual reachability depends on the local task route, awake state, and logged-in session. A cloud agent cannot address this `/tmp` directory or `localhost` directly.
 
@@ -32,12 +32,13 @@ Grant edit, key rotation, or revocation changes the client's revision. Future re
 | Location | Contents | Boundary |
 | --- | --- | --- |
 | `~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json` | Ed25519 private signing seed and client UUID | App-managed, owned mode-0600 file in mode-0700 directory |
-| `~/Library/Application Support/EventKitBridge/client-registry.json` | Public verifiers, names, grant masks, revisions, recent time/command/outcome activity | Same-user local policy; no private seed |
+| `~/Library/Application Support/EventKitBridge/client-registry.json` | Schema version 3: public verifiers, names (unique among active clients), grant masks, revisions, revoke times, and the last 500 activity rows (time, client ID, command, outcome, target calendar or list ID) | Same-user local policy; no private seed |
+| `~/Library/Application Support/EventKitBridge/client-registry.v2.backup.json` | One-time copy of a version 2 registry, written before the first version 3 write | Lets a user roll back to an older build; never overwritten |
 | `~/Library/Application Support/EventKitBridge/write-journal.json` | Idempotency digests, high-water time, pending/completed write receipts, potentially including returned reminder titles | Reconciliation aid; not an EventKit transaction |
 | `/tmp/eventkit-bridge-<uid>/` | Active session descriptor and private request/response files | Per-user local transport; no network access |
-| User defaults, signed app bundle, macOS TCC | Saved bridge choice, optional verified source pin, privacy grants | Local installation state, not tracked source data |
+| User defaults, signed app bundle, macOS TCC | Saved bridge choice, window and Dock preferences, setup checklist and Activity "last viewed" state, optional verified source pin, privacy grants | Local installation state, not tracked source data |
 
-Activity records omit keys, request parameters, titles, and item contents. **The journal is different:** completed write receipts can include item IDs, reminder titles, and schedule summaries. Do not publish those files or raw diagnostic logs. `build/` is ignored and can contain signed binaries or local test output. The source `Info.plist` intentionally has an empty verified iCloud reminder source ID, so the special recurring-completion path fails closed in a default build.
+Activity records omit keys, request parameters, titles, and item contents. They include the target calendar or list **ID** when the request named one; the app looks up the current name when it shows the row and never stores it. **The journal is different:** completed write receipts can include item IDs, reminder titles, and schedule summaries. Do not publish those files or raw diagnostic logs. `build/` is ignored and can contain signed binaries or local test output. The source `Info.plist` intentionally has an empty verified iCloud reminder source ID, so the special recurring-completion path fails closed in a default build.
 
 ## Threat model and limits
 
@@ -46,3 +47,13 @@ The file ownership checks, signatures, strict scopes, and grant revision help pr
 The journal is not atomic with EventKit or cloud sync. A process exit after EventKit saves but before response persistence can leave an uncertain result. EventKit IDs and timestamps can change after provider sync, and different Calendar/Reminders providers can interpret all-day, due, recurrence, and alarm data differently. The app deliberately rejects shapes it cannot round-trip or safely mutate.
 
 The [XPC design note](../Candidate/ARCHITECTURE.md) is historical source-only exploration. Its signed-peer idea is not the current transport; it does not by itself solve the same-user credential or signed-client deputy problem. Any switch to XPC, a persistent agent, an MCP adapter, Keychain storage, or per-process isolation needs a new threat review and separate implementation.
+
+## Client registry versions
+
+Version 3 (app 0.3.0) changes the registry in one step:
+
+- Only active clients count toward the limit of 32. Revoked records are kept for history, capped at 200; when a revoke goes past the cap, the oldest revoked records are dropped first (records revoked before version 3 have no revoke time and go first).
+- Clients can be renamed. The name isn't part of authorization, so renaming doesn't change the revision and requests in flight aren't affected. New and renamed clients must have a name no other active client uses, ignoring case and surrounding spaces. A registry upgraded from version 2 can still hold two active clients with one name; `client.py --client NAME` then refuses and lists their IDs, and the app's copied commands use the client ID instead.
+- Activity rows record the target calendar or list ID (same limits as grant targets: at most 512 bytes, no control characters).
+
+A version 2 file loads unchanged and is written as version 3 on the next change, after a one-time backup to `client-registry.v2.backup.json` (mode 0600). **An older build fails closed on a version 3 registry** ("client settings can't be read"). To roll back, quit the app and restore the backup over `client-registry.json`; changes made since the upgrade are lost.

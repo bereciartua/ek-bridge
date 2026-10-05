@@ -1,6 +1,6 @@
 import Foundation
 
-enum BridgeCommand: String {
+enum BridgeCommand: String, CaseIterable {
     case authorizationStatus = "authorization_status"
     case calendarCount = "calendar_count"
     case reminderListCount = "reminder_list_count"
@@ -21,6 +21,59 @@ enum BridgeCommand: String {
              .completeReminder, .deleteReminder: true
         default: false
         }
+    }
+}
+
+// Accepted parameter keys per command. CommandPolicy.validate checks keys
+// against this table and `bridge-client --help` prints it, so they can't drift.
+struct CommandParameterKeys: Equatable {
+    let required: [String]
+    let optional: [String]
+
+    var isEmpty: Bool { required.isEmpty && optional.isEmpty }
+}
+
+extension BridgeCommand {
+    var parameterKeys: CommandParameterKeys {
+        switch self {
+        case .authorizationStatus, .calendarCount, .reminderListCount, .scopeStatus:
+            CommandParameterKeys(required: [], optional: [])
+        case .readEvents:
+            CommandParameterKeys(required: ["calendarID", "start", "end", "limit"], optional: [])
+        case .readReminders:
+            CommandParameterKeys(required: ["listID", "limit"], optional: ["afterID"])
+        case .createEvent:
+            CommandParameterKeys(required: ["calendarID", "title", "start", "end", "idempotencyKey"],
+                                 optional: ["allDay", "timeZone", "notes"])
+        case .updateEvent:
+            CommandParameterKeys(required: ["calendarID", "itemID", "expectedVersion", "title",
+                                            "start", "end", "idempotencyKey"], optional: [])
+        case .deleteEvent:
+            CommandParameterKeys(required: ["calendarID", "itemID", "expectedVersion",
+                                            "idempotencyKey"], optional: [])
+        case .createReminder:
+            CommandParameterKeys(required: ["listID", "title", "idempotencyKey"],
+                                 optional: ["due", "recurrence"])
+        case .updateReminder:
+            CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "title",
+                                            "idempotencyKey"], optional: ["due", "recurrence"])
+        case .completeReminder:
+            CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
+                                 optional: ["recurrenceScope", "occurrenceDue",
+                                            "occurrenceFingerprint"])
+        case .deleteReminder:
+            CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
+                                 optional: ["recurrenceScope"])
+        }
+    }
+
+    /// True when `parameters` has every required key and nothing unknown.
+    func acceptsKeys(of parameters: [String: Any]) -> Bool {
+        let keys = parameterKeys
+        let actual = Set(parameters.keys)
+        let required = Set(keys.required)
+        return required.isSubset(of: actual) &&
+            actual.isSubset(of: required.union(keys.optional))
     }
 }
 

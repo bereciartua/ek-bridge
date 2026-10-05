@@ -2,194 +2,59 @@ import AppKit
 import EventKit
 import ServiceManagement
 
-final class FlippedDocumentView: NSView {
-    override var isFlipped: Bool { true }
-}
+enum BridgeErrorText {
+    static func describe(_ error: Error) -> String {
+        switch error as? BridgeIOError {
+        case .alreadyActive?:
+            String(localized: "Another copy of \(AppIdentity.displayName) is already running.")
+        case .unsafePath?:
+            String(localized: "The bridge's folder in /tmp has unsafe permissions. Quit other copies and try again.")
+        case .directoryFailed?, .writeFailed?:
+            String(localized: "The bridge couldn't create its working folder.")
+        case nil:
+            String(localized: "Something unexpected stopped it.")
+        }
+    }
 
-final class FlippedStackView: NSStackView {
-    override var isFlipped: Bool { true }
+    static let policyUnavailable = String(localized: "Client settings can't be read.")
 }
 
 @MainActor
-final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
-    // The controller owns the window across Close → Open Controls cycles.
-    // A bare programmatic NSWindow can release itself when closed.
-    private var controlsWindowController: NSWindowController?
-    private var statusItem: NSStatusItem?
-    private let eventStatus = NSTextField(labelWithString: "")
-    private let reminderStatus = NSTextField(labelWithString: "")
-    private let output = NSTextView()
-    private var eventRequestButton: NSButton!
-    private var reminderRequestButton: NSButton!
-    private var eventListButton: NSButton!
-    private var reminderListButton: NSButton!
-    private var bridgeEnableButton: NSButton!
-    private var bridgeDisableButton: NSButton!
-    private let bridgeStatus = NSTextField(labelWithString: "Local bridge: off")
+final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var localBridge: LocalBridge?
     private let bridgeEnablement = BridgeEnablement()
-    private var requestInFlight = false
     private lazy var store = EKEventStore()
     private lazy var commands = EventKitCommands(store: store)
     private lazy var testCollections = TestCollections(store: store)
     #if EVENTKIT_UI_REVIEW
-    private let reviewDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("eventkit-ui-review-\(UUID().uuidString)", isDirectory: true)
-    private lazy var clientRegistry = ClientRegistry(directory: reviewDirectory)
+    private let review = UIReview()
     #else
     private lazy var clientRegistry = ClientRegistry()
     #endif
-    private lazy var clientManager = ClientManagerUI(registry: clientRegistry, store: store)
+    private var model: BridgeAppModel!
+    private var windowController: MainWindowController!
+    private var statusMenu: StatusMenuController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem?.button?.title = "◷"
-        refreshMenu()
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 850, height: 680))
-        let page = NSScrollView()
-        page.hasVerticalScroller = true
-        page.drawsBackground = false
-        page.translatesAutoresizingMaskIntoConstraints = false
-        let document = FlippedDocumentView()
-        document.translatesAutoresizingMaskIntoConstraints = false
-        page.documentView = document
-        content.addSubview(page)
-
-        let title = NSTextField(labelWithString: "EventKit Bridge")
-        title.font = .boldSystemFont(ofSize: 23)
-        place(title, in: document, top: 20, height: 30)
-
-        let explanation = NSTextField(wrappingLabelWithString:
-            "Control which local clients can access your calendars and reminders. Permissions are saved per collection and can be changed or revoked at any time.")
-        explanation.maximumNumberOfLines = 2
-        explanation.textColor = .secondaryLabelColor
-        place(explanation, in: document, top: 56, height: 48, inset: 20, fillWidth: true)
-
-        let bridgeTitle = NSTextField(labelWithString: "Local bridge")
-        bridgeTitle.font = .boldSystemFont(ofSize: 15)
-        bridgeStatus.font = .systemFont(ofSize: 14, weight: .medium)
-        eventRequestButton = button("Request Calendar Access", #selector(requestEvents))
-        eventListButton = button("List Calendars", #selector(listEvents))
-        reminderRequestButton = button("Request Reminders Access", #selector(requestReminders))
-        reminderListButton = button("List Reminder Lists", #selector(listReminders))
-        bridgeEnableButton = button("Enable Local Bridge", #selector(enableBridge))
-        bridgeDisableButton = button("Disable", #selector(disableBridge))
-
-        let bridgeCard = panel(in: document, top: 118, height: 150)
-        place(bridgeTitle, in: bridgeCard, top: 14, height: 22)
-        place(bridgeStatus, in: bridgeCard, top: 41, height: 22)
-        let bridgeActions = NSStackView(views: [bridgeEnableButton, bridgeDisableButton])
-        bridgeActions.spacing = 10
-        place(bridgeActions, in: bridgeCard, top: 68, height: 32)
-        let bridgeHint = NSTextField(wrappingLabelWithString:
-            "While active, enrolled clients can use only their saved permissions. The on/off choice is retained across app launches.")
-        bridgeHint.textColor = .secondaryLabelColor
-        bridgeHint.maximumNumberOfLines = 2
-        place(bridgeHint, in: bridgeCard, top: 108, height: 34, fillWidth: true)
-
-        let clientsTitle = NSTextField(labelWithString: "Clients and permissions")
-        clientsTitle.font = .boldSystemFont(ofSize: 15)
-        let clientsHint = NSTextField(wrappingLabelWithString:
-            "Review each client's calendars, reminder lists and allowed actions. Create a client, rotate its key or revoke it here.")
-        clientsHint.textColor = .secondaryLabelColor
-        clientsHint.maximumNumberOfLines = 2
-        let manageButton = button("Open Clients & Permissions…", #selector(manageClients))
-        let clientsCard = panel(in: document, top: 284, height: 130)
-        place(clientsTitle, in: clientsCard, top: 14, height: 22)
-        place(clientsHint, in: clientsCard, top: 40, height: 38, fillWidth: true)
-        place(manageButton, in: clientsCard, top: 85, height: 32)
-
-        let accessTitle = NSTextField(labelWithString: "macOS access")
-        accessTitle.font = .boldSystemFont(ofSize: 15)
-        let accessCard = panel(in: document, top: 430, height: 182)
-        place(accessTitle, in: accessCard, top: 14, height: 22)
-        place(eventStatus, in: accessCard, top: 39, height: 21)
-        let eventActions = NSStackView(views: [eventRequestButton, eventListButton])
-        eventActions.spacing = 10
-        place(eventActions, in: accessCard, top: 60, height: 32)
-        let reminderActions = NSStackView(views: [reminderRequestButton, reminderListButton])
-        reminderActions.spacing = 10
-        place(reminderStatus, in: accessCard, top: 100, height: 21)
-        place(reminderActions, in: accessCard, top: 123, height: 32)
-
-        let diagnosticsTitle = NSTextField(labelWithString: "Test collections")
-        diagnosticsTitle.font = .boldSystemFont(ofSize: 15)
-        let diagnosticsHint = NSTextField(wrappingLabelWithString:
-            "These tools work only with the app's own temporary test calendar and reminder list.")
-        diagnosticsHint.textColor = .secondaryLabelColor
-        let diagnosticsCard = panel(in: document, top: 628, height: 135)
-        place(diagnosticsTitle, in: diagnosticsCard, top: 14, height: 22)
-        place(diagnosticsHint, in: diagnosticsCard, top: 40, height: 35, fillWidth: true)
-        let diagnosticsActions = NSStackView(views: [
-            button("Check Test Sources", #selector(checkTestSources)),
-            button("Create Test Collections", #selector(createTestCollections)),
-            button("Remove Empty Test Collections", #selector(removeTestCollections)),
-        ])
-        diagnosticsActions.spacing = 8
-        place(diagnosticsActions, in: diagnosticsCard, top: 88, height: 32)
-
-        output.isEditable = false
-        output.isSelectable = true
-        output.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        output.string = "Collection details and test results appear here."
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.documentView = output
-        place(scroll, in: document, top: 779, height: 152, inset: 20, fillWidth: true)
-
-        NSLayoutConstraint.activate([
-            page.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            page.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            page.topAnchor.constraint(equalTo: content.topAnchor),
-            page.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            content.widthAnchor.constraint(greaterThanOrEqualToConstant: 850),
-            page.widthAnchor.constraint(greaterThanOrEqualToConstant: 850),
-            document.widthAnchor.constraint(equalTo: page.contentView.widthAnchor),
-            document.heightAnchor.constraint(equalToConstant: 950),
-        ])
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 850, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "EventKit Bridge"
-        window.contentView = content
-        window.setContentSize(NSSize(width: 850, height: 680))
-        window.minSize = NSSize(width: 850, height: 540)
-        window.center()
-        controlsWindowController = NSWindowController(window: window)
-        refreshStatus()
-        refreshBridgeStatus()
         #if EVENTKIT_UI_REVIEW
-        if let active = clientRegistry.clients(), active.isEmpty,
-           case .success(let fixture) = clientRegistry.createClient(name: "Window fixture") {
-            _ = clientRegistry.replaceGrants(clientID: fixture.id, grants: [
-                ClientGrant(resource: .calendar, targetID: "synthetic-0", mask: 15),
-                ClientGrant(resource: .reminderList, targetID: "synthetic-16", mask: 31),
-            ])
-        }
-        openControls(nil)
-        showReviewClients()
-        if CommandLine.arguments.contains("--ui-window-lifecycle-test") {
-            clientManager.showReviewActivity()
-            reviewWindowLifecycle(cycle: 1)
-        } else if CommandLine.arguments.contains("--ui-visual-review") {
-            let result: [String: Any] = [
-                "controlsWindowNumber": controlsWindowController?.window?.windowNumber ?? 0,
-                "clientsWindowNumber": clientManager.reviewWindow?.windowNumber ?? 0,
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: result) {
-                FileHandle.standardOutput.write(data + Data([10]))
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-                NSApp.terminate(nil)
-            }
-        }
+        model = BridgeAppModel(services: review.services())
         #else
-        if bridgeEnablement.isEnabled { startBridge() }
+        model = BridgeAppModel(services: liveServices())
+        #endif
+        #if !EVENTKIT_UI_REVIEW
+        // Before start(), so a working setup isn't announced as just completed.
+        if bridgeEnablement.isEnabled { model.bridgeDidChange(startBridge()) }
+        #endif
+        windowController = MainWindowController(model: model)
+        statusMenu = StatusMenuController(model: model)
+        NSApp.mainMenu = MainMenu.build(target: self)
+        #if EVENTKIT_UI_REVIEW
+        review.run(model: model, window: windowController, statusMenu: statusMenu)
+        #endif
+        model.start()
+        #if !EVENTKIT_UI_REVIEW
+        // A first run opens the window so the setup checklist is the first thing seen.
+        if model.showsSetupChecklist { windowController.present() }
         #endif
     }
 
@@ -197,169 +62,117 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        windowController.present()
+        return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard model?.hasUnsavedChanges == true else { return .terminateNow }
+        // The prompt can finish synchronously (an app-modal alert), so reply
+        // only after this method has returned .terminateLater.
+        model.confirmUnsaved({ DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } },
+                             cancelled: { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: false) } })
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         localBridge?.stop()
         localBridge = nil
         #if EVENTKIT_UI_REVIEW
-        try? FileManager.default.removeItem(at: reviewDirectory)
+        review.cleanup()
         #endif
     }
 
-    private func button(_ title: String, _ action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .rounded
-        return button
+    // MARK: Live services
+
+    #if !EVENTKIT_UI_REVIEW
+    private func liveServices() -> BridgeServices {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return BridgeServices(
+            registry: clientRegistry,
+            credentialFiles: ClientCredentialFiles(),
+            defaults: .standard,
+            dataFolder: support.appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true),
+            store: store,
+            authorizationStatus: { EKEventStore.authorizationStatus(for: $0) },
+            requestFullAccess: { [weak self] type, completion in
+                guard let store = self?.store else { return }
+                let finish: @Sendable (Bool, Error?) -> Void = { granted, error in
+                    DispatchQueue.main.async {
+                        // A store created before access was granted can keep an empty source list.
+                        if granted { self?.store.reset() }
+                        completion(granted, error)
+                    }
+                }
+                if type == .event {
+                    store.requestFullAccessToEvents(completion: finish)
+                } else {
+                    store.requestFullAccessToReminders(completion: finish)
+                }
+            },
+            collections: { [weak self] in self?.liveCollections() ?? [] },
+            setBridge: { [weak self] on in self?.setBridge(on) ?? .off },
+            loginItemStatus: { SMAppService.mainApp.status },
+            setLoginItem: { on in
+                if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            },
+            isInstalledInApplications: { Self.installedLocation },
+            testCollections: testCollections)
     }
 
-    private func panel(in parent: NSView, top: CGFloat, height: CGFloat) -> FlippedDocumentView {
-        let panel = FlippedDocumentView()
-        panel.translatesAutoresizingMaskIntoConstraints = false
-        panel.wantsLayer = true
-        panel.layer?.cornerRadius = 9
-        panel.layer?.borderWidth = 1
-        panel.layer?.borderColor = NSColor.separatorColor.cgColor
-        parent.addSubview(panel)
-        NSLayoutConstraint.activate([
-            panel.topAnchor.constraint(equalTo: parent.topAnchor, constant: top),
-            panel.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: 20),
-            panel.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -20),
-            panel.heightAnchor.constraint(equalToConstant: height),
-        ])
-        return panel
-    }
-
-    private func place(_ view: NSView, in parent: NSView, top: CGFloat,
-                       height: CGFloat, inset: CGFloat = 16, fillWidth: Bool = false) {
-        view.translatesAutoresizingMaskIntoConstraints = false
-        parent.addSubview(view)
-        var constraints = [
-            view.topAnchor.constraint(equalTo: parent.topAnchor, constant: top),
-            view.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset),
-            view.heightAnchor.constraint(equalToConstant: height),
-        ]
-        if fillWidth {
-            constraints.append(view.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -inset))
-        }
-        NSLayoutConstraint.activate(constraints)
-    }
-
-    private func refreshStatus() {
-        let events = EKEventStore.authorizationStatus(for: .event)
-        let reminders = EKEventStore.authorizationStatus(for: .reminder)
-        eventStatus.stringValue = "Calendar access: \(name(events))"
-        reminderStatus.stringValue = "Reminders access: \(name(reminders))"
-        eventRequestButton.isEnabled = !requestInFlight && events == .notDetermined
-        reminderRequestButton.isEnabled = !requestInFlight && reminders == .notDetermined
-        eventListButton.isEnabled = !requestInFlight && events == .fullAccess
-        reminderListButton.isEnabled = !requestInFlight && reminders == .fullAccess
-        refreshMenu()
-    }
-
-    private func name(_ status: EKAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined: "Not determined"
-        case .restricted: "Restricted"
-        case .denied: "Denied"
-        case .fullAccess: "Full access"
-        case .writeOnly: "Write only"
-        @unknown default: "Unknown"
-        }
-    }
-
-    @objc private func requestEvents(_ sender: Any?) {
-        guard EKEventStore.authorizationStatus(for: .event) == .notDetermined else { return }
-        requestInFlight = true
-        refreshStatus()
-        store.requestFullAccessToEvents { [weak self] granted, error in
-            let errorCode = error.map { "\(($0 as NSError).domain) \(($0 as NSError).code)" }
-            DispatchQueue.main.async { [weak self] in
-                self?.finishRequest("Calendar", granted: granted, errorCode: errorCode)
+    private func liveCollections() -> [CollectionInfo] {
+        var result = [CollectionInfo]()
+        for (type, resource) in [(EKEntityType.event, ClientResource.calendar), (.reminder, .reminderList)]
+        where EKEventStore.authorizationStatus(for: type) == .fullAccess {
+            result += store.calendars(for: type).map { calendar in
+                let color = calendar.color.usingColorSpace(.sRGB).map {
+                    CollectionColor(red: Double($0.redComponent), green: Double($0.greenComponent),
+                                    blue: Double($0.blueComponent))
+                }
+                return CollectionInfo(resource: resource, id: calendar.calendarIdentifier,
+                                      name: calendar.title, account: calendar.source.title,
+                                      writable: calendar.allowsContentModifications, color: color)
             }
         }
+        return result.sortedForDisplay()
     }
 
-    @objc private func requestReminders(_ sender: Any?) {
-        guard EKEventStore.authorizationStatus(for: .reminder) == .notDetermined else { return }
-        requestInFlight = true
-        refreshStatus()
-        store.requestFullAccessToReminders { [weak self] granted, error in
-            let errorCode = error.map { "\(($0 as NSError).domain) \(($0 as NSError).code)" }
-            DispatchQueue.main.async { [weak self] in
-                self?.finishRequest("Reminders", granted: granted, errorCode: errorCode)
-            }
+    private static var installedLocation: Bool {
+        let path = Bundle.main.bundleURL.standardizedFileURL.path
+        let userApps = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true).path
+        return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
+    }
+
+    // MARK: Bridge
+
+    private func setBridge(_ on: Bool) -> BridgeRunState {
+        if on {
+            let state = startBridge()
+            if state == .on { bridgeEnablement.setEnabled(true) }
+            return state
         }
+        bridgeEnablement.setEnabled(false)
+        localBridge?.stop()
+        return .off
     }
 
-    private func finishRequest(_ kind: String, granted: Bool, errorCode: String?) {
-        requestInFlight = false
-        refreshStatus()
-        if let errorCode {
-            output.string = "\(kind) request failed: \(errorCode)"
-        } else {
-            output.string = "\(kind) request \(granted ? "granted" : "not granted"). No items were read."
-        }
-    }
-
-    @objc private func listEvents(_ sender: Any?) {
-        list(.event, label: "Calendars")
-    }
-
-    @objc private func listReminders(_ sender: Any?) {
-        list(.reminder, label: "Reminder lists")
-    }
-
-    private func list(_ entity: EKEntityType, label: String) {
-        guard EKEventStore.authorizationStatus(for: entity) == .fullAccess else {
-            output.string = "Full access is required to list \(label.lowercased())."
-            refreshStatus()
-            return
-        }
-        let calendars = store.calendars(for: entity)
-        let rows = calendars.map { calendar in
-            let writable = calendar.allowsContentModifications ? "writable" : "read only"
-            return "\(String(reflecting: calendar.title))\t\(calendar.calendarIdentifier)\t\(writable)"
-        }
-        output.string = "\(label) (\(rows.count))\nTitle\tID\tAccess\n" + rows.joined(separator: "\n")
-    }
-
-    @objc private func enableBridge(_ sender: Any?) {
-        startBridge()
-        if localBridge != nil { bridgeEnablement.setEnabled(true) }
-    }
-
-    private func startBridge() {
-        guard localBridge == nil else { return }
-        guard clientRegistry.clients() != nil else {
-            bridgeStatus.stringValue = "Local bridge: client policy store unavailable"
-            return
-        }
+    private func startBridge() -> BridgeRunState {
+        if localBridge != nil { return .on }
+        guard clientRegistry.clients() != nil else { return .failed(BridgeErrorText.policyUnavailable) }
         do {
             localBridge = try LocalBridge(handle: { [weak self] envelope, completion in
                 guard let self else { completion(["error": "app_unavailable"]); return }
                 self.handleClient(envelope, completion: completion)
             }, onStop: { [weak self] in
                 self?.localBridge = nil
-                self?.refreshBridgeStatus()
+                self?.model.bridgeDidChange(.off)
             })
-            refreshBridgeStatus()
+            return .on
         } catch {
-            bridgeStatus.stringValue = "Local bridge: could not start (\(error))"
+            return .failed(BridgeErrorText.describe(error))
         }
-    }
-
-    @objc private func disableBridge(_ sender: Any?) {
-        bridgeEnablement.setEnabled(false)
-        localBridge?.stop()
-    }
-
-    @objc private func manageClients(_ sender: Any?) {
-        clientManager.show(
-            bridgeIsActive: { [weak self] in self?.localBridge?.active == true },
-            enableBridge: { [weak self] in
-                self?.enableBridge(nil)
-                return self?.localBridge?.active == true
-            },
-            disableBridge: { [weak self] in self?.disableBridge(nil) })
     }
 
     private func handleClient(_ envelope: ClientBridgeEnvelope,
@@ -372,6 +185,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             let error: String
             if case .failure(let reason) = checked { error = reason.rawValue }
             else { error = "unauthorized" }
+            model.scheduleRefresh()
             completion(["error": error])
             return
         }
@@ -413,14 +227,6 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
                 }.count
                 finishClient(call, ["count": count], completion)
             }
-        case .authorizationStatus:
-            commands.runAuthorized(request, selected: selected,
-                                   stillAuthorized: { [weak self] in
-                guard let self else { return false }
-                return self.clientRegistry.stillAuthorized(call) && self.localBridge?.active == true
-            }) { [weak self] value in
-                self?.finishClient(call, value, completion)
-            }
         default:
             commands.runAuthorized(request, selected: selected,
                                    stillAuthorized: { [weak self] in
@@ -439,162 +245,108 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
             completion(["error": "activity_unavailable"])
             return
         }
+        model.scheduleRefresh()
         completion(value)
     }
-
-    private func refreshBridgeStatus() {
-        bridgeStatus.stringValue = localBridge == nil ? "Local bridge: off" : "Local bridge: active"
-        bridgeEnableButton.isEnabled = localBridge == nil
-        bridgeDisableButton.isEnabled = localBridge != nil
-        refreshMenu()
-    }
-
-    private func refreshMenu() {
-        guard let statusItem else { return }
-        let menu = NSMenu()
-        let calendar = name(EKEventStore.authorizationStatus(for: .event))
-        let reminders = name(EKEventStore.authorizationStatus(for: .reminder))
-        let bridgeLine = localBridge == nil ? "Bridge: off" : "Bridge: active"
-        let loginStatus: String
-        switch SMAppService.mainApp.status {
-        case .enabled: loginStatus = "enabled"
-        case .requiresApproval: loginStatus = "needs System Settings approval"
-        case .notFound: loginStatus = "app unavailable"
-        case .notRegistered: loginStatus = "off"
-        @unknown default: loginStatus = "unknown"
-        }
-        let clientCount = clientRegistry.clients()?.filter { !$0.revoked }.count
-        for line in ["Calendar: \(calendar)", "Reminders: \(reminders)",
-                     bridgeLine,
-                     "Active clients: \(clientCount.map(String.init) ?? "policy unavailable")",
-                     "Actions: saved client grants", "Login: \(loginStatus)"] {
-            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Open Controls…", action: #selector(openControls), keyEquivalent: "o"))
-        menu.addItem(NSMenuItem(title: localBridge == nil ? "Enable Local Bridge" : "Disable Bridge",
-                                action: localBridge == nil ? #selector(enableBridge) : #selector(disableBridge),
-                                keyEquivalent: ""))
-        let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        login.isEnabled = installedLocation &&
-            SMAppService.mainApp.status != .requiresApproval &&
-            SMAppService.mainApp.status != .notFound
-        menu.addItem(login)
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
-        for item in menu.items where item.action != nil { item.target = self }
-        statusItem.menu = menu
-    }
-
-    private var installedLocation: Bool {
-        let path = Bundle.main.bundleURL.standardizedFileURL.path
-        let userApps = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true).path
-        return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
-    }
-    @objc private func openControls(_ sender: Any?) {
-        controlsWindowController?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    #if EVENTKIT_UI_REVIEW
-    private func showReviewClients() {
-        clientManager.show(bridgeIsActive: { false },
-                           enableBridge: { false }, disableBridge: {})
-    }
-
-    private func reviewWindowLifecycle(cycle: Int) {
-        guard let controls = controlsWindowController?.window,
-              let clients = clientManager.reviewWindow,
-              let activity = clientManager.reviewActivityWindow,
-              controls.isVisible, clients.isVisible, activity.isVisible,
-              !controls.isReleasedWhenClosed, !clients.isReleasedWhenClosed,
-              !activity.isReleasedWhenClosed else {
-            reportWindowReview("window_missing_or_released", cycle: cycle)
-            return
-        }
-        let controlsID = ObjectIdentifier(controls)
-        let clientsID = ObjectIdentifier(clients)
-        let activityID = ObjectIdentifier(activity)
-        controls.close()
-        clients.close()
-        activity.close()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            guard let self else { return }
-            self.openControls(nil)
-            self.showReviewClients()
-            self.clientManager.showReviewActivity()
-            self.clientManager.showReviewActivity()
-            guard let reopenedControls = self.controlsWindowController?.window,
-                  let reopenedClients = self.clientManager.reviewWindow,
-                  let reopenedActivity = self.clientManager.reviewActivityWindow,
-                  ObjectIdentifier(reopenedControls) == controlsID,
-                  ObjectIdentifier(reopenedClients) == clientsID,
-                  ObjectIdentifier(reopenedActivity) == activityID,
-                  reopenedControls.isVisible, reopenedClients.isVisible,
-                  reopenedActivity.isVisible,
-                  reopenedControls.frame.width >= 850,
-                  reopenedClients.frame.width >= 990 else {
-                self.reportWindowReview("reopen_failed", cycle: cycle)
-                return
-            }
-            if cycle == 8 {
-                self.reportWindowReview("passed", cycle: cycle)
-            } else {
-                self.reviewWindowLifecycle(cycle: cycle + 1)
-            }
-        }
-    }
-
-    private func reportWindowReview(_ outcome: String, cycle: Int) {
-        let result: [String: Any] = ["outcome": outcome, "cycles": cycle]
-        if let data = try? JSONSerialization.data(withJSONObject: result,
-                                                   options: [.sortedKeys]) {
-            FileHandle.standardOutput.write(data + Data([10]))
-        }
-        NSApp.terminate(nil)
-    }
     #endif
-    @objc private func checkTestSources(_ sender: Any?) {
-        output.string = testCollections.sourcePreview()
+
+    // MARK: Main menu actions
+
+    @objc func newClient(_ sender: Any?) { model.beginNewClient() }
+    @objc func openMainWindow(_ sender: Any?) { windowController.present() }
+    @objc func showSettingsPane(_ sender: Any?) { model.show(.settings) }
+    @objc func showOverviewPane(_ sender: Any?) { model.show(.overview) }
+    @objc func showActivityPane(_ sender: Any?) { model.show(.activity) }
+    @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
+    @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
+    @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
+    @objc func showAbout(_ sender: Any?) {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: AppIdentity.displayName,
+            .credits: NSAttributedString(string: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.")),
+        ])
     }
-    @objc private func createTestCollections(_ sender: Any?) {
-        output.string = testCollections.create()
-    }
-    @objc private func removeTestCollections(_ sender: Any?) {
-        testCollections.removeEmpty { [weak self] message in
-            guard let self else { return }
-            self.output.string = message
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(newClient(_:)): model.canCreateClient
+        case #selector(saveAccess(_:)), #selector(revertAccess(_:)): model.hasUnsavedChanges
+        case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
+        default: true
         }
     }
-    @objc private func toggleLoginItem(_ sender: Any?) {
-        guard installedLocation else {
-            output.string = "Install the reviewed signed app in Applications before enabling login startup."
-            openControls(nil)
-            return
-        }
-        guard SMAppService.mainApp.status != .requiresApproval else {
-            output.string = "Approve the login item in System Settings, then check its status here."
-            openControls(nil)
-            return
-        }
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-            refreshMenu()
-        } catch {
-            output.string = "Login item update failed: \((error as NSError).domain) \((error as NSError).code)"
-            openControls(nil)
-        }
+}
+
+enum MainMenu {
+    @MainActor
+    static func build(target: BridgeAppDelegate) -> NSMenu {
+        let main = NSMenu()
+        let name = AppIdentity.displayName
+
+        let app = submenu(name, in: main)
+        app.addItem(item(String(localized: "About \(name)"), #selector(BridgeAppDelegate.showAbout(_:)), target: target))
+        app.addItem(.separator())
+        app.addItem(item(String(localized: "Settings…"), #selector(BridgeAppDelegate.showSettingsPane(_:)), ",", target: target))
+        app.addItem(.separator())
+        app.addItem(item(String(localized: "Hide \(name)"), #selector(NSApplication.hide(_:)), "h"))
+        let others = item(String(localized: "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h")
+        others.keyEquivalentModifierMask = [.command, .option]
+        app.addItem(others)
+        app.addItem(item(String(localized: "Show All"), #selector(NSApplication.unhideAllApplications(_:))))
+        app.addItem(.separator())
+        app.addItem(item(String(localized: "Quit \(name)"), #selector(NSApplication.terminate(_:)), "q"))
+
+        let file = submenu(String(localized: "File"), in: main)
+        file.addItem(item(String(localized: "New Client…"), #selector(BridgeAppDelegate.newClient(_:)), "n", target: target))
+        file.addItem(.separator())
+        file.addItem(item(String(localized: "Save Access"), #selector(BridgeAppDelegate.saveAccess(_:)), "s", target: target))
+        file.addItem(item(String(localized: "Revert Access"), #selector(BridgeAppDelegate.revertAccess(_:)), target: target))
+        file.addItem(.separator())
+        file.addItem(item(String(localized: "Close Window"), #selector(NSWindow.performClose(_:)), "w"))
+
+        let edit = submenu(String(localized: "Edit"), in: main)
+        edit.addItem(item(String(localized: "Undo"), Selector(("undo:")), "z"))
+        let redo = item(String(localized: "Redo"), Selector(("redo:")), "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(redo)
+        edit.addItem(.separator())
+        edit.addItem(item(String(localized: "Cut"), #selector(NSText.cut(_:)), "x"))
+        edit.addItem(item(String(localized: "Copy"), #selector(NSText.copy(_:)), "c"))
+        edit.addItem(item(String(localized: "Paste"), #selector(NSText.paste(_:)), "v"))
+        edit.addItem(item(String(localized: "Select All"), #selector(NSText.selectAll(_:)), "a"))
+
+        let view = submenu(String(localized: "View"), in: main)
+        view.addItem(item(String(localized: "Overview"), #selector(BridgeAppDelegate.showOverviewPane(_:)), "1", target: target))
+        view.addItem(item(String(localized: "Activity"), #selector(BridgeAppDelegate.showActivityPane(_:)), "2", target: target))
+
+        let window = submenu(String(localized: "Window"), in: main)
+        window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"))
+        window.addItem(item(String(localized: "Zoom"), #selector(NSWindow.performZoom(_:))))
+        window.addItem(.separator())
+        window.addItem(item(String(localized: "Open \(name)"), #selector(BridgeAppDelegate.openMainWindow(_:)), "o", target: target))
+        window.addItem(item(String(localized: "Bring All to Front"), #selector(NSApplication.arrangeInFront(_:))))
+        NSApp.windowsMenu = window
+
+        let help = submenu(String(localized: "Help"), in: main)
+        help.addItem(item(String(localized: "Show Setup Checklist"), #selector(BridgeAppDelegate.showSetupChecklist(_:)), target: target))
+        NSApp.helpMenu = help
+        return main
     }
-    @objc private func quit(_ sender: Any?) {
-        NSApp.terminate(nil)
+
+    private static func submenu(_ title: String, in main: NSMenu) -> NSMenu {
+        let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: title)
+        holder.submenu = menu
+        main.addItem(holder)
+        return menu
+    }
+
+    private static func item(_ title: String, _ action: Selector, _ key: String = "",
+                             target: AnyObject? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = target
+        return item
     }
 }
 
@@ -611,7 +363,13 @@ struct EventKitBridgeApp {
         let app = NSApplication.shared
         let delegate = BridgeAppDelegate()
         app.delegate = delegate
+        #if EVENTKIT_UI_REVIEW
         app.setActivationPolicy(.accessory)
+        #else
+        // "Always" must be in place before the first window shows, to avoid a Dock bounce.
+        let mode = DockIconMode(rawValue: UserDefaults.standard.string(forKey: "DockIconMode") ?? "")
+        app.setActivationPolicy(mode == .always ? .regular : .accessory)
+        #endif
         app.run()
     }
 }

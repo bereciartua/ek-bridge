@@ -15,22 +15,37 @@ if [ "${EVENTKIT_UI_REVIEW:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_UI_REVIEW"
 fi
 
-mkdir -p "$contents_dir/MacOS" "$cache_dir"
+mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
+cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 xcrun swiftc -parse-as-library \
     $test_flag \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -Xcc "-fmodules-cache-path=$cache_dir" \
+    -target arm64-apple-macosx14.0 \
     -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
+    -framework SwiftUI \
     "$project_dir/Sources/main.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/BridgeAppModel.swift" \
+    "$project_dir/Sources/MainWindowController.swift" \
+    "$project_dir/Sources/StatusMenuController.swift" \
+    "$project_dir/Sources/UIComponents.swift" \
+    "$project_dir/Sources/MainView.swift" \
+    "$project_dir/Sources/OverviewView.swift" \
+    "$project_dir/Sources/ClientDetailView.swift" \
+    "$project_dir/Sources/ActivityView.swift" \
+    "$project_dir/Sources/SettingsView.swift" \
+    "$project_dir/Sources/UIReview.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/BridgeEnablement.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
-    "$project_dir/Sources/ClientManagerUI.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
     "$project_dir/Sources/EventCreation.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
@@ -53,6 +68,8 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/BridgeClient.swift" \
     -o "$output_dir/bridge-client"
 

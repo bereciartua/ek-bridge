@@ -40,18 +40,23 @@ struct ClientGrant: Codable, Equatable {
     }
 }
 
-struct ClientView {
+struct ClientView: Equatable {
     let id: String
     let name: String
     let revoked: Bool
     let grants: [ClientGrant]
+    var revokedAt: Date? = nil
 }
 
-struct ClientActivity: Codable {
+// Activity stores time, client ID, command, outcome and the target calendar or
+// list ID. It never stores titles, parameters or item content.
+struct ClientActivity: Codable, Equatable {
     let at: Date
     let clientID: String?
     let command: String
     let outcome: String
+    // Version 3 field. Version 2 rows decode as nil.
+    var targetID: String? = nil
 }
 
 struct AuthorizedClientCall {
@@ -70,8 +75,16 @@ enum ClientRegistryError: String, Error {
     case limitReached
     case clientMissing
     case clientRevoked
+    case duplicateName
     case unauthorized
     case forbidden
+}
+
+enum ClientNameIssue: Equatable {
+    case empty
+    case tooLong
+    case controlCharacters
+    case duplicate(String)
 }
 
 // The store protects against other UIDs and unsafe paths. It does not isolate
@@ -84,17 +97,29 @@ final class ClientRegistry {
         var revoked: Bool
         var revision: Int
         var grants: [ClientGrant]
+        // Version 3 field. Nil for records revoked before version 3.
+        var revokedAt: Date?
     }
     private struct State: Codable {
-        var version = 2
+        var version = ClientRegistry.currentVersion
         var clients = [Record]()
         var activity = [ClientActivity]()
     }
+
+    static let currentVersion = 3
+    // Only active clients count toward this limit. Revoked records are kept
+    // for history, with their own cap; the oldest are pruned first.
+    static let maxActiveClients = 32
+    static let maxRevokedClients = 200
+    static let maxActivity = 500
+    static let backupFileName = "client-registry.v2.backup.json"
 
     private let directory: URL
     private let file: URL
     private var state: State?
     private var failed = false
+    // Raw bytes of a version 2 file, kept until the one-time backup is written.
+    private var pendingBackup: Data?
 
     init(directory override: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
@@ -107,7 +132,7 @@ final class ClientRegistry {
         guard load() else { return nil }
         return state!.clients.map {
             ClientView(id: $0.id, name: $0.name, revoked: $0.revoked,
-                       grants: $0.grants)
+                       grants: $0.grants, revokedAt: $0.revokedAt)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -119,13 +144,16 @@ final class ClientRegistry {
     func createClient(name: String) -> Result<(id: String, key: String), ClientRegistryError> {
         guard load() else { return .failure(.unavailable) }
         guard Self.validName(name) else { return .failure(.invalidName) }
-        guard state!.clients.count < 32 else { return .failure(.limitReached) }
+        guard !nameTaken(name, excluding: nil) else { return .failure(.duplicateName) }
+        guard state!.clients.filter({ !$0.revoked }).count < Self.maxActiveClients else {
+            return .failure(.limitReached)
+        }
         let signingKey = Curve25519.Signing.PrivateKey()
         let id = UUID().uuidString.lowercased()
         var next = state!
         next.clients.append(Record(id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                    verifier: Self.hex(signingKey.publicKey.rawRepresentation),
-                                   revoked: false, revision: 1, grants: []))
+                                   revoked: false, revision: 1, grants: [], revokedAt: nil))
         guard persist(next) else { return .failure(.unavailable) }
         return .success((id, "ekb_v1_" + Self.hex(signingKey.rawRepresentation)))
     }
@@ -150,11 +178,70 @@ final class ClientRegistry {
             return .failure(.clientMissing)
         }
         var next = state!
+        if !next.clients[index].revoked { next.clients[index].revokedAt = Date() }
         next.clients[index].revoked = true
         next.clients[index].verifier = ""
         next.clients[index].revision += 1
+        Self.pruneRevoked(&next)
         guard persist(next) else { return .failure(.unavailable) }
         return .success(())
+    }
+
+    // The name is not part of authorization, so renaming keeps the revision and
+    // requests already in flight are unaffected.
+    func rename(clientID: String, name: String) -> Result<Void, ClientRegistryError> {
+        guard load() else { return .failure(.unavailable) }
+        guard let index = state!.clients.firstIndex(where: { $0.id == clientID }) else {
+            return .failure(.clientMissing)
+        }
+        guard !state!.clients[index].revoked else { return .failure(.clientRevoked) }
+        guard Self.validName(name) else { return .failure(.invalidName) }
+        guard !nameTaken(name, excluding: clientID) else { return .failure(.duplicateName) }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard state!.clients[index].name != trimmed else { return .success(()) }
+        var next = state!
+        next.clients[index].name = trimmed
+        guard persist(next) else { return .failure(.unavailable) }
+        return .success(())
+    }
+
+    /// Inline validation for name fields. Nil means the name can be used.
+    func nameIssue(_ name: String, excluding clientID: String? = nil) -> ClientNameIssue? {
+        if let issue = Self.nameShapeIssue(name) { return issue }
+        guard load() else { return nil }
+        let key = Self.nameKey(name)
+        if let other = state!.clients.first(where: {
+            !$0.revoked && $0.id != clientID && Self.nameKey($0.name) == key
+        }) { return .duplicate(other.name) }
+        return nil
+    }
+
+    static func nameShapeIssue(_ name: String) -> ClientNameIssue? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .empty }
+        if trimmed.rangeOfCharacter(from: .controlCharacters) != nil { return .controlCharacters }
+        if trimmed.utf8.count > 80 { return .tooLong }
+        return nil
+    }
+
+    private func nameTaken(_ name: String, excluding clientID: String?) -> Bool {
+        let key = Self.nameKey(name)
+        return state!.clients.contains {
+            !$0.revoked && $0.id != clientID && Self.nameKey($0.name) == key
+        }
+    }
+
+    private static func nameKey(_ name: String) -> String { ClientNames.key(name) }
+
+    private static func pruneRevoked(_ state: inout State) {
+        let revoked = state.clients.filter(\.revoked)
+        guard revoked.count > maxRevokedClients else { return }
+        // Legacy records without a revoke time are the oldest by definition.
+        let oldest = revoked.sorted {
+            ($0.revokedAt ?? .distantPast) < ($1.revokedAt ?? .distantPast)
+        }.prefix(revoked.count - maxRevokedClients)
+        let pruned = Set(oldest.map(\.id))
+        state.clients.removeAll { pruned.contains($0.id) }
     }
 
     func replaceGrants(clientID: String, grants: [ClientGrant])
@@ -201,7 +288,8 @@ final class ClientRegistry {
             $0.targetID == targetID && $0.allows(request.command)
         }
         if targetID != nil && grant == nil {
-            _ = record(clientID: clientID, command: request.command.rawValue, outcome: "forbidden")
+            _ = record(clientID: clientID, command: request.command.rawValue,
+                       outcome: "forbidden", targetID: targetID)
             return .failure(.forbidden)
         }
         let call = AuthorizedClientCall(clientID: clientID, clientName: candidate.name,
@@ -209,7 +297,7 @@ final class ClientRegistry {
                                         command: request.command,
                                         targetID: targetID, grant: grant)
         guard record(clientID: clientID, command: request.command.rawValue,
-                     outcome: "accepted") else { return .failure(.unavailable) }
+                     outcome: "accepted", targetID: targetID) else { return .failure(.unavailable) }
         return .success(call)
     }
 
@@ -222,7 +310,8 @@ final class ClientRegistry {
 
     @discardableResult
     func recordResult(_ call: AuthorizedClientCall, outcome: String) -> Bool {
-        record(clientID: call.clientID, command: call.command.rawValue, outcome: outcome)
+        record(clientID: call.clientID, command: call.command.rawValue, outcome: outcome,
+               targetID: call.targetID)
     }
 
     private static func targetID(_ request: BridgeRequest) -> String? {
@@ -236,19 +325,26 @@ final class ClientRegistry {
         }
     }
 
-    private func record(clientID: String?, command: String, outcome: String) -> Bool {
+    private func record(clientID: String?, command: String, outcome: String,
+                        targetID: String? = nil) -> Bool {
         guard load() else { return false }
         var next = state!
-        next.activity.append(ClientActivity(at: Date(), clientID: clientID,
-                                            command: command, outcome: outcome))
-        if next.activity.count > 500 { next.activity.removeFirst(next.activity.count - 500) }
+        next.activity.append(ClientActivity(
+            at: Date(), clientID: clientID, command: command, outcome: outcome,
+            targetID: targetID.flatMap { Self.validTargetID($0) ? $0 : nil }))
+        if next.activity.count > Self.maxActivity {
+            next.activity.removeFirst(next.activity.count - Self.maxActivity)
+        }
         return persist(next)
     }
 
-    private static func validName(_ name: String) -> Bool {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && trimmed.utf8.count <= 80 &&
-            trimmed.rangeOfCharacter(from: .controlCharacters) == nil
+    static func validName(_ name: String) -> Bool {
+        nameShapeIssue(name) == nil
+    }
+
+    // Same limits as grant target IDs.
+    static func validTargetID(_ id: String) -> Bool {
+        !id.isEmpty && id.utf8.count <= 512 && id.rangeOfCharacter(from: .controlCharacters) == nil
     }
     private static func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
@@ -292,8 +388,11 @@ final class ClientRegistry {
               let data = try? FileHandle(fileDescriptor: fd, closeOnDealloc: false)
                 .read(upToCount: 1_000_001),
               let decoded = try? JSONDecoder().decode(State.self, from: data),
-              decoded.version == 2, decoded.clients.count <= 32,
-              decoded.activity.count <= 500,
+              decoded.version == 2 || decoded.version == Self.currentVersion,
+              decoded.clients.filter({ !$0.revoked }).count <= Self.maxActiveClients,
+              decoded.clients.count <= Self.maxActiveClients + Self.maxRevokedClients,
+              decoded.activity.count <= Self.maxActivity,
+              decoded.activity.allSatisfy({ $0.targetID.map(Self.validTargetID) ?? true }),
               Set(decoded.clients.map(\.id)).count == decoded.clients.count,
               decoded.clients.allSatisfy({ record in
                   UUID(uuidString: record.id) != nil && Self.validName(record.name) &&
@@ -301,7 +400,39 @@ final class ClientRegistry {
                   record.grants.allSatisfy(\.isValid) &&
                   (record.revoked || Self.unhex(record.verifier)?.count == 32)
               }) else { failed = true; return false }
-        state = decoded
+        // A version 2 file loads as-is and is written as version 3 on the next
+        // persist, after a one-time backup of the original bytes.
+        if decoded.version == 2 { pendingBackup = data }
+        var upgraded = decoded
+        upgraded.version = Self.currentVersion
+        state = upgraded
+        return true
+    }
+
+    // Older builds fail closed on a version 3 file, so keep the original
+    // version 2 file once to make a rollback possible.
+    private func writeBackupIfNeeded() -> Bool {
+        guard let data = pendingBackup else { return true }
+        let backup = directory.appendingPathComponent(Self.backupFileName)
+        let fd = open(backup.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        if fd < 0 {
+            // An earlier backup already exists; never overwrite it.
+            if errno == EEXIST { pendingBackup = nil; return true }
+            return false
+        }
+        let written = data.withUnsafeBytes { bytes -> Bool in
+            guard let base = bytes.baseAddress else { return false }
+            var offset = 0
+            while offset < data.count {
+                let count = Darwin.write(fd, base.advanced(by: offset), data.count - offset)
+                if count <= 0 { return false }
+                offset += count
+            }
+            return fsync(fd) == 0
+        }
+        close(fd)
+        guard written else { unlink(backup.path); return false }
+        pendingBackup = nil
         return true
     }
 
@@ -315,6 +446,7 @@ final class ClientRegistry {
         guard lstat(directory.path, &info) == 0,
               info.st_uid == getuid(), info.st_mode & S_IFMT == S_IFDIR,
               info.st_mode & 0o077 == 0 else { failed = true; return false }
+        guard writeBackupIfNeeded() else { return false }
         let temporary = directory.appendingPathComponent(".tmp-\(UUID().uuidString)")
         let fd = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { failed = true; return false }
@@ -329,7 +461,7 @@ final class ClientRegistry {
             return fsync(fd) == 0
         }
         close(fd)
-        guard written, rename(temporary.path, file.path) == 0 else {
+        guard written, Darwin.rename(temporary.path, file.path) == 0 else {
             unlink(temporary.path)
             failed = true; return false
         }

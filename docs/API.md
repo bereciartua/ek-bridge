@@ -1,15 +1,35 @@
 # Local CLI and command reference
 
-`client.py` runs the matching Swift `build/bridge-client` on the **same Mac and macOS user** as the app. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. It exits nonzero on a denied or failed request. There is no HTTP endpoint, cloud-to-localhost route, or MCP tool in this repository.
+`client.py` runs the matching Swift `build/bridge-client` on the **same Mac and macOS user** as the app. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. There is no HTTP endpoint, cloud-to-localhost route, or MCP tool in this repository.
 
 ```sh
-python3 client.py COMMAND --credentials-file '/private/path/client.json' \
-  [--params-file '/private/path/parameters.json']
+python3 client.py COMMAND --client 'NAME or ID' [--params-file '/private/path/parameters.json']
+python3 client.py COMMAND --credentials-file '/private/path/client.json' [--params-file -]
+python3 client.py --help
+python3 client.py COMMAND --help
 ```
 
-The bracketed option denotes an optional argument; omit the brackets when invoking it. `--params-file` must contain a JSON object. Both files must be regular files owned by the current user with no group/other permissions; the client refuses unsafe files. The app must be running with its bridge enabled, the client must be enrolled, and macOS Full Access must be available for item operations. `EVENTKIT_CLIENT_BINARY` can point `client.py` at a matching `bridge-client` outside the default `build/` directory.
+Brackets denote an optional argument; omit them when invoking it. Choose the key file with exactly one of:
+
+- `--client NAME|ID` uses the app-managed key file for that client. An ID maps straight to `client-credentials/<id>.json`. A name is looked up, ignoring case and surrounding spaces, among active clients in `client-registry.json`; the client reads only IDs, names and revoked flags from it. Clients can be renamed, so scripts meant to last should use the ID or `--credentials-file`.
+- `--credentials-file PATH` uses that key file.
+
+`--params-file` must contain a JSON object under 8 KB. `--params-file -` reads it from stdin, which avoids a temporary file without putting parameters in argv. Key, parameter and registry files must be regular files owned by the current user with no group/other permissions; the client refuses unsafe files and symbolic links. The app must be running with its bridge enabled, the client must be enrolled, and macOS Full Access must be available for item operations. `--help` lists every command with the access it needs; `COMMAND --help` also lists its required and optional parameter keys. `EVENTKIT_CLIENT_BINARY` can point `client.py` at a matching `bridge-client` outside the default `build/` directory.
 
 The response envelope is `{"version":2,"id":"…","ok":true,"result":{…}}` or `{"version":2,"id":"…","ok":false,"error":"code"}`. The client prints potentially private item titles and IDs; handle stdout accordingly. Reads wait up to 10 seconds and writes up to 60 seconds. A timeout is **not** proof that a write failed: read current state and reconcile before trying anything new.
+
+Only the response JSON goes to stdout. Errors go to stderr as `error: …`, sometimes followed by an indented line that says what to do. When the bridge answers `ok:false`, stderr also gets one `hint: …` line from the same outcome map the app's Activity uses. Exit codes:
+
+| Exit | Meaning | Example stderr |
+| --- | --- | --- |
+| 0 | ok | none |
+| 1 | request denied or failed; JSON on stdout | `hint: Grant it in the client's Access, only if the tool should be able to do this.` |
+| 2 | usage error | `error: unknown command "read_reminder". Did you mean read_reminders?`, `error: params must be a JSON object under 8 KB.`, `error: no active client named "…". Clients: …` |
+| 3 | bridge unavailable | `error: EventKit Bridge isn't running, or the bridge is off. Turn it on from the menu bar.`, `error: the bridge session changed. Run the command again.` |
+| 4 | missing or unsafe local file | `error: key file not found: …`, `error: … can be read by other users (mode 644).` |
+| 5 | no response in time | `error: no response after 60 s. The write may still have happened.` |
+
+The client can't tell "app not running" from "bridge off"; both print the exit 3 message. In this reference, a **grant** is what the app calls **access**, and a **collection** is a calendar or reminder list.
 
 ## Commands
 

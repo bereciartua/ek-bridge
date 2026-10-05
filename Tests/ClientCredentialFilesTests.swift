@@ -16,6 +16,18 @@ struct ClientCredentialFilesTests {
         precondition(path.lastPathComponent == id + ".json")
         precondition(mode(path) == 0o600)
         precondition(mode(path.deletingLastPathComponent()) == 0o700)
+        precondition(files.status(clientID: id) == .present)
+        precondition(files.status(clientID: UUID().uuidString) == .missing)
+        precondition(files.status(clientID: "not-a-uuid") == .unsafe)
+        // An unsafe folder makes the file unsafe too, so rotation refuses early.
+        chmod(path.deletingLastPathComponent().path, 0o755)
+        precondition(files.status(clientID: id) == .unsafe)
+        chmod(path.deletingLastPathComponent().path, 0o700)
+        chmod(path.path, 0o644)
+        precondition(files.status(clientID: id) == .unsafe)
+        chmod(path.path, 0o600)
+        precondition(ClientCredentialFiles(parent: root.appendingPathComponent("absent"))
+            .status(clientID: id) == .missing)
         let payload = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as! [String: String]
         precondition(payload["clientID"] == id && payload["key"] == first)
         failure(files.saveNew(clientID: id, key: next), .alreadyExists)
