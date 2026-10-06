@@ -7,9 +7,12 @@ import Foundation
 @MainActor
 final class EventKitCommands: BridgeCommandExecutor {
     let store: EKEventStore
-    let journal = WriteJournal()
+    let journal: WriteJournal
 
-    init(store: EKEventStore) { self.store = store }
+    init(store: EKEventStore, journal: WriteJournal = WriteJournal()) {
+        self.store = store
+        self.journal = journal
+    }
 
     func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
                        stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,

@@ -175,16 +175,18 @@ enum MCPToolMapping {
             return (.getReminder, ["listID": try a.required("list_id"),
                                    "itemID": try identifier(try a.required("reminder_id"), "reminder_id", 512)])
         case "create_reminder":
+            try reminderLocation(a)
             try a.only(["list_id", "title", "due", "start", "alarm", "alarms", "recurrence", "notes", "url",
-                        "location", "priority", "idempotency_key"])
+                        "priority", "idempotency_key"])
             var p: [String: Any] = ["listID": try a.required("list_id"), "title": try title(a)]
             p.merge(try schedule(a, creating: true, zone: zone)) { _, new in new }
             try reminderFields(a, into: &p, creating: true)
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.createReminder, p)
         case "update_reminder":
+            try reminderLocation(a)
             try a.only(["list_id", "reminder_id", "version", "title", "due", "start", "alarm", "alarms",
-                        "recurrence", "notes", "url", "location", "priority", "completed",
+                        "recurrence", "notes", "url", "priority", "completed",
                         "replace_unsupported_alarms", "target_list_id", "idempotency_key"])
             var p = try itemTarget(a, collection: "list_id", item: "reminder_id")
             if a.has("title") { p["title"] = try title(a) }
@@ -195,7 +197,7 @@ enum MCPToolMapping {
             if let destination = try a.string("target_list_id") {
                 p["targetListID"] = try identifier(destination, "target_list_id", 512)
             }
-            let changing = ["title", "due", "start", "alarm", "alarms", "recurrence", "notes", "url", "location",
+            let changing = ["title", "due", "start", "alarm", "alarms", "recurrence", "notes", "url",
                             "priority", "completed", "target_list_id"]
             guard changing.contains(where: a.has) else {
                 throw MCPToolFailure(code: "nothing_to_change", message: "send at least one field to change, "
@@ -373,8 +375,14 @@ enum MCPToolMapping {
                 p["structuredLocation"] = try self.place(place, field: "structured_location")
             }
         }
-        if p["location"] is NSNull, p["structuredLocation"] is [String: Any] {
-            throw invalid("location: can't be null while setting structured_location")
+        if let place = p["structuredLocation"] as? [String: Any] {
+            if p["location"] is NSNull {
+                throw invalid("location: can't be null while setting structured_location")
+            }
+            if let text = p["location"] as? String, text != place["title"] as? String {
+                throw invalid("location: must be the same as structured_location.title (Calendar keeps "
+                    + "one value), or leave it out")
+            }
         }
         if a.has("alarms") { p["alarms"] = try alarms(a, creating: creating, zone: zone, reminders: false) }
         if a.has("availability") {
@@ -625,13 +633,18 @@ enum MCPToolMapping {
         return (spec, form, dueZone)
     }
 
+    /// EventKit ignores a reminder's location text, so say what works instead.
+    private static func reminderLocation(_ a: Arguments) throws(MCPToolFailure) {
+        if a.has("location") {
+            throw invalid("location: a reminder's location can't be set through EventKit; add an alarm with "
+                + "location and proximity instead")
+        }
+    }
+
     private static func reminderFields(_ a: Arguments, into p: inout [String: Any],
                                        creating: Bool) throws(MCPToolFailure) {
         try text(a, "notes", into: &p, creating: creating) { ItemText.notes($0, present: true, creating: creating) }
         try text(a, "url", into: &p, creating: creating) { ItemText.url($0, present: true, creating: creating) }
-        try text(a, "location", into: &p, creating: creating) {
-            ItemText.location($0, present: true, creating: creating)
-        }
         if let priority = try a.string("priority") {
             guard ReminderPriority(rawValue: priority) != nil else {
                 throw invalid("priority: expected none, low, medium or high")

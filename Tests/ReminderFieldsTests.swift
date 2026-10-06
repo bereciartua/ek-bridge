@@ -91,11 +91,12 @@ struct ReminderFieldsTests {
         check(listed.target.alarms == [.relative(-3_600)], "alarms replace the default")
         let started = plan(["title": "x", "due": due(oct6at9), "start": due(oct6at9 - 86_400)])
         check(!ReminderFields.sameDate(started.target.start, started.target.due), "explicit start")
-        let full = plan(["title": "x", "notes": "n", "url": "https://example.com", "location": "Home",
-                         "priority": "medium"])
-        check(full.target.notes == "n" && full.target.url == "https://example.com" &&
-              full.target.location == "Home" && full.target.priority == 5, "text fields and priority")
-        check(full.touched.isSuperset(of: [.title, .notes, .url, .location, .priority, .list]), "touched")
+        let full = plan(["title": "x", "notes": "n", "url": "https://example.com", "priority": "medium"])
+        check(full.target.notes == "n" && full.target.url == "https://example.com" && full.target.priority == 5,
+              "text fields and priority")
+        check(full.touched.isSuperset(of: [.title, .notes, .url, .priority, .list]), "touched")
+        check(error(["title": "x", "location": "Home"]) == nil && !plan(["title": "x"]).touched.contains(.location),
+              "a reminder's location text isn't parsed (EventKit can't set it; the key is refused earlier)")
         check(error(["title": "x", "due": due(Int64(now.timeIntervalSince1970) - 60)]) == "alarm_in_past",
               "default alarm in the past")
         check(error(["title": "x", "alarms": [["kind": "relative", "offset": 0]]]) == "alarm_requires_due",
@@ -126,6 +127,21 @@ struct ReminderFieldsTests {
             start.day = 1
             $0.start = start
         }
+        // EventKit stores an all-day start as midnight; it still follows an all-day due.
+        var midnight = DateComponents(year: 2026, month: 10, day: 6, hour: 0, minute: 0, second: 0)
+        midnight.timeZone = TimeZone(identifier: "America/New_York")
+        var day = DateComponents(year: 2026, month: 10, day: 6)
+        day.timeZone = TimeZone(identifier: "America/New_York")
+        check(ReminderFields.sameStart(day, midnight) && !ReminderFields.sameStart(midnight, day) &&
+              !ReminderFields.sameDate(day, midnight), "an all-day start saved as midnight")
+        let allDayDue = plan(["title": "x", "due": ["kind": "all_day", "date": "2026-10-06",
+                                                    "timeZone": "America/New_York"]]).target
+        var stored = allDayDue
+        stored.start = midnight
+        check(ReminderWriteVerifier.mismatches(allDayDue, stored, touched: [.start]).isEmpty, "verifier accepts it")
+        let follows = plan(["due": ["kind": "all_day", "date": "2026-10-08", "timeZone": "America/New_York"]],
+                           current: stored)
+        check(follows.target.start?.day == 8 && follows.touched.contains(.start), "and it follows the due date")
         let moved = plan(["due": due(oct6at9 + 86_400)], current: independent)
         check(moved.target.start?.day == 1 && !moved.touched.contains(.start), "an independent start stays")
         // Other alarms stay; a relative one is kept.
@@ -235,5 +251,15 @@ struct ReminderFieldsTests {
         check(ReminderWriteVerifier.mismatches(plan.target, saved, touched: plan.touched) == [.alarms],
               "an extra alarm")
         check(ReminderWriteVerifier.code([.priority], "restored") == "priority_readback_failed_restored", "code")
+        // EventKit keeps a due day floating (live probe, Oct 2026).
+        let day = Self.plan(["title": "x", "due": ["kind": "all_day", "date": "2026-10-15",
+                                                   "timeZone": "America/New_York"]])
+        var floating = day.target
+        floating.due?.timeZone = nil
+        floating.start = DateComponents(year: 2026, month: 10, day: 15, hour: 0, minute: 0, second: 0)
+        check(ReminderWriteVerifier.mismatches(day.target, floating, touched: day.touched).isEmpty,
+              "a floating due day and midnight start match")
+        floating.due?.day = 16
+        check(ReminderWriteVerifier.mismatches(day.target, floating, touched: day.touched) == [.due], "another day")
     }
 }

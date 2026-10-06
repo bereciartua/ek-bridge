@@ -26,7 +26,6 @@
   },
   "idempotencyKey" : "$generated",
   "listID" : "LIST-GROC",
-  "location" : "Home",
   "notes" : "Transfer, not check",
   "priority" : "high",
   "start" : {

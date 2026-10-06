@@ -29,7 +29,8 @@ enum ApprovalSummaries {
         var result = ApprovalLookup()
         switch request.command {
         case .updateEvent, .deleteEvent:
-            guard let base = store.event(withIdentifier: id) else { return result }
+            guard let base = store.event(withIdentifier: EventSeries.id(id))
+                    ?? store.event(withIdentifier: id) else { return result }
             result.recurring = base.hasRecurrenceRules || base.isDetached
             var subject = base
             if result.recurring, let start = ReminderDueSpec.timestamp(p["occurrenceStart"]) {
@@ -38,8 +39,10 @@ enum ApprovalSummaries {
                 let predicate = store.predicateForEvents(withStart: at.addingTimeInterval(-86_401),
                                                          end: at.addingTimeInterval(86_401),
                                                          calendars: [base.calendar])
+                let series = EventSeries.id(id)
                 let matches = store.events(matching: predicate).filter {
-                    $0.eventIdentifier == id && $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
+                    EventSeries.id($0.eventIdentifier ?? "") == series &&
+                        $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
                 }
                 if matches.count == 1 { subject = matches[0] }
             }
@@ -50,7 +53,8 @@ enum ApprovalSummaries {
                 let from = span == "all" ? base.startDate! : (result.occurrenceStart ?? subject.startDate!)
                 let predicate = store.predicateForEvents(withStart: from, end: from.addingTimeInterval(400 * 86_400),
                                                          calendars: [base.calendar])
-                result.occurrences = store.events(matching: predicate).filter { $0.eventIdentifier == id }.count
+                result.occurrences = store.events(matching: predicate)
+                    .filter { EventSeries.id($0.eventIdentifier ?? "") == EventSeries.id(id) }.count
             }
         case .updateReminder, .completeReminder, .deleteReminder:
             guard let reminder = store.calendarItem(withIdentifier: id) as? EKReminder else { return result }

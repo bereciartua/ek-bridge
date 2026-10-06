@@ -143,9 +143,9 @@ struct ApprovalSummariesTests {
             "listID": "LIST", "title": "Pay rent", "idempotencyKey": "k",
             "due": ["kind": "timed", "at": 1_793_541_600, "timeZone": "America/New_York"],
             "start": ["kind": "all_day", "date": "2026-10-30", "timeZone": "America/New_York"],
-            "notes": "Transfer", "url": "mailto:landlord@example.com", "location": "Home", "priority": "high",
+            "notes": "Transfer", "url": "mailto:landlord@example.com", "priority": "high",
             "alarms": [["kind": "relative", "offset": 0], ["kind": "relative", "offset": 3_600]]])
-        check(s.rows.map(\.label) == ["Reminder", "Due", "Starts", "Notes", "Link", "Where", "Alerts", "Priority"],
+        check(s.rows.map(\.label) == ["Reminder", "Due", "Starts", "Notes", "Link", "Alerts", "Priority"],
               "\(s.rows.map(\.label))")
         check(row(s, "Link")!.value == "Email link: mailto:landlord@example.com", "email link")
         check(row(s, "Alerts")!.value == "At the due time, 1 h after", row(s, "Alerts")!.value)

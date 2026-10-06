@@ -1133,10 +1133,12 @@ final class SnapshotReview {
             }
             step("approval-panel-event-fields") {
                 self.review.approvals.withdrawAll()
-                let start = Int(Date().addingTimeInterval(7 * 86_400).timeIntervalSince1970) / 3_600 * 3_600
+                // Tuesday, October 13, 2026, 10:00 in Madrid.
                 self.review.queueApproval(.createEvent, [
-                    "calendarID": "cal-work", "title": "Weekly sync", "start": start, "end": start + 3_600,
+                    "calendarID": "cal-work", "title": "Weekly sync", "start": 1_791_878_400, "end": 1_791_882_000,
                     "timeZone": "Europe/Madrid", "idempotencyKey": "k",
+                    "recurrence": ["kind": "rule", "frequency": "weekly", "weekdays": ["TU"],
+                                   "end": ["kind": "count", "count": 10]],
                     "notes": "Agenda:\n1. Roadmap\n2. Hiring\n3. Offsite dates\n4. Anything else",
                     "location": "Sala 2", "structuredLocation": ["title": "Sala 2", "latitude": 40.4168,
                                                                  "longitude": -3.7038],

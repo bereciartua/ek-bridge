@@ -26,7 +26,6 @@ enum ReminderSchedule {
         if touched.contains(.url) {
             reminder.url = target.url.flatMap { URL(string: $0, encodingInvalidCharacters: false) }
         }
-        if touched.contains(.location) { reminder.location = target.location }
         if touched.contains(.priority) { reminder.priority = target.priority }
         if touched.contains(.alarms) {
             var originals = (reminder.alarms ?? []).filter { AlarmSpec.read($0) == nil }.makeIterator()

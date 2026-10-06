@@ -920,7 +920,7 @@ enum MCPToolCatalog {
     {
       "name": "create_reminder",
       "title": "Create reminder",
-      "description": "Creates one reminder, optionally with a due day or time, a start date, notes, url, location, priority, alarms and a repeat rule. A repeating reminder needs a due date that matches its rule.",
+      "description": "Creates one reminder, optionally with a due day or time, a start date, notes, url, priority, alarms and a repeat rule. A repeating reminder needs a due date that matches its rule. For a place, use a location alarm (EventKit can't set a reminder's location text).",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -965,10 +965,6 @@ enum MCPToolCatalog {
             "type": "string",
             "maxLength": 2048,
             "description": "http, https, mailto or tel."
-          },
-          "location": {
-            "type": "string",
-            "maxLength": 500
           },
           "priority": {
             "type": "string",
@@ -1082,13 +1078,6 @@ enum MCPToolCatalog {
             ],
             "maxLength": 2048,
             "description": "http, https, mailto or tel."
-          },
-          "location": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 500
           },
           "priority": {
             "type": "string",
@@ -2134,7 +2123,8 @@ enum MCPToolCatalog {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Read only; set a place with a location alarm."
         },
         "location_truncated": {
           "type": "boolean"

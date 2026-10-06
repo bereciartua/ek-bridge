@@ -107,8 +107,10 @@ struct EventChange: Equatable {
                 change.structuredLocation = .set(place)
             }
         }
-        if case .clear = change.location, change.structuredLocation.value != nil {
-            return .failure(FieldError("invalid_location"))
+        // EventKit keeps one value: the location text is the pin's title.
+        if let place = change.structuredLocation.value {
+            if case .clear = change.location { return .failure(FieldError("invalid_location")) }
+            if let text = change.location.value, text != place.title { return .failure(FieldError("invalid_location")) }
         }
         switch ItemText.url(p["url"], present: p["url"] != nil, creating: creating) {
         case .success(let value): change.url = value
@@ -227,22 +229,28 @@ struct EventFields: Equatable {
             let start = Double(change.start ?? 0), end = Double(change.end ?? 0)
             target.start = change.start != nil ? start : current!.start
             target.end = change.end != nil ? end : current!.end
-            target.allDay = allDay
-            // Floating all-day events stay floating unless another zone is asked for.
-            let currentZone = current?.timeZone.flatMap(TimeZone.init(identifier:))
-            let zone = change.timeZone ?? currentZone ?? macZone
-            if allDay && current?.allDay == true && current?.timeZone == nil &&
-                (change.timeZone == nil || change.timeZone!.identifier == macZone.identifier) {
-                target.timeZone = nil
-            } else {
-                target.timeZone = zone.identifier
+            // An all-day event reads back with its end at 23:59:59 on the last
+            // day; the rules here use the exclusive midnight after it.
+            if let current, current.allDay, change.end == nil {
+                let lastDay = RecurrenceExpansion.localDay(Date(timeIntervalSince1970: current.end - 1), zone: macZone)
+                target.end = midnight(day: lastDay.day + 1, in: macZone)
             }
+            target.allDay = allDay
+            let currentZone = current?.timeZone.flatMap(TimeZone.init(identifier:))
+            // An existing all-day event's dates are in the Mac's zone.
+            let zone = change.timeZone ?? (current?.allDay == true ? macZone : currentZone ?? macZone)
+            target.timeZone = zone.identifier
             guard target.end > target.start else { return .failure(FieldError("invalid_event_schedule")) }
             if allDay {
                 guard let days = allDayLength(start: target.start, end: target.end, zone: zone),
                       (1...maxAllDayDays).contains(days) else {
                     return .failure(FieldError("invalid_event_schedule"))
                 }
+                // EventKit keeps all-day events floating and reads their dates
+                // in the Mac's zone: save the same dates as midnights there.
+                target.start = floatingMidnight(target.start, from: zone, in: macZone)
+                target.end = floatingMidnight(target.end, from: zone, in: macZone)
+                target.timeZone = nil
             } else if target.end - target.start > Double(maxTimedSeconds) {
                 return .failure(FieldError("invalid_event_schedule"))
             }
@@ -270,7 +278,7 @@ struct EventFields: Equatable {
             touched.formUnion([.location, .structuredLocation])
         case .set(let place):
             target.place = place
-            target.location = change.location.value ?? place.title
+            target.location = place.title
             touched.formUnion([.location, .structuredLocation])
         }
         switch change.url {
@@ -323,6 +331,20 @@ struct EventFields: Equatable {
         return .success((target, touched))
     }
 
+    /// The midnight in `macZone` of the date `seconds` falls on in `zone`.
+    static func floatingMidnight(_ seconds: Double, from zone: TimeZone, in macZone: TimeZone) -> Double {
+        midnight(day: RecurrenceExpansion.localDay(Date(timeIntervalSince1970: seconds), zone: zone).day, in: macZone)
+    }
+
+    /// The start of a local day (days since 1970-01-01) in `zone`, DST-safe.
+    static func midnight(day: Int, in zone: TimeZone) -> Double {
+        let (year, month, date) = RecurrenceExpansion.civil(day)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let noon = calendar.date(from: DateComponents(year: year, month: month, day: date, hour: 12))!
+        return calendar.startOfDay(for: noon).timeIntervalSince1970
+    }
+
     /// Calendar days from one local midnight to another (DST-safe), or nil
     /// when either isn't a midnight in `zone`.
     static func allDayLength(start: Double, end: Double, zone: TimeZone) -> Int? {
@@ -348,18 +370,21 @@ enum EventWriteVerifier {
                         macZone: TimeZone) -> Bool {
         switch field {
         case .title: return target.title == saved.title
-        case .start: return abs(target.start - saved.start) < 0.5
+        case .start:
+            if target.allDay { return day(target.start, target, macZone) == day(saved.start, saved, macZone) }
+            return abs(target.start - saved.start) < 0.5
         case .end:
-            // iCloud returns an all-day exclusive end as the previous 23:59:59.
-            return abs(target.end - saved.end) < 0.5 ||
-                (target.allDay && abs(target.end - 1 - saved.end) < 0.5)
+            // All-day: the same last day. iCloud returns the exclusive end as
+            // the previous 23:59:59, which is still that day.
+            if target.allDay { return day(target.end - 1, target, macZone) == day(saved.end - 1, saved, macZone) }
+            return abs(target.end - saved.end) < 0.5
         case .allDay: return target.allDay == saved.allDay
         case .timeZone:
             switch (target.timeZone, saved.timeZone) {
             case (nil, nil): return true
             case (let a?, let b?): return ZoneAliases.same(a, b)
-            // An all-day event saved floating in the Mac's zone is the same dates.
-            case (let a?, nil): return target.allDay && ZoneAliases.same(a, macZone.identifier)
+            // Providers may keep all-day events floating; their dates are checked above.
+            case (_?, nil): return target.allDay
             default: return false
             }
         case .notes: return target.notes == saved.notes
@@ -385,9 +410,25 @@ enum EventWriteVerifier {
         }
     }
 
+    /// The local calendar day of an instant in the event's own zone (the
+    /// Mac's for a floating event), as a day number.
+    private static func day(_ seconds: Double, _ fields: EventFields, _ macZone: TimeZone) -> Int {
+        let zone = fields.timeZone.flatMap(TimeZone.init(identifier:)) ?? macZone
+        return RecurrenceExpansion.localDay(Date(timeIntervalSince1970: seconds), zone: zone).day
+    }
+
     /// "time_zone_readback_failed_rolled_back" and friends; the first field names the code.
     static func code(_ fields: [EventField], _ outcome: String) -> String {
         "\(fields.first?.name ?? "write")_readback_failed_\(outcome)"
+    }
+}
+
+/// iCloud gives an occurrence changed on its own its own event ID,
+/// "<series>/RID=<n>". Rows and lookups use the series'.
+enum EventSeries {
+    static func id(_ eventIdentifier: String) -> String {
+        guard let range = eventIdentifier.range(of: "/RID=") else { return eventIdentifier }
+        return String(eventIdentifier[..<range.lowerBound])
     }
 }
 

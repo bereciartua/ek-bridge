@@ -200,7 +200,9 @@ struct EventFieldsTests {
         // All-day: midnights in the zone, 1–366 days; conversions need both times.
         let oct6 = 1_791_259_200, oct8 = 1_791_432_000
         let toAllDay = target(["allDay": true, "start": oct6, "end": oct8, "timeZone": "America/New_York"])
-        check(toAllDay.target.allDay && toAllDay.target.timeZone == "America/New_York", "timed → all-day")
+        // EventKit keeps all-day events floating, with the dates as midnights in the Mac's zone.
+        check(toAllDay.target.allDay && toAllDay.target.timeZone == nil && toAllDay.target.start == Double(oct6),
+              "timed → all-day")
         check(resolve(["allDay": true, "start": oct6 + 3_600, "end": oct8, "timeZone": "America/New_York"])
               == .failure(FieldError("invalid_event_schedule")), "not a midnight")
         check(resolve(["allDay": true]) == .failure(FieldError("invalid_event_schedule")), "conversion needs times")
@@ -208,9 +210,20 @@ struct EventFieldsTests {
         let floatingAllDay = target(["start": oct6, "end": oct8 + 86_400, "timeZone": "America/New_York",
                                      "allDay": true], current: allDay)
         check(floatingAllDay.target.timeZone == nil, "a floating all-day event stays floating in the Mac's zone")
+        // Madrid dates are saved as the same dates in the Mac's zone (New York here).
         let zonedAllDay = target(["start": oct6 - 21_600, "end": oct8 - 21_600, "timeZone": "Europe/Madrid",
                                   "allDay": true], current: allDay)
-        check(zonedAllDay.target.timeZone == "Europe/Madrid", "another zone is set")
+        check(zonedAllDay.target.timeZone == nil && zonedAllDay.target.start == Double(oct6) &&
+              zonedAllDay.target.end == Double(oct8), "Madrid dates kept as dates")
+        let kolkata = target(["start": 1_791_225_000, "end": 1_791_397_800, "timeZone": "Asia/Calcutta",
+                              "allDay": true], current: allDay)
+        check(kolkata.target.start == Double(oct6) && kolkata.target.end == Double(oct8),
+              "Kolkata Oct 6–7 is Oct 6–7, not a day early")
+        // A saved all-day event ends at 23:59:59 on its last day; a new first day keeps that last day.
+        let stored = current { $0.allDay = true; $0.timeZone = nil; $0.start = Double(oct6); $0.end = Double(oct8) - 1 }
+        let newFirst = target(["allDay": true, "start": oct6 - 86_400, "timeZone": "America/New_York"], current: stored)
+        check(newFirst.target.start == Double(oct6 - 86_400) && newFirst.target.end == Double(oct8),
+              "inclusive end kept")
         let toTimed = target(["allDay": false, "start": 1_791_295_200, "end": 1_791_298_800], current: allDay)
         check(!toTimed.target.allDay && toTimed.target.timeZone == "America/New_York", "all-day → timed")
         check(EventFields.allDayLength(start: Double(oct6), end: Double(oct6) + 366 * 86_400 + 3_600, zone: ny) == nil,
@@ -230,8 +243,11 @@ struct EventFieldsTests {
         let pinned = target(["structuredLocation": ["title": "HQ", "latitude": 1, "longitude": 2]])
         check(pinned.target.location == "HQ" && pinned.target.place?.title == "HQ" &&
               pinned.touched.isSuperset(of: [.location, .structuredLocation]), "a pin sets the location text")
-        let named = target(["location": "Lobby", "structuredLocation": ["title": "HQ", "latitude": 1, "longitude": 2]])
-        check(named.target.location == "Lobby", "location given with a pin")
+        // EventKit keeps one value: the text is the pin's title.
+        check(resolve(["location": "Lobby", "structuredLocation": ["title": "HQ", "latitude": 1, "longitude": 2]])
+              == .failure(FieldError("invalid_location")), "text that differs from the pin")
+        check(target(["location": "HQ", "structuredLocation": ["title": "HQ", "latitude": 1, "longitude": 2]])
+              .target.location == "HQ", "text equal to the pin")
         let withPin = current { $0.place = PlaceSpec(title: "HQ", latitude: 1, longitude: 2, radius: nil) }
         check(target(["location": "Elsewhere"], current: withPin).target.place == nil, "new text drops the old pin")
         check(target(["location": NSNull()], current: withPin).target.place == nil, "clearing location clears the pin")
@@ -296,13 +312,25 @@ struct EventFieldsTests {
         saved.end -= 1
         check(EventWriteVerifier.mismatches(allDay.target, saved, touched: allDay.touched, macZone: ny).isEmpty,
               "exclusive end minus a second")
-        saved.end -= 1
+        saved.end -= 86_400
         check(EventWriteVerifier.mismatches(allDay.target, saved, touched: allDay.touched, macZone: ny) == [.end],
-              "two seconds off")
+              "a day short")
         saved = allDay.target
         saved.timeZone = nil
         check(EventWriteVerifier.mismatches(allDay.target, saved, touched: allDay.touched, macZone: ny).isEmpty,
               "saved floating in the Mac's zone")
+        // Madrid dates saved floating on a New York Mac: same calendar days, different instants.
+        let madrid = target(["allDay": true, "start": 1_791_237_600, "end": 1_791_410_400,
+                             "timeZone": "Europe/Madrid"])
+        saved = madrid.target
+        saved.timeZone = nil
+        saved.start = 1_791_259_200
+        saved.end = 1_791_431_999
+        check(EventWriteVerifier.mismatches(madrid.target, saved, touched: madrid.touched, macZone: ny).isEmpty,
+              "floating all-day dates match by day")
+        saved.start += 86_400
+        check(EventWriteVerifier.mismatches(madrid.target, saved, touched: madrid.touched, macZone: ny) == [.start],
+              "a different first day")
         // Recurrence: equivalent rules pass.
         let weekly = target(["recurrence": ["kind": "rule", "frequency": "weekly"]])
         saved = weekly.target
@@ -315,6 +343,9 @@ struct EventFieldsTests {
     }
 
     static func paging() {
+        // iCloud's ID for an occurrence changed on its own (live probe, Oct 2026).
+        check(EventSeries.id("ABC:1D2E/RID=814176000") == "ABC:1D2E" && EventSeries.id("ABC:1D2E") == "ABC:1D2E",
+              "series ID")
         let key = EventPageKey((1_791_295_200.5, "A:B:C", 1_791_295_200))
         check(key.cursor == "v1:1791295200:1791295200:A:B:C", "cursor text")
         check(EventPageKey(cursor: key.cursor) == key, "cursor round trip, IDs with colons")

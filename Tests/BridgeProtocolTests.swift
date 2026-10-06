@@ -440,8 +440,10 @@ struct BridgeProtocolTests {
 
         // Reminders.
         let reminder: [String: Any] = ["listID": "approved-list", "title": "R", "idempotencyKey": key()]
-        expect(.createReminder, reminder.merging(["notes": "n", "url": "https://example.com", "location": "Home",
+        expect(.createReminder, reminder.merging(["notes": "n", "url": "https://example.com",
                                                   "priority": "high", "alarms": [alarms[1]]]) { _, new in new }, nil)
+        // EKReminder ignores location text, so the key isn't accepted.
+        expect(.createReminder, reminder.merging(["location": "Home"]) { _, new in new }, "invalid_parameters_or_target")
         expect(.createReminder, reminder.merging(["priority": "urgent"]) { _, new in new }, "invalid_parameters_or_target")
         expect(.createReminder, reminder.merging(["completed": true]) { _, new in new }, "invalid_parameters_or_target")
         let due: [String: Any] = ["kind": "timed", "at": 4_000_000_000, "timeZone": "UTC"]
@@ -455,7 +457,7 @@ struct BridgeProtocolTests {
         expect(.updateReminder, item, "nothing_to_change")
         expect(.updateReminder, item.merging(["completed": false]) { _, new in new }, nil)
         expect(.updateReminder, item.merging(["start": NSNull(), "notes": NSNull(), "url": NSNull(),
-                                              "location": NSNull(), "alarms": NSNull()]) { _, new in new }, nil)
+                                              "alarms": NSNull()]) { _, new in new }, nil)
         expect(.updateReminder, item.merging(["priority": NSNull()]) { _, new in new }, "invalid_parameters_or_target")
         expect(.updateReminder, item.merging(["targetListID": "other-list"]) { _, new in new },
                "invalid_parameters_or_target")

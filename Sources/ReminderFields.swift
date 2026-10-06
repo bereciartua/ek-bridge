@@ -40,14 +40,14 @@ struct ReminderChange {
     var recurrence = RecurrenceChange.keep
     var notes = ItemText.Change<String>.keep
     var url = ItemText.Change<String>.keep
-    var location = ItemText.Change<String>.keep
     var priority: ReminderPriority?
     var alarms = ItemText.Change<[AlarmSpec]>.keep
     var completed: Bool?
     var targetListID: String?
     var replaceUnsupportedAlarms = false
 
-    static let fieldKeys = ["title", "due", "start", "recurrence", "notes", "url", "location", "priority",
+    // No location: EKReminder ignores it (a location alarm names a place instead).
+    static let fieldKeys = ["title", "due", "start", "recurrence", "notes", "url", "priority",
                             "alarms", "completed", "targetListID"]
 
     static func parse(_ p: [String: Any], creating: Bool) -> Result<ReminderChange, FieldError> {
@@ -78,10 +78,6 @@ struct ReminderChange {
         }
         switch ItemText.url(p["url"], present: p["url"] != nil, creating: creating) {
         case .success(let value): change.url = value
-        case .failure(let error): return .failure(error)
-        }
-        switch ItemText.location(p["location"], present: p["location"] != nil, creating: creating) {
-        case .success(let value): change.location = value
         case .failure(let error): return .failure(error)
         }
         if let raw = p["priority"] {
@@ -155,6 +151,28 @@ struct ReminderFields {
         return calendar.date(from: components)
     }
 
+    /// A start date as saved: EventKit stores an all-day start as midnight in
+    /// its zone, which is the same start.
+    static func sameStart(_ requested: DateComponents?, _ saved: DateComponents?) -> Bool {
+        if sameDue(requested, saved) { return true }
+        guard var day = requested, day.hour == nil, let saved, saved.hour == 0, saved.minute ?? 0 == 0,
+              saved.second ?? 0 == 0 else { return false }
+        day.hour = 0
+        day.minute = 0
+        day.second = 0
+        return sameDate(day, saved) || (saved.timeZone == nil && day.year == saved.year &&
+                                        day.month == saved.month && day.day == saved.day)
+    }
+
+    /// A due date as saved: EventKit keeps a due day floating, without the
+    /// zone it was written in; the day is what counts.
+    static func sameDue(_ requested: DateComponents?, _ saved: DateComponents?) -> Bool {
+        if sameDate(requested, saved) { return true }
+        guard let requested, requested.hour == nil, let saved, saved.hour == nil, saved.timeZone == nil
+        else { return false }
+        return requested.year == saved.year && requested.month == saved.month && requested.day == saved.day
+    }
+
     static func sameDate(_ a: DateComponents?, _ b: DateComponents?) -> Bool {
         switch (a, b) {
         case (nil, nil): return true
@@ -203,7 +221,7 @@ enum ReminderPlan {
                 target.start = target.due
                 if target.due != nil { touched.insert(.start) }
             } else if dueChanged, let current, let start = current.start,
-                      ReminderFields.sameDate(start, current.due) {
+                      ReminderFields.sameStart(current.due, start) {
                 // A start the bridge set to the due date moves with it.
                 target.start = target.due
                 touched.insert(.start)
@@ -304,11 +322,6 @@ enum ReminderPlan {
         case .clear: target.url = nil; touched.insert(.url)
         case .set(let value): target.url = value; touched.insert(.url)
         }
-        switch change.location {
-        case .keep: break
-        case .clear: target.location = nil; touched.insert(.location)
-        case .set(let value): target.location = value; touched.insert(.location)
-        }
         if let priority = change.priority { target.priority = priority.raw; touched.insert(.priority) }
 
         if let completed = change.completed {
@@ -341,8 +354,8 @@ enum ReminderWriteVerifier {
     static func matches(_ field: ReminderField, _ target: ReminderFields, _ saved: ReminderFields) -> Bool {
         switch field {
         case .title: return target.title == saved.title
-        case .due: return ReminderFields.sameDate(target.due, saved.due)
-        case .start: return ReminderFields.sameDate(target.start, saved.start)
+        case .due: return ReminderFields.sameDue(target.due, saved.due)
+        case .start: return ReminderFields.sameStart(target.start, saved.start)
         case .notes: return target.notes == saved.notes
         case .url: return target.url == saved.url
         case .location: return target.location == saved.location

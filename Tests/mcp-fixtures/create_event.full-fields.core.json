@@ -23,7 +23,7 @@
   "calendarID" : "CAL-WORK",
   "end" : 1791882000,
   "idempotencyKey" : "$generated",
-  "location" : "Sala 2, Oficina Centro",
+  "location" : "Sala 2",
   "notes" : "Agenda:\n1. Roadmap\n2. Hiring",
   "recurrence" : {
     "end" : {

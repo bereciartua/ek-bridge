@@ -115,8 +115,10 @@ extension EventKitCommands {
     func changeEvent(_ call: Call, _ completion: @escaping ([String: Any]) -> Void) {
         let p = call.p
         let deleting = call.request.command == .deleteEvent
+        // A detached occurrence's own ID leads to its series.
         guard let calendar = writableCalendar(p["calendarID"], .event),
-              let base = store.event(withIdentifier: p["itemID"] as! String),
+              let base = store.event(withIdentifier: Self.seriesID(p["itemID"] as! String))
+                ?? store.event(withIdentifier: p["itemID"] as! String),
               base.refresh(),
               base.calendar.calendarIdentifier == calendar.calendarIdentifier else {
             completion(["error": "item_unavailable"]); return
@@ -142,7 +144,7 @@ extension EventKitCommands {
             completion(["error": error]); return
         }
         let occurrence: EKEvent
-        switch findEvent(base.eventIdentifier, in: calendar, occurrenceStart: change.occurrenceStart) {
+        switch findEvent(Self.seriesID(base), in: calendar, occurrenceStart: change.occurrenceStart) {
         case .success(let event): occurrence = event
         case .failure(let error): completion(["error": error.code]); return
         }
@@ -223,7 +225,8 @@ extension EventKitCommands {
     /// The event, or with `occurrenceStart` the one occurrence that started
     /// then (§8.1).
     func findEvent(_ id: String, in calendar: EKCalendar, occurrenceStart: Int?) -> Result<EKEvent, FieldError> {
-        guard let event = store.event(withIdentifier: id), event.refresh(),
+        guard let event = store.event(withIdentifier: id) ?? store.event(withIdentifier: Self.seriesID(id)),
+              event.refresh(),
               event.calendar.calendarIdentifier == calendar.calendarIdentifier else {
             return .failure(FieldError("item_unavailable"))
         }
@@ -235,8 +238,9 @@ extension EventKitCommands {
         }
         let predicate = store.predicateForEvents(withStart: at.addingTimeInterval(-86_401),
                                                  end: at.addingTimeInterval(86_401), calendars: [calendar])
+        let series = Self.seriesID(id)
         let matches = store.events(matching: predicate).filter {
-            $0.eventIdentifier == id && $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
+            Self.seriesID($0) == series && $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
         }
         return matches.count == 1 ? .success(matches[0]) : .failure(FieldError("occurrence_not_found"))
     }
@@ -249,9 +253,17 @@ extension EventKitCommands {
                                                  end: subject.endDate.addingTimeInterval(1),
                                                  calendars: [subject.calendar])
         return store.events(matching: predicate).first {
-            $0.eventIdentifier == id && abs($0.startDate.timeIntervalSince(subject.startDate)) < 0.5
+            Self.seriesID($0) == Self.seriesID(id) && abs($0.startDate.timeIntervalSince(subject.startDate)) < 0.5
         }
     }
+
+    /// The series' ID. iCloud gives an occurrence changed on its own its own
+    /// ID, "<series>/RID=<n>"; rows and lookups use the series'.
+    static func seriesID(_ event: EKEvent) -> String {
+        seriesID(event.eventIdentifier ?? "")
+    }
+
+    static func seriesID(_ id: String) -> String { EventSeries.id(id) }
 
     // Some providers populate occurrenceDate for a one-off event. Use recurrence
     // rules and detachment to decide whether mutations need series handling.
@@ -260,7 +272,7 @@ extension EventKitCommands {
     }
 
     private func occurrenceKey(_ event: EKEvent) -> (Double, String, Double) {
-        (event.startDate.timeIntervalSince1970, event.eventIdentifier ?? "",
+        (event.startDate.timeIntervalSince1970, Self.seriesID(event),
          isRecurring(event) ? event.occurrenceDate?.timeIntervalSince1970 ?? 0 : 0)
     }
 
@@ -273,15 +285,29 @@ extension EventKitCommands {
         if touched.contains(.calendar) { event.calendar = calendar }
         if touched.contains(.title) { event.title = target.title }
         if touched.contains(.start) || touched.contains(.end) {
-            event.isAllDay = target.allDay
-            event.timeZone = target.timeZone.flatMap(TimeZone.init(identifier:))
+            // In EventKit an all-day event has no zone: isAllDay clears it, and
+            // setting a zone afterwards makes the event timed again.
+            if target.allDay {
+                event.timeZone = nil
+                event.isAllDay = true
+            } else {
+                event.isAllDay = false
+                event.timeZone = target.timeZone.flatMap(TimeZone.init(identifier:))
+            }
             event.startDate = Date(timeIntervalSince1970: target.start)
-            event.endDate = Date(timeIntervalSince1970: target.end)
+            // EventKit reads an all-day end as a moment in the last day; the
+            // exclusive midnight would add a day.
+            event.endDate = Date(timeIntervalSince1970: target.allDay ? target.end - 1 : target.end)
         }
         if touched.contains(.notes) { event.notes = target.notes }
         if touched.contains(.structuredLocation) || touched.contains(.location) {
-            event.structuredLocation = target.place?.makeLocation()
-            event.location = target.location
+            // A pin sets the location text to its title; text alone replaces the pin.
+            if let place = target.place {
+                event.structuredLocation = place.makeLocation()
+            } else {
+                event.structuredLocation = nil
+                event.location = target.location
+            }
         }
         if touched.contains(.url) {
             event.url = target.url.flatMap { URL(string: $0, encodingInvalidCharacters: false) }
@@ -297,7 +323,7 @@ extension EventKitCommands {
 
     func eventReceipt(_ event: EKEvent, verified: Set<EventField>) -> [String: Any] {
         var receipt: [String: Any] = [
-            "id": event.eventIdentifier ?? "",
+            "id": Self.seriesID(event),
             "calendarID": event.calendar.calendarIdentifier,
             "start": event.startDate.timeIntervalSince1970,
             "end": event.endDate.timeIntervalSince1970,
@@ -322,7 +348,7 @@ extension EventKitCommands {
         let zone = event.timeZone
         let recurrence = RecurrenceRead(event.recurrenceRules)
         var row: [String: Any] = [
-            "id": event.eventIdentifier ?? "",
+            "id": Self.seriesID(event),
             "title": title,
             "titleTruncated": titleTruncated,
             "start": event.startDate.timeIntervalSince1970,
@@ -491,13 +517,13 @@ struct EventSnapshot {
     func restore(to event: EKEvent) {
         event.calendar = calendar
         event.title = title
-        event.isAllDay = allDay
         event.timeZone = timeZone
+        event.isAllDay = allDay
         event.startDate = start
         event.endDate = end
         event.notes = notes
-        event.structuredLocation = structuredLocation
         event.location = location
+        event.structuredLocation = structuredLocation
         event.url = url
         event.alarms = alarms
         if availability != .notSupported { event.availability = availability }

@@ -40,7 +40,7 @@ struct ReminderScheduleTests {
         let full = EKReminder(eventStore: store)
         let notes = String(repeating: "line\n", count: 100)
         let all = plan(["title": "Full", "due": due, "notes": notes, "url": "https://example.com/x",
-                        "location": "Home", "priority": "high",
+                        "priority": "high",
                         "alarms": [["kind": "relative", "offset": -900], ["kind": "absolute", "at": future - 60],
                                    ["kind": "location", "location": ["title": "Home", "latitude": 1,
                                                                      "longitude": 2, "radius": 100],

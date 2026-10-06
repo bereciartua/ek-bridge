@@ -9,7 +9,6 @@
   },
   "notes": "Transfer, not check",
   "url": "https://bank.example.com/pay",
-  "location": "Home",
   "priority": "high",
   "alarms": [
     {

@@ -95,6 +95,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
     "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
     "$project_dir/Sources/SyntheticAllDayProbe.swift" \
+    "$project_dir/Sources/SyntheticFieldsProbe.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 xcrun swiftc -sdk "$sdk_dir" \

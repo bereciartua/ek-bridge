@@ -76,13 +76,11 @@ extension BridgeCommand {
                                             "idempotencyKey"], optional: ["occurrenceStart", "span"])
         case .createReminder:
             CommandParameterKeys(required: ["listID", "title", "idempotencyKey"],
-                                 optional: ["due", "start", "recurrence", "notes", "url", "location",
-                                            "priority", "alarms"])
+                                 optional: ["due", "start", "recurrence", "notes", "url", "priority", "alarms"])
         case .updateReminder:
             CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
-                                 optional: ["title", "due", "start", "recurrence", "notes", "url", "location",
-                                            "priority", "alarms", "completed", "targetListID",
-                                            "replaceUnsupportedAlarms"])
+                                 optional: ["title", "due", "start", "recurrence", "notes", "url", "priority",
+                                            "alarms", "completed", "targetListID", "replaceUnsupportedAlarms"])
         case .completeReminder:
             CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
                                  optional: ["recurrenceScope", "occurrenceDue",
