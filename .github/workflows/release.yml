@@ -31,7 +31,8 @@ jobs:
     name: Build, notarize and draft the release
     runs-on: xcode-27
     environment: release
-    timeout-minutes: 90
+    # Two notarizations of up to 45 minutes each (release.sh), plus tests and build.
+    timeout-minutes: 120
     env:
       # The same Xcode as CI's first matrix entry and the maintainer's Mac.
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
