@@ -81,10 +81,10 @@ Then update the snippets in [MCP](MCP.md#set-up-your-agent) and [Use from cloud 
 
 Up to 0.7.0 the app was called EventKit Bridge, with the bundle ID `dev.martin.dot.eventkitbridge` (`LegacyIdentity` in `Sources/AppIdentity.swift`; the only place that ID may appear). On its first launch under the new identity, `RenameMigration` (run from `main.swift` before anything reads settings or the data folder):
 
-1. asks the old app to quit if it's running, so the two never share the data folder;
+1. asks the old app to quit if it's running, offering Force Quit if it doesn't within 10 seconds. The two would share the data folder through the link, so this check runs on every launch, and an observer asks again if the old app starts while EK Bridge runs (for example through its own Start at login);
 2. renames `~/Library/Application Support/EventKitBridge` to `EKBridge` and leaves a relative symlink at the old path, so scripts and agent configs that name key or token files there keep working;
 3. copies the known settings from the old defaults domain (`RenameMigration.copiedKeys`), never overwriting a value the new domain has; the setup checklist's done and hidden flags stay behind, so the checklist comes back for the new Calendar and Reminders prompts;
-4. records `RenameMigrationDone` and shows a one-time notice on Overview.
+4. records `RenameMigrationDone`, shows a one-time notice on Overview, and sets `RenameAccessRecheck`, which keeps Activity from before the rename from marking the checklist done until it completes again (or is hidden).
 
 If the move fails (for example both folders exist), nothing is recorded, an alert says what to fix, and the next launch tries again. `bridge-client` and `bridge-mcp` look in the old folder only while the new one doesn't exist. The transport folder moved from `/tmp/eventkit-bridge-<uid>` to `/tmp/ek-bridge-<uid>`; the app and its bundled CLI changed together. Remove the symlink, `LegacyIdentity` and the tools' fallback one or two releases after the first public release.
 

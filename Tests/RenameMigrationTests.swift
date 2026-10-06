@@ -88,6 +88,7 @@ struct RenameMigrationTests {
         check(f.migration.run() == .nothingToMigrate, "fresh: nothing to migrate")
         check(f.defaults.integer(forKey: RenameMigration.doneKey) == 1, "fresh: recorded")
         check(f.defaults.object(forKey: RenameMigration.noticeKey) == nil, "fresh: no notice")
+        check(f.defaults.object(forKey: RenameMigration.accessRecheckKey) == nil, "fresh: checklist as usual")
         check(!FileManager.default.fileExists(atPath: f.new.path), "fresh: no folder created")
         check(!FileManager.default.fileExists(atPath: f.old.path), "fresh: no link created")
         check(f.migration.run() == .alreadyDone, "fresh: second run does nothing")
@@ -139,6 +140,7 @@ struct RenameMigrationTests {
         check(f.defaults.object(forKey: "SetupChecklistHidden") == nil, "full: checklist isn't hidden")
         check(f.defaults.object(forKey: "durableSyntheticLastResult") == nil, "full: test results stay behind")
         check(f.defaults.bool(forKey: RenameMigration.noticeKey), "full: notice pending")
+        check(f.defaults.bool(forKey: RenameMigration.accessRecheckKey), "full: checklist kept until it completes")
         check(f.legacy.string(forKey: "DockIconMode") == "always", "full: old domain untouched")
 
         check(!f.migration.isPending, "full: nothing pending afterwards")
@@ -182,6 +184,7 @@ struct RenameMigrationTests {
         check(f.defaults.object(forKey: RenameMigration.doneKey) == nil, "conflict: not recorded")
         check(f.defaults.object(forKey: "DockIconMode") == nil, "conflict: settings not copied")
         check(f.defaults.object(forKey: RenameMigration.noticeKey) == nil, "conflict: no notice")
+        check(f.defaults.object(forKey: RenameMigration.accessRecheckKey) == nil, "conflict: no recheck")
         check(f.migration.isPending, "conflict: still pending")
     }
 

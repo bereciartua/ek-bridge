@@ -72,6 +72,7 @@ final class UIReview {
         if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if renamed ?? CommandLine.arguments.contains("--ui-renamed") {
             defaults.set(true, forKey: RenameMigration.noticeKey)
+            defaults.set(true, forKey: RenameMigration.accessRecheckKey)
         }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
             seed()

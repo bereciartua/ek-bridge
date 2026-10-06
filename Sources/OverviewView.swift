@@ -59,7 +59,7 @@ struct RenameNotice: View {
     }
 
     private var message: String {
-        var text = String(localized: "Your settings, clients and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its client's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app.")
+        var text = String(localized: "Your settings, clients and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its client's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app, so it can't start again at login.")
         if model.commandLineTool == .elsewhere {
             text += " " + String(localized: "Install the command-line tool again from Settings ▸ Developer.")
         }

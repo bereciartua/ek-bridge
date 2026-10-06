@@ -227,6 +227,8 @@ final class BridgeAppModel {
     private(set) var setupSkipped = Set<SetupChecklist.Step>()
     /// Set once by `RenameMigration`; Overview explains the new name until dismissed.
     private(set) var renameNoticePending = false
+    /// Set by `RenameMigration` until the checklist completes or is hidden.
+    private var renameAccessRecheck = false
     /// Set briefly when the checklist finishes, to show the success message.
     private(set) var setupJustCompletedName: String?
     private(set) var developerOutput: String?
@@ -306,6 +308,7 @@ final class BridgeAppModel {
         setupSkipped = Set((defaults.array(forKey: Keys.setupSkipped) as? [Int] ?? [])
             .compactMap(SetupChecklist.Step.init(rawValue:)))
         renameNoticePending = defaults.bool(forKey: RenameMigration.noticeKey)
+        renameAccessRecheck = defaults.bool(forKey: RenameMigration.accessRecheckKey)
         let viewed = defaults.double(forKey: Keys.activityLastViewed)
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
@@ -342,7 +345,7 @@ final class BridgeAppModel {
         // Installs that already served a request never see the checklist,
         // even if the bridge is off right now. Right after the rename they do:
         // macOS asks for access again under the new bundle ID.
-        if !setupCompleted, !renameNoticePending, SetupChecklist.isDone(.testRequest, checklistInput) {
+        if !setupCompleted, !renameAccessRecheck, SetupChecklist.isDone(.testRequest, checklistInput) {
             setupCompleted = true
             defaults.set(true, forKey: Keys.setupCompleted)
         }
@@ -1119,6 +1122,13 @@ final class BridgeAppModel {
     func hideSetup() {
         setupHidden = true
         services.defaults.set(true, forKey: Keys.setupHidden)
+        endRenameAccessRecheck()
+    }
+
+    private func endRenameAccessRecheck() {
+        guard renameAccessRecheck else { return }
+        renameAccessRecheck = false
+        services.defaults.removeObject(forKey: RenameMigration.accessRecheckKey)
     }
 
     func showSetupAgain() {
@@ -1177,6 +1187,7 @@ final class BridgeAppModel {
         setupCompleted = true
         waitingForTestRequest = false
         services.defaults.set(true, forKey: Keys.setupCompleted)
+        endRenameAccessRecheck()
         // Existing installs that already work never see the checklist or the message.
         guard started else { return }
         let connected = activity.first { $0.code == "success" && client($0.clientID)?.revoked == false }

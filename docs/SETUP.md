@@ -21,6 +21,11 @@ The app used to be called EventKit Bridge (`EventKitBridge.app`). The renamed ap
 5. If you used them: install the command-line tool again (**Settings ▸ Developer**) and turn on **Settings ▸ General ▸ Start at login**.
 6. Delete the old app. System Settings ▸ Privacy & Security ▸ Calendars and Reminders list it until you remove it there.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/overview-renamed-dark.png">
+  <img alt="Overview on the first launch after the rename: a dismissible notice that EventKit Bridge is now EK Bridge, above the setup checklist with Calendar and Reminders access to allow again and the other steps done." src="images/overview-renamed-light.png" width="660">
+</picture>
+
 If the move fails, for example because both folders exist, the app says what to fix and tries again on its next launch. The [changelog](../CHANGELOG.md) has the full list of changes and how to roll back.
 
 ## Build from source
