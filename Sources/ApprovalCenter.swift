@@ -10,6 +10,10 @@ struct ApprovalSummary: Equatable {
         let value: String
         /// For an update: the current value, shown as "before → after".
         var before: String? = nil
+        /// Part of `value` shown in bold, such as a link's host.
+        var emphasis: String? = nil
+        /// The whole value when `value` is shortened; shown as a tooltip.
+        var full: String? = nil
     }
 
     /// "Claude Code wants to add a reminder".

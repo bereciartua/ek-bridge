@@ -1,0 +1,355 @@
+{
+  "tool": "read_events",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "start": "2026-10-19T00:00:00-04:00",
+    "end": "2026-11-02T00:00:00-04:00",
+    "limit": 7
+  },
+  "core": {
+    "items": [
+      {
+        "id": "EV-M",
+        "version": "1791200000.123456",
+        "title": "Weekly sync",
+        "titleTruncated": false,
+        "start": 1792483200,
+        "end": 1792486800,
+        "recurring": true,
+        "allDay": false,
+        "timeZone": "Europe/Madrid",
+        "hasAttendees": false,
+        "occurrenceStart": 1792483200,
+        "detached": false,
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "TU"
+          ],
+          "end": {
+            "kind": "until",
+            "at": 1798761599
+          },
+          "rrule": "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T225959Z",
+          "summary": "Weekly on Tuesday, until Dec 31, 2026"
+        },
+        "status": "confirmed",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-M",
+        "notesPreview": "Agenda: roadmap, hiring",
+        "hasNotes": true,
+        "notesTruncated": false,
+        "location": "Sala 2",
+        "locationTruncated": false,
+        "structuredLocation": {
+          "title": "Sala 2",
+          "latitude": 40.4168,
+          "longitude": -3.7038,
+          "radius": 50.0
+        },
+        "url": "https://meet.example.com/abc",
+        "alarms": [
+          {
+            "kind": "relative",
+            "offset": -600
+          },
+          {
+            "kind": "absolute",
+            "at": 1792479600
+          },
+          {
+            "kind": "location",
+            "location": {
+              "title": "Office",
+              "latitude": 40.4,
+              "longitude": -3.7
+            },
+            "proximity": "arrive"
+          },
+          {
+            "kind": "unsupported",
+            "summary": "alarm with a sound"
+          }
+        ],
+        "alarmsTruncated": false,
+        "availability": "free",
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": true,
+          "times": true,
+          "recurrence": true,
+          "reason": null
+        },
+        "urlSchemeAllowed": true
+      },
+      {
+        "id": "EV-M",
+        "version": "1791200000.123456",
+        "title": "Weekly sync (moved)",
+        "titleTruncated": false,
+        "start": 1793095200,
+        "end": 1793098800,
+        "recurring": true,
+        "allDay": false,
+        "timeZone": "Europe/Madrid",
+        "hasAttendees": false,
+        "occurrenceStart": 1793088000,
+        "detached": true,
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "TU"
+          ],
+          "end": {
+            "kind": "until",
+            "at": 1798761599
+          },
+          "rrule": "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T225959Z",
+          "summary": "Weekly on Tuesday, until Dec 31, 2026"
+        },
+        "status": "none",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-M",
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "location": null,
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": null,
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": "busy",
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": true,
+          "times": true,
+          "recurrence": true,
+          "reason": null
+        }
+      },
+      {
+        "id": "EV-I",
+        "version": "1791200000.123456",
+        "title": "Quarterly planning",
+        "titleTruncated": false,
+        "start": 1792501200,
+        "end": 1792504800,
+        "recurring": false,
+        "allDay": false,
+        "timeZone": "America/New_York",
+        "hasAttendees": true,
+        "occurrenceStart": null,
+        "detached": false,
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "status": "tentative",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-I",
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "location": null,
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": null,
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": "busy",
+        "attendeeCount": 12,
+        "organizerIsYou": false,
+        "yourStatus": "tentative",
+        "editable": {
+          "fields": false,
+          "times": false,
+          "recurrence": false,
+          "reason": "invitation"
+        }
+      },
+      {
+        "id": "EV-F",
+        "version": "1791200000.123456",
+        "title": "Floating brunch",
+        "titleTruncated": false,
+        "start": 1792508400,
+        "end": 1792512000,
+        "recurring": false,
+        "allDay": false,
+        "timeZone": "",
+        "hasAttendees": false,
+        "occurrenceStart": null,
+        "detached": false,
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "status": "none",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-F",
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "location": null,
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": null,
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": "busy",
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": true,
+          "times": false,
+          "recurrence": false,
+          "reason": "floating_time"
+        }
+      },
+      {
+        "id": "EV-U",
+        "version": "1791200000.123456",
+        "title": "Old import",
+        "titleTruncated": false,
+        "start": 1792515600,
+        "end": 1792519200,
+        "recurring": true,
+        "allDay": false,
+        "timeZone": "UTC",
+        "hasAttendees": false,
+        "occurrenceStart": 1792515600,
+        "detached": false,
+        "recurrence": {
+          "kind": "unsupported",
+          "supported": false,
+          "reason": "complex_rule",
+          "summary": "FREQ=YEARLY;BYWEEKNO=42"
+        },
+        "status": "none",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-U",
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "location": null,
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": "x-app://open/42",
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": null,
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": true,
+          "times": true,
+          "recurrence": false,
+          "reason": "unsupported_recurrence"
+        },
+        "urlSchemeAllowed": false
+      },
+      {
+        "id": "EV-A",
+        "version": "1791200000.123456",
+        "title": "Conference",
+        "titleTruncated": false,
+        "start": 1792468800,
+        "end": 1792728000,
+        "recurring": false,
+        "allDay": true,
+        "timeZone": "",
+        "hasAttendees": false,
+        "occurrenceStart": null,
+        "detached": false,
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "status": "none",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-A",
+        "notesPreview": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "hasNotes": true,
+        "notesTruncated": true,
+        "location": "Lisbon",
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": null,
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": "busy",
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": true,
+          "times": true,
+          "recurrence": true,
+          "reason": null
+        }
+      },
+      {
+        "id": "EV-R",
+        "version": "1791200000.123456",
+        "title": "Read-only holiday",
+        "titleTruncated": false,
+        "start": 1792468800,
+        "end": 1792555199,
+        "recurring": false,
+        "allDay": true,
+        "timeZone": "",
+        "hasAttendees": false,
+        "occurrenceStart": null,
+        "detached": false,
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "status": "none",
+        "created": 1791100000.0,
+        "modified": 1791200000.123456,
+        "externalID": "ext-EV-R",
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "location": null,
+        "locationTruncated": false,
+        "structuredLocation": null,
+        "url": null,
+        "alarms": [],
+        "alarmsTruncated": false,
+        "availability": null,
+        "attendeeCount": 0,
+        "organizerIsYou": false,
+        "yourStatus": null,
+        "editable": {
+          "fields": false,
+          "times": false,
+          "recurrence": false,
+          "reason": "read_only_calendar"
+        }
+      }
+    ],
+    "truncated": true,
+    "nextCursor": "v1:1792468800:0:EV-R"
+  }
+}

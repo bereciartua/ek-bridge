@@ -240,7 +240,7 @@ def main() -> int:
             "calendar_id": "CAL-WORK", "start": "2026-10-06T00:00:00-04:00",
             "end": "2026-10-07T00:00:00-04:00"}))
         events = (reply or {}).get("result", {}).get("structuredContent", {}).get("events", [])
-        expect("read_events with a string id", reply and reply["id"] == "r-3" and len(events) == 2,
+        expect("read_events with a string id", reply and reply["id"] == "r-3" and len(events) == 3,
                f"{reply!r}"[:300])
         # Modern request: MCP-Protocol-Version, Mcp-Method and Mcp-Name come
         # from the message, or the server answers 400 -32020.
@@ -340,7 +340,7 @@ def main() -> int:
         expect("check: all good", code == 0 and out == "" and
                f"EventKit Bridge MCP check for client {agent_id[:4]}…{agent_id[-4:]}" in err and
                '  ✓ token accepted: client "agent"' in err and "(mode 600)" in err and
-               "  ✓ 6 tools available: list_collections" in err and "  ✓ the bridge is on" in err,
+               "  ✓ 8 tools available: list_collections" in err and "  ✓ the bridge is on" in err,
                f"{code} {err!r}")
         harness.control(cmd="bridge", on=False)
         code, _, err = run(["check", "--client", agent_id])

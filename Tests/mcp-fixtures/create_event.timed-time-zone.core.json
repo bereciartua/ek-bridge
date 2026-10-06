@@ -3,5 +3,6 @@
   "end" : 1791275400,
   "idempotencyKey" : "$generated",
   "start" : 1791273600,
+  "timeZone" : "Europe/London",
   "title" : "Call London"
 }

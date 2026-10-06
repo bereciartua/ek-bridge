@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence: {\"none\": true} only works in update_event; leave out recurrence for an event that doesn't repeat",
+    "text" : "Invalid arguments: recurrence: {\"none\": true} only works in update_event; leave out recurrence for an event that doesn't repeat. (code: invalid_arguments)"
+  }
+}

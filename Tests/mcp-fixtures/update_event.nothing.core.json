@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "nothing_to_change",
+    "message" : "send at least one field to change, like title, start, notes or recurrence",
+    "text" : "Nothing to change: send at least one field to change, like title, start, notes or recurrence. (code: nothing_to_change)"
+  }
+}

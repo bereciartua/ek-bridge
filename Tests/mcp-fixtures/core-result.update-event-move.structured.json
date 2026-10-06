@@ -1,0 +1,16 @@
+{
+  "calendar_id" : "CAL-HOME",
+  "event" : {
+    "all_day" : false,
+    "end" : "2026-10-06T11:00:00-04:00",
+    "id" : "EV1",
+    "recurring" : false,
+    "start" : "2026-10-06T10:00:00-04:00",
+    "time_zone" : "America/New_York",
+    "verified" : [
+      "calendar"
+    ],
+    "version" : "1791216003.000000"
+  },
+  "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+}

@@ -1,0 +1,22 @@
+{
+  "due" : {
+    "date" : "2026-11-02",
+    "kind" : "all_day",
+    "timeZone" : "America/New_York"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "recurrence" : {
+    "end" : {
+      "at" : 1814414399,
+      "kind" : "until"
+    },
+    "frequency" : "monthly",
+    "interval" : 1,
+    "kind" : "rule",
+    "weekdays" : [
+      "1MO"
+    ]
+  },
+  "title" : "Pay rent"
+}

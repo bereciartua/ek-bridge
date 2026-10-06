@@ -1,0 +1,40 @@
+{
+  "tool": "create_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "title": "Weekly sync",
+    "start": "2026-10-13T10:00",
+    "end": "2026-10-13T11:00",
+    "time_zone": "Europe/Madrid",
+    "notes": "Agenda",
+    "recurrence": {
+      "frequency": "weekly",
+      "weekdays": [
+        "TU"
+      ]
+    }
+  },
+  "core": {
+    "item": {
+      "id": "EV-NEW",
+      "version": "1791216001.000000",
+      "calendarID": "CAL-WORK",
+      "start": 1791878400,
+      "end": 1791882000,
+      "allDay": false,
+      "timeZone": "Europe/Madrid",
+      "recurring": true,
+      "occurrenceStart": 1791878400,
+      "verified": [
+        "title",
+        "start",
+        "end",
+        "all_day",
+        "time_zone",
+        "notes",
+        "recurrence",
+        "calendar"
+      ]
+    }
+  }
+}

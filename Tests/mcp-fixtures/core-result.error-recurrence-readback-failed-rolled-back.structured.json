@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Not saved: the new event's recurrence didn't read back as requested, so it was removed and nothing changed. The account may not support this value; tell the user rather than retrying the same values. (code: recurrence_readback_failed_rolled_back)"
+}

@@ -1,0 +1,12 @@
+{
+  "alarms" : null,
+  "availability" : null,
+  "calendarID" : "CAL-WORK",
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV1",
+  "location" : null,
+  "notes" : null,
+  "structuredLocation" : null,
+  "url" : null
+}

@@ -1,0 +1,15 @@
+{
+  "calendar_id": "CAL-WORK",
+  "event_id": "EV3",
+  "version": "1791200000.123456",
+  "occurrence_start": "2026-10-20T10:00:00+02:00",
+  "span": "future",
+  "start": "2026-10-20T11:00:00+02:00",
+  "end": "2026-10-20T12:00:00+02:00",
+  "recurrence": {
+    "frequency": "weekly",
+    "weekdays": [
+      "TU"
+    ]
+  }
+}

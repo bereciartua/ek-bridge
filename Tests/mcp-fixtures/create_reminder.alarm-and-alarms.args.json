@@ -1,0 +1,13 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Pay rent",
+  "due": {
+    "date_time": "2026-11-01T09:00:00-04:00"
+  },
+  "alarm": "none",
+  "alarms": [
+    {
+      "minutes_before": 60
+    }
+  ]
+}

@@ -7,7 +7,9 @@ enum BridgeCommand: String, CaseIterable {
     case scopeStatus = "scope_status"
     case listCollections = "list_collections"
     case readEvents = "read_events"
+    case getEvent = "get_event"
     case readReminders = "read_reminders"
+    case getReminder = "get_reminder"
     case createEvent = "create_event"
     case updateEvent = "update_event"
     case deleteEvent = "delete_event"
@@ -51,24 +53,34 @@ extension BridgeCommand {
              .listCollections:
             CommandParameterKeys(required: [], optional: [])
         case .readEvents:
-            CommandParameterKeys(required: ["calendarID", "start", "end", "limit"], optional: [])
+            CommandParameterKeys(required: ["calendarID", "start", "end", "limit"], optional: ["afterKey"])
+        case .getEvent:
+            CommandParameterKeys(required: ["calendarID", "itemID"], optional: ["occurrenceStart"])
         case .readReminders:
-            CommandParameterKeys(required: ["listID", "limit"], optional: ["afterID"])
+            CommandParameterKeys(required: ["listID", "limit"],
+                                 optional: ["afterID", "status", "dueAfter", "dueBefore"])
+        case .getReminder:
+            CommandParameterKeys(required: ["listID", "itemID"], optional: [])
         case .createEvent:
             CommandParameterKeys(required: ["calendarID", "title", "start", "end", "idempotencyKey"],
-                                 optional: ["allDay", "timeZone", "notes"])
+                                 optional: ["allDay", "timeZone", "notes", "location", "structuredLocation",
+                                            "url", "alarms", "availability", "recurrence"])
         case .updateEvent:
-            CommandParameterKeys(required: ["calendarID", "itemID", "expectedVersion", "title",
-                                            "start", "end", "idempotencyKey"], optional: [])
+            CommandParameterKeys(required: ["calendarID", "itemID", "expectedVersion", "idempotencyKey"],
+                                 optional: ["title", "start", "end", "allDay", "timeZone", "notes", "location",
+                                            "structuredLocation", "url", "alarms", "availability",
+                                            "recurrence", "occurrenceStart", "span", "targetCalendarID",
+                                            "replaceUnsupportedAlarms"])
         case .deleteEvent:
             CommandParameterKeys(required: ["calendarID", "itemID", "expectedVersion",
-                                            "idempotencyKey"], optional: [])
+                                            "idempotencyKey"], optional: ["occurrenceStart", "span"])
         case .createReminder:
             CommandParameterKeys(required: ["listID", "title", "idempotencyKey"],
-                                 optional: ["due", "recurrence"])
+                                 optional: ["due", "start", "recurrence", "notes", "url", "priority", "alarms"])
         case .updateReminder:
-            CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "title",
-                                            "idempotencyKey"], optional: ["due", "recurrence"])
+            CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
+                                 optional: ["title", "due", "start", "recurrence", "notes", "url", "priority",
+                                            "alarms", "completed", "targetListID", "replaceUnsupportedAlarms"])
         case .completeReminder:
             CommandParameterKeys(required: ["listID", "itemID", "expectedVersion", "idempotencyKey"],
                                  optional: ["recurrenceScope", "occurrenceDue",
@@ -104,8 +116,9 @@ enum BridgeRequestError: String, Error {
 }
 
 enum BridgeProtocol {
-    static let maxRequestBytes = 8_192
-    static let maxResponseBytes = 65_536
+    /// An update with 8,000 bytes of notes and every other field (plan 03 §16).
+    static let maxRequestBytes = 32_768
+    static let maxResponseBytes = 1_048_576
     static let requestLifetime: TimeInterval = 30
 
     static func validate(

@@ -1,0 +1,11 @@
+{
+  "calendar_id": "CAL-WORK",
+  "event_id": "EV1",
+  "version": "1791200000.123456",
+  "alarms": [
+    {
+      "minutes_before": 5
+    }
+  ],
+  "replace_unsupported_alarms": true
+}

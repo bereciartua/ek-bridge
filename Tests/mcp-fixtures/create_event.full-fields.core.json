@@ -1,0 +1,50 @@
+{
+  "alarms" : [
+    {
+      "kind" : "relative",
+      "offset" : -900
+    },
+    {
+      "at" : 1791873000,
+      "kind" : "absolute"
+    },
+    {
+      "kind" : "location",
+      "location" : {
+        "latitude" : 40.416800000000002,
+        "longitude" : -3.7038000000000002,
+        "radius" : 50,
+        "title" : "Sala 2"
+      },
+      "proximity" : "arrive"
+    }
+  ],
+  "availability" : "free",
+  "calendarID" : "CAL-WORK",
+  "end" : 1791882000,
+  "idempotencyKey" : "$generated",
+  "location" : "Sala 2",
+  "notes" : "Agenda:\n1. Roadmap\n2. Hiring",
+  "recurrence" : {
+    "end" : {
+      "count" : 10,
+      "kind" : "count"
+    },
+    "frequency" : "monthly",
+    "interval" : 1,
+    "kind" : "rule",
+    "weekdays" : [
+      "2TU"
+    ]
+  },
+  "start" : 1791878400,
+  "structuredLocation" : {
+    "latitude" : 40.416800000000002,
+    "longitude" : -3.7038000000000002,
+    "radius" : 50,
+    "title" : "Sala 2"
+  },
+  "timeZone" : "Europe/Madrid",
+  "title" : "Weekly sync",
+  "url" : "https://meet.example.com/abc?pwd=1"
+}

@@ -7,14 +7,16 @@
   "idempotencyKey" : "$generated",
   "listID" : "LIST-GROC",
   "recurrence" : {
-    "dayOfMonth" : 5,
     "end" : {
       "count" : 12,
       "kind" : "count"
     },
     "frequency" : "monthly",
     "interval" : 1,
-    "kind" : "rule"
+    "kind" : "rule",
+    "monthDays" : [
+      5
+    ]
   },
   "title" : "Pay rent"
 }

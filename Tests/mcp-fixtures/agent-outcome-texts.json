@@ -6,6 +6,11 @@
   },
   {
     "code" : "forbidden",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "get_event"
+  },
+  {
+    "code" : "forbidden",
     "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this client in EventKit Bridge. Don't retry. (code: forbidden)",
     "tool" : "create_event"
   },
@@ -23,6 +28,11 @@
     "code" : "forbidden",
     "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
     "tool" : "read_reminders"
+  },
+  {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "get_reminder"
   },
   {
     "code" : "forbidden",
@@ -278,7 +288,7 @@
   {
     "code" : "invalid_parameters_or_target",
     "detail" : "a hint",
-    "text" : "Rejected: the bridge rejected these values (a hint). Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters_or_target)",
+    "text" : "Rejected: the bridge rejected these values (a hint). Check the tool's description; for example, timed events can last at most 31 days, all-day events 366 days, and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters_or_target)",
     "tool" : "create_event"
   },
   {
@@ -328,6 +338,31 @@
     "tool" : "read_events"
   },
   {
+    "code" : "forbidden",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "tool" : "get_event"
+  },
+  {
+    "code" : "recurrence_scope_required",
+    "text" : "Repeats: this reminder repeats, and deleting it removes every future occurrence. If that's what the user wants, call again with scope \"series\". (code: recurrence_scope_required)",
+    "tool" : "delete_reminder"
+  },
+  {
+    "code" : "recurrence_scope_required",
+    "text" : "Repeats: a repeating reminder is completed one occurrence at a time. Use complete_reminder with its completion_candidate instead of completed. (code: recurrence_scope_required)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "recurrence_anchor_mismatch",
+    "text" : "Repeat doesn't match: the repeat rule doesn't fit the first occurrence: the start must be one of the rule's own dates (its weekdays, month_days or months), and an end until must be after it. Fix the arguments and call again. (code: recurrence_anchor_mismatch)",
+    "tool" : "create_event"
+  },
+  {
+    "code" : "alarms_unsupported",
+    "text" : "Alarms can't be replaced: this reminder has alarms the bridge can't express, and alarms would replace them. Leave alarms out, or pass replace_unsupported_alarms true if the user agrees to lose them. (code: alarms_unsupported)",
+    "tool" : "update_reminder"
+  },
+  {
     "code" : "unauthorized",
     "text" : "Access removed: this agent's access was removed in EventKit Bridge. Tell the user; don't retry. (code: unauthorized)",
     "tool" : "complete_reminder"
@@ -354,8 +389,8 @@
   },
   {
     "code" : "too_many_events_narrow_range",
-    "text" : "Too many events: more events matched than limit. Call again with a shorter range or a higher limit (max 100). (code: too_many_events_narrow_range)",
-    "tool" : "create_event"
+    "text" : "Too many events: the range holds more events than the bridge reads at once. Call again with a shorter range. (code: too_many_events_narrow_range)",
+    "tool" : "update_event"
   },
   {
     "code" : "nonexistent_local_time",
@@ -369,22 +404,22 @@
   },
   {
     "code" : "invalid_parameters",
-    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters)",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 31 days, all-day events 366 days, and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_parameters)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "invalid_schedule",
-    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_schedule)",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 31 days, all-day events 366 days, and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_schedule)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "invalid_event_schedule",
-    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_event_schedule)",
-    "tool" : "create_event"
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 31 days, all-day events 366 days, and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_event_schedule)",
+    "tool" : "update_event"
   },
   {
     "code" : "invalid_request",
-    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 7 days and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_request)",
+    "text" : "Rejected: the bridge rejected these values. Check the tool's description; for example, timed events can last at most 31 days, all-day events 366 days, and reads cover at most 31 days. Fix the arguments before calling again. (code: invalid_request)",
     "tool" : "complete_reminder"
   },
   {
@@ -394,7 +429,7 @@
   },
   {
     "code" : "recurrence_anchor_mismatch",
-    "text" : "Repeat doesn't match: the repeat rule doesn't fit the due date: weekdays or day_of_month must include the due day, and end_until must be after it. Fix the arguments and call again. (code: recurrence_anchor_mismatch)",
+    "text" : "Repeat doesn't match: the repeat rule doesn't fit the first occurrence: the due date must be one of the rule's own dates (its weekdays, month_days or months), and an end until must be after it. Fix the arguments and call again. (code: recurrence_anchor_mismatch)",
     "tool" : "complete_reminder"
   },
   {
@@ -550,6 +585,151 @@
   {
     "code" : "unavailable",
     "text" : "Error: EventKit Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: unavailable)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "nothing_to_change",
+    "text" : "Nothing to change: the update named no field to change. Send the fields that should change. (code: nothing_to_change)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "occurrence_required",
+    "text" : "Needs occurrence: this event repeats. Pass occurrence_start from read_events, and span (this, future or all) to say which occurrences change. (code: occurrence_required)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "occurrence_not_found",
+    "text" : "Not found: no occurrence of this event starts at occurrence_start. Read the calendar again and use an occurrence_start from it. (code: occurrence_not_found)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "span_not_applicable",
+    "text" : "Doesn't repeat: this event doesn't repeat, so span must be left out or \"this\". Call again without it. (code: span_not_applicable)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "recurrence_span_invalid",
+    "text" : "Needs a wider span: changing the repeat rule needs span \"future\" or \"all\", and moving a repeating event to another calendar needs span \"all\". Call again with one. (code: recurrence_span_invalid)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "invitation_read_only",
+    "text" : "Invitation: this event has attendees, and changing it could notify them, so the bridge doesn't change or delete invitations. Tell the user to change it in Calendar. (code: invitation_read_only)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "floating_time_read_only",
+    "text" : "Floating time: this event has no time zone, so the bridge can't change its times exactly. Other fields can change; tell the user to change the times in Calendar. (code: floating_time_read_only)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "availability_unsupported",
+    "text" : "Not supported: that calendar doesn't accept this availability. Use one that list_collections shows for it, or leave availability out. (code: availability_unsupported)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "url_scheme_not_allowed",
+    "text" : "Link not allowed: only http, https, mailto and tel links can be written. Fix url and call again. (code: url_scheme_not_allowed)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_url",
+    "text" : "Invalid link: url must be a complete link like https://example.com/page, with no spaces. Fix it and call again. (code: invalid_url)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_notes",
+    "text" : "Rejected: the bridge rejected a field's value (invalid_notes). Check the tool's description and fix the arguments before calling again. (code: invalid_notes)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "notes_too_long",
+    "text" : "Rejected: the bridge rejected a field's value (notes_too_long). Check the tool's description and fix the arguments before calling again. (code: notes_too_long)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_location",
+    "text" : "Rejected: the bridge rejected a field's value (invalid_location). Check the tool's description and fix the arguments before calling again. (code: invalid_location)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "location_too_long",
+    "text" : "Rejected: the bridge rejected a field's value (location_too_long). Check the tool's description and fix the arguments before calling again. (code: location_too_long)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_alarms",
+    "text" : "Rejected: the bridge rejected a field's value (invalid_alarms). Check the tool's description and fix the arguments before calling again. (code: invalid_alarms)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "invalid_recurrence",
+    "text" : "Rejected: the bridge rejected a field's value (invalid_recurrence). Check the tool's description and fix the arguments before calling again. (code: invalid_recurrence)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "alarms_unsupported",
+    "text" : "Alarms can't be replaced: this reminder has alarms the bridge can't express, and alarms would replace them. Leave alarms out, or pass replace_unsupported_alarms true if the user agrees to lose them. (code: alarms_unsupported)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "alarm_requires_due",
+    "text" : "Needs a due date: an alarm in minutes_before counts from the due time, so the reminder needs a due date. Send due as well, or use an alarm with at. (code: alarm_requires_due)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_requires_relative_alarm",
+    "text" : "Needs relative alarms: a repeating reminder can only have alarms relative to its due time. Use minutes_before instead of at, and call again. (code: recurrence_requires_relative_alarm)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_uncomplete_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: recurrence_uncomplete_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "recurrence_unsupported",
+    "text" : "Not supported: the bridge doesn't change items of this shape, to avoid damaging them. Tell the user it has to be changed in Reminders. (code: recurrence_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "move_across_accounts_unsupported",
+    "text" : "Not supported: items can move only between calendars or lists of the same account. Create a copy in the other one instead if the user wants that. (code: move_across_accounts_unsupported)",
+    "tool" : "complete_reminder"
+  },
+  {
+    "code" : "already_applied",
+    "text" : "Already done: this occurrence was already deleted by an earlier request. Nothing to do; don't retry. (code: already_applied)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "time_zone_readback_failed_rolled_back",
+    "text" : "Not saved: the new event's time zone didn't read back as requested, so it was removed and nothing changed. The account may not support this value; tell the user rather than retrying the same values. (code: time_zone_readback_failed_rolled_back)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "start_readback_failed_cleanup_needed",
+    "text" : "Needs review: the new event was saved but its start didn't read back as requested, and the bridge couldn't remove it. Tell the user to check the calendar in Calendar; don't retry. (code: start_readback_failed_cleanup_needed)",
+    "tool" : "update_event"
+  },
+  {
+    "code" : "alarms_readback_failed_restored",
+    "text" : "Not saved: the reminder's alarms didn't read back as requested, so its previous values were put back and nothing changed. The account may not support this value; tell the user rather than retrying the same values. (code: alarms_readback_failed_restored)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "notes_readback_failed_restore_failed",
+    "text" : "Needs review: the reminder's notes didn't read back as requested, and the bridge couldn't put the previous values back. Stop, and tell the user to check the reminder in Reminders; don't retry. (code: notes_readback_failed_restore_failed)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "priority_readback_failed_restored",
+    "text" : "Not saved: the reminder's priority didn't read back as requested, so its previous values were put back and nothing changed. The account may not support this value; tell the user rather than retrying the same values. (code: priority_readback_failed_restored)",
+    "tool" : "update_reminder"
+  },
+  {
+    "code" : "write_readback_failed_rolled_back",
+    "text" : "Not saved: the new reminder couldn't be read back after saving, so it was removed and nothing changed. The account may not support this value; tell the user rather than retrying the same values. (code: write_readback_failed_rolled_back)",
     "tool" : "complete_reminder"
   }
 ]

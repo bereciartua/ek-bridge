@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarms[0].proximity: expected arrive or leave",
+    "text" : "Invalid arguments: alarms[0].proximity: expected arrive or leave. (code: invalid_arguments)"
+  }
+}

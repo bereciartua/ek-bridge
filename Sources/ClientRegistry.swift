@@ -25,8 +25,9 @@ struct ClientGrant: Codable, Equatable {
     func allows(_ command: BridgeCommand) -> Bool {
         let required: Int
         switch command {
-        case .readEvents where resource == .calendar,
-             .readReminders where resource == .reminderList: required = Self.read
+        case .readEvents where resource == .calendar, .getEvent where resource == .calendar,
+             .readReminders where resource == .reminderList,
+             .getReminder where resource == .reminderList: required = Self.read
         case .createEvent where resource == .calendar,
              .createReminder where resource == .reminderList: required = Self.create
         case .updateEvent where resource == .calendar,
@@ -113,6 +114,8 @@ struct AuthorizedClientCall {
     let targetID: String?
     let grant: ClientGrant?
     var origin = RequestOrigin.cli
+    /// A move's destination, where the client holds Create (plan 03 §13).
+    var moveTargetID: String? = nil
     var approval = ApprovalMode.allow
     /// How Ask before changes was answered, for the result row.
     var approvalDetail: String? = nil
@@ -531,11 +534,20 @@ final class ClientRegistry {
                        outcome: "forbidden", targetID: targetID, origin: origin)
             return .failure(.forbidden)
         }
-        let call = AuthorizedClientCall(clientID: clientID, clientName: candidate.name,
+        // Moving needs Edit here and Create on the destination.
+        let moveTargetID = Self.moveTargetID(request)
+        if let moveTargetID, let grant,
+           !candidate.grants.contains(where: { Self.allowsMove(into: $0, moveTargetID, from: grant) }) {
+            _ = record(clientID: clientID, command: request.command.rawValue,
+                       outcome: "forbidden", targetID: targetID, origin: origin)
+            return .failure(.forbidden)
+        }
+        var call = AuthorizedClientCall(clientID: clientID, clientName: candidate.name,
                                         revision: candidate.revision,
                                         command: request.command,
                                         targetID: targetID, grant: grant, origin: origin,
                                         approval: candidate.approval ?? .allow)
+        call.moveTargetID = moveTargetID
         guard record(clientID: clientID, command: request.command.rawValue,
                      outcome: "accepted", targetID: targetID, origin: origin) else {
             return .failure(.unavailable)
@@ -548,7 +560,28 @@ final class ClientRegistry {
         guard load(), let current = state!.clients.first(where: { $0.id == call.clientID }),
               !current.revoked, current.revision == call.revision else { return false }
         guard let targetID = call.targetID else { return true }
-        return current.grants.contains { $0.targetID == targetID && $0.allows(call.command) }
+        guard let grant = current.grants.first(where: { $0.targetID == targetID && $0.allows(call.command) })
+        else { return false }
+        guard let moveTargetID = call.moveTargetID else { return true }
+        return current.grants.contains { Self.allowsMove(into: $0, moveTargetID, from: grant) }
+    }
+
+    /// The destination of a move (`targetCalendarID`, `targetListID`) when it
+    /// differs from the source.
+    static func moveTargetID(_ request: BridgeRequest) -> String? {
+        let key: String
+        switch request.command {
+        case .updateEvent: key = "targetCalendarID"
+        case .updateReminder: key = "targetListID"
+        default: return nil
+        }
+        guard let destination = request.parameters[key] as? String,
+              destination != targetID(request) else { return nil }
+        return destination
+    }
+
+    private static func allowsMove(into grant: ClientGrant, _ destination: String, from source: ClientGrant) -> Bool {
+        grant.targetID == destination && grant.resource == source.resource && grant.mask & ClientGrant.create != 0
     }
 
     @discardableResult
@@ -588,9 +621,9 @@ final class ClientRegistry {
 
     static func targetID(_ request: BridgeRequest) -> String? {
         switch request.command {
-        case .readEvents, .createEvent, .updateEvent, .deleteEvent:
+        case .readEvents, .getEvent, .createEvent, .updateEvent, .deleteEvent:
             return request.parameters["calendarID"] as? String
-        case .readReminders, .createReminder, .updateReminder,
+        case .readReminders, .getReminder, .createReminder, .updateReminder,
              .completeReminder, .deleteReminder:
             return request.parameters["listID"] as? String
         default: return nil

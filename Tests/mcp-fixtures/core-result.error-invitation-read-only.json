@@ -1,0 +1,12 @@
+{
+  "tool": "update_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV-I",
+    "version": "1791200000.123456",
+    "title": "x"
+  },
+  "core": {
+    "error": "invitation_read_only"
+  }
+}

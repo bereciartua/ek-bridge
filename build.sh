@@ -47,14 +47,20 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ReminderSchedule.swift" \
     "$project_dir/Sources/RecurringReminderCompletion.swift" \
     "$project_dir/Sources/TestCollections.swift" \
     "$project_dir/Sources/EventKitCommands.swift" \
+    "$project_dir/Sources/EventCommands.swift" \
+    "$project_dir/Sources/ReminderCommands.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
@@ -63,6 +69,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/RequestPipeline.swift" \
     "$project_dir/Sources/ApprovalCenter.swift" \
     "$project_dir/Sources/ApprovalPanel.swift" \
+    "$project_dir/Sources/ApprovalSummaries.swift" \
     "$project_dir/Sources/AgentSetup.swift" \
     "$project_dir/Sources/ConnectAgentView.swift" \
     "$project_dir/Sources/MCP/AgentOutcomeText.swift" \
@@ -88,6 +95,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
     "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
     "$project_dir/Sources/SyntheticAllDayProbe.swift" \
+    "$project_dir/Sources/SyntheticFieldsProbe.swift" \
     -o "$contents_dir/MacOS/EventKitBridge"
 
 xcrun swiftc -sdk "$sdk_dir" \

@@ -25,7 +25,7 @@ struct CLIError: Error {
     let message: String
     var details: [String] = []
 
-    static let maxParamsBytes = 8_192
+    static let maxParamsBytes = 30_720
     private static let launcher = CLIIdentity.launcher
     private static let retryAdvice = "Read the item before retrying, and reuse the same idempotencyKey."
     private static let rebuildAdvice = "Rebuild the client with: sh build.sh"
@@ -42,7 +42,7 @@ struct CLIError: Error {
                         message: "unknown command \"\(name)\".\(suggestion)",
                         details: ["Run \(launcher) --help for all commands."])
     }
-    static let invalidParams = usage("params must be a JSON object under 8 KB.")
+    static let invalidParams = usage("params must be a JSON object under 30 KB.")
     static let bridgeNotRunning = CLIError(
         exitCode: ExitCode.bridgeUnavailable,
         message: "\(CLIIdentity.productName) isn't running, or the bridge is off. Turn it on from the menu bar.")
@@ -345,7 +345,7 @@ enum Help {
             "  --client NAME|ID         Use the key file of the active client with this",
             "                           name or ID.",
             "  --credentials-file PATH  Use this key file.",
-            "  --params-file PATH       Read the parameters, a JSON object under 8 KB.",
+            "  --params-file PATH       Read the parameters, a JSON object under 30 KB.",
             "  --params-file -          Read the parameters from stdin.",
             "  -h, --help               Show this help. After a command, show its help.",
             "",
@@ -378,7 +378,7 @@ enum Help {
         if keys.isEmpty {
             lines.append("Takes no parameters.")
         } else {
-            lines.append("Parameters (a JSON object under 8 KB):")
+            lines.append("Parameters (a JSON object under 30 KB):")
             lines.append("  Required: " + keys.required.joined(separator: ", "))
             if !keys.optional.isEmpty {
                 lines.append("  Optional: " + keys.optional.joined(separator: ", "))

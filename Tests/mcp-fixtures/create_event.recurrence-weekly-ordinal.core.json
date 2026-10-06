@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence.weekdays: weekly rules take plain codes like MO, without a number",
+    "text" : "Invalid arguments: recurrence.weekdays: weekly rules take plain codes like MO, without a number. (code: invalid_arguments)"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "location: a reminder's location can't be set through EventKit; add an alarm with location and proximity instead",
+    "text" : "Invalid arguments: location: a reminder's location can't be set through EventKit; add an alarm with location and proximity instead. (code: invalid_arguments)"
+  }
+}

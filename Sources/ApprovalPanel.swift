@@ -157,8 +157,10 @@ struct ApprovalPanelView: View {
                                     .foregroundStyle(.secondary)
                                     .accessibilityLabel(String(localized: "Before: \(before)"))
                             }
-                            Text(row.value)
+                            Text(Self.attributed(row.value, bold: row.emphasis))
+                                .lineLimit(6)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .help(row.full ?? "")
                                 .accessibilityLabel(row.before == nil ? row.value
                                                     : String(localized: "After: \(row.value)"))
                         }
@@ -180,6 +182,16 @@ struct ApprovalPanelView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// `text` with the first `bold` substring emphasized. Built without
+    /// Markdown: the text comes from the request and may contain anything.
+    static func attributed(_ text: String, bold: String?) -> AttributedString {
+        var result = AttributedString(text)
+        if let bold, !bold.isEmpty, let range = result.range(of: bold) {
+            result[range].font = .body.bold()
+        }
+        return result
     }
 
     private func footer(_ item: PendingApproval) -> some View {
@@ -227,193 +239,5 @@ struct ApprovalPanelView: View {
                     .disabled(armedID != item.id)
             }
         }
-    }
-}
-
-/// Builds the panel's text from the request parameters and a fresh EventKit
-/// lookup of the current item, never from anything the agent wrote about it.
-@MainActor
-enum ApprovalSummaries {
-    static func build(_ approval: ApprovalRequest, store: EKEventStore?,
-                      collections: [CollectionInfo]) -> ApprovalSummary {
-        let request = approval.request
-        let p = request.parameters
-        let command = request.command
-        let reminders = CommandPresentation.targetsList(command.rawValue)
-        let collection = approval.targetID.flatMap { id in
-            collections.first { $0.id == id && $0.resource == (reminders ? .reminderList : .calendar) }
-        }
-        let subtitle = collection.map { "\($0.name) · \($0.account)" }
-        let title = String(localized: "\(approval.clientName) wants to \(verb(command))")
-        var rows = [ApprovalSummary.Row]()
-        var lookupFailed = false
-        let itemID = p["itemID"] as? String
-
-        switch command {
-        case .createEvent:
-            rows.append(.init(label: String(localized: "Event"), value: text(p["title"])))
-            rows.append(.init(label: String(localized: "When"), value: eventTime(p)))
-            if let notes = p["notes"] as? String {
-                rows.append(.init(label: String(localized: "Notes"), value: notes))
-            }
-        case .updateEvent, .deleteEvent:
-            let event = itemID.flatMap { store?.event(withIdentifier: $0) }
-            lookupFailed = event == nil
-            let currentTitle = event?.title
-            let currentTime = event.map { span($0.startDate, $0.endDate, allDay: $0.isAllDay) }
-            if command == .deleteEvent {
-                rows.append(.init(label: String(localized: "Event"), value: currentTitle ?? "–"))
-                if let currentTime { rows.append(.init(label: String(localized: "When"), value: currentTime)) }
-            } else {
-                let newTitle = text(p["title"])
-                let newTime = eventTime(p)
-                rows.append(.init(label: String(localized: "Event"), value: newTitle,
-                                  before: currentTitle != newTitle ? currentTitle : nil))
-                rows.append(.init(label: String(localized: "When"), value: newTime,
-                                  before: currentTime != newTime ? currentTime : nil))
-            }
-        case .createReminder:
-            rows.append(.init(label: String(localized: "Reminder"), value: text(p["title"])))
-            if let due = p["due"] as? [String: Any], let value = dueText(due) {
-                rows.append(.init(label: String(localized: "Due"), value: value))
-            }
-            if let repeats = (p["recurrence"] as? [String: Any]).flatMap(repeatText) {
-                rows.append(.init(label: String(localized: "Repeats"), value: repeats))
-            }
-        case .updateReminder, .completeReminder, .deleteReminder:
-            let reminder = itemID.flatMap { store?.calendarItem(withIdentifier: $0) as? EKReminder }
-            lookupFailed = reminder == nil
-            let currentDue = reminder?.dueDateComponents.flatMap(dueText(components:))
-            if command == .updateReminder {
-                let newTitle = text(p["title"])
-                rows.append(.init(label: String(localized: "Reminder"), value: newTitle,
-                                  before: reminder?.title != newTitle ? reminder?.title : nil))
-                if let due = p["due"] as? [String: Any] {
-                    let value = dueText(due) ?? String(localized: "None")
-                    rows.append(.init(label: String(localized: "Due"), value: value,
-                                      before: (currentDue ?? String(localized: "None")) != value
-                                        ? (currentDue ?? String(localized: "None")) : nil))
-                } else if let currentDue {
-                    rows.append(.init(label: String(localized: "Due"), value: currentDue))
-                }
-                if let recurrence = p["recurrence"] as? [String: Any] {
-                    rows.append(.init(label: String(localized: "Repeats"),
-                                      value: repeatText(recurrence) ?? String(localized: "Never")))
-                }
-            } else {
-                rows.append(.init(label: String(localized: "Reminder"), value: reminder?.title ?? "–"))
-                if let currentDue { rows.append(.init(label: String(localized: "Due"), value: currentDue)) }
-                if command == .completeReminder, p["recurrenceScope"] as? String == "occurrence" {
-                    rows.append(.init(label: String(localized: "Repeats"),
-                                      value: String(localized: "Only this occurrence is completed")))
-                }
-            }
-        default:
-            break
-        }
-        return ApprovalSummary(title: title, subtitle: subtitle, rows: rows,
-                               isDelete: command == .deleteEvent || command == .deleteReminder,
-                               lookupFailed: lookupFailed, collectionColor: collection?.color)
-    }
-
-    static func verb(_ command: BridgeCommand) -> String {
-        switch command {
-        case .createEvent: String(localized: "add an event")
-        case .updateEvent: String(localized: "change an event")
-        case .deleteEvent: String(localized: "delete an event")
-        case .createReminder: String(localized: "add a reminder")
-        case .updateReminder: String(localized: "change a reminder")
-        case .completeReminder: String(localized: "complete a reminder")
-        case .deleteReminder: String(localized: "delete a reminder")
-        default: String(localized: "make a change")
-        }
-    }
-
-    private static func text(_ value: Any?) -> String { value as? String ?? "–" }
-
-    private static func seconds(_ value: Any?) -> Date? {
-        (value as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
-    }
-
-    private static func eventTime(_ p: [String: Any]) -> String {
-        guard let start = seconds(p["start"]), let end = seconds(p["end"]) else { return "–" }
-        if p["allDay"] != nil, let zone = (p["timeZone"] as? String).flatMap(TimeZone.init(identifier:)) {
-            return allDaySpan(start, end, zone: zone)
-        }
-        return span(start, end, allDay: false)
-    }
-
-    static func span(_ start: Date, _ end: Date, allDay: Bool) -> String {
-        if allDay { return allDaySpan(start, end, zone: .current) }
-        let day = start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        let from = start.formatted(date: .omitted, time: .shortened)
-        let sameDay = Calendar.current.isDate(start, inSameDayAs: end)
-        let to = sameDay ? end.formatted(date: .omitted, time: .shortened)
-                         : end.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
-        return "\(day), \(from)–\(to)"
-    }
-
-    private static func allDaySpan(_ start: Date, _ end: Date, zone: TimeZone) -> String {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        let style = Date.FormatStyle(timeZone: zone).weekday(.abbreviated).month(.abbreviated).day()
-        let last = end.addingTimeInterval(-1)
-        let first = start.formatted(style)
-        return calendar.isDate(start, inSameDayAs: last)
-            ? String(localized: "\(first), all day")
-            : String(localized: "\(first) – \(last.formatted(style)), all day")
-    }
-
-    private static func dueText(_ due: [String: Any]) -> String? {
-        switch due["kind"] as? String {
-        case "timed":
-            guard let at = seconds(due["at"]) else { return nil }
-            return at.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
-        case "all_day":
-            return due["date"] as? String
-        default:
-            return nil
-        }
-    }
-
-    private static func dueText(components: DateComponents) -> String? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = components.timeZone ?? .current
-        guard let date = calendar.date(from: components) else { return nil }
-        return components.hour == nil
-            ? date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-            : date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
-    }
-
-    private static func repeatText(_ recurrence: [String: Any]) -> String? {
-        guard recurrence["kind"] as? String == "rule", let frequency = recurrence["frequency"] as? String
-        else { return nil }
-        let interval = (recurrence["interval"] as? NSNumber)?.intValue ?? 1
-        let unit: String
-        switch frequency {
-        case "daily": unit = interval == 1 ? String(localized: "Every day") : String(localized: "Every \(interval) days")
-        case "weekly": unit = interval == 1 ? String(localized: "Every week") : String(localized: "Every \(interval) weeks")
-        case "monthly": unit = interval == 1 ? String(localized: "Every month") : String(localized: "Every \(interval) months")
-        default: unit = interval == 1 ? String(localized: "Every year") : String(localized: "Every \(interval) years")
-        }
-        var parts = [unit]
-        if let days = recurrence["weekdays"] as? [String], !days.isEmpty {
-            let codes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
-            let names = days.compactMap { code in
-                codes.firstIndex(of: code).map { Calendar.current.weekdaySymbols[$0] }
-            }
-            parts.append(String(localized: "on \(names.formatted(.list(type: .and)))"))
-        }
-        if let day = recurrence["dayOfMonth"] as? NSNumber {
-            parts.append(String(localized: "on day \(day.intValue)"))
-        }
-        if let end = recurrence["end"] as? [String: Any] {
-            if let count = end["count"] as? NSNumber {
-                parts.append(String(localized: "\(count.intValue) times"))
-            } else if let until = seconds(end["at"]) {
-                parts.append(String(localized: "until \(until.formatted(date: .abbreviated, time: .omitted))"))
-            }
-        }
-        return parts.joined(separator: " ")
     }
 }

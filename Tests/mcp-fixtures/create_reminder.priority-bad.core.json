@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "priority: expected none, low, medium or high",
+    "text" : "Invalid arguments: priority: expected none, low, medium or high. (code: invalid_arguments)"
+  }
+}

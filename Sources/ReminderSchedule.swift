@@ -1,112 +1,133 @@
 import EventKit
 import Foundation
 
-// Schedule validation and mutation stay separate from store access so they can
-// be checked against in-memory EKReminder objects before any live writes.
+// Reminder fields ⇄ EKReminder, kept apart from store access so they can be
+// checked against in-memory EKReminder objects before any live writes.
 enum ReminderSchedule {
-    static func describe(_ reminder: EKReminder) -> [String: Any] {
-        let alarms = reminder.alarms ?? []
-        let rows: [[String: Any]] = alarms.prefix(4).map { alarm in
-            if let date = alarm.absoluteDate {
-                return ["kind": "absolute", "at": date.timeIntervalSince1970]
-            }
-            return ["kind": "relative", "offset": alarm.relativeOffset]
-        }
-        return ["due": ReminderDueSpec.readback(reminder.dueDateComponents),
-                "recurrence": ReminderRecurrence.readback(reminder.recurrenceRules),
-                "alarms": rows, "alarmCount": alarms.count,
-                "alarmsTruncated": alarms.count > rows.count]
+    static func fields(_ reminder: EKReminder) -> ReminderFields {
+        ReminderFields(listID: reminder.calendar?.calendarIdentifier ?? "", title: reminder.title ?? "",
+                       due: reminder.dueDateComponents, start: reminder.startDateComponents,
+                       notes: EventKitText.text(reminder.notes), url: reminder.url?.absoluteString,
+                       location: EventKitText.text(reminder.location), priority: reminder.priority,
+                       alarms: (reminder.alarms ?? []).map(AlarmSpec.read),
+                       recurrence: RecurrenceRead(reminder.recurrenceRules),
+                       completed: reminder.isCompleted)
     }
-    static func validate(_ dueChange: ReminderDueChange,
-                                          _ recurrenceChange: ReminderRecurrenceChange,
-                                          for reminder: EKReminder, creating: Bool) -> String? {
-        if !creating && reminder.hasRecurrenceRules &&
-           ReminderRecurrence.readback(reminder.recurrenceRules)["supported"] as? Bool != true {
-            return "recurrence_unsupported"
+
+    /// Writes the touched fields. Alarms the bridge can't represent (nil
+    /// entries) keep their original EKAlarm, in order.
+    static func apply(_ target: ReminderFields, _ touched: Set<ReminderField>, to reminder: EKReminder,
+                      list: EKCalendar?) {
+        if touched.contains(.list), let list { reminder.calendar = list }
+        if touched.contains(.title) { reminder.title = target.title }
+        if touched.contains(.start) { reminder.startDateComponents = target.start }
+        if touched.contains(.due) { reminder.dueDateComponents = target.due }
+        if touched.contains(.notes) { reminder.notes = target.notes }
+        if touched.contains(.url) {
+            reminder.url = target.url.flatMap { URL(string: $0, encodingInvalidCharacters: false) }
         }
-        let proposedDue: DateComponents?
-        switch dueChange {
-        case .keep: proposedDue = reminder.dueDateComponents
-        case .clear: proposedDue = nil
-        case .set(let spec): proposedDue = spec.components
+        if touched.contains(.priority) { reminder.priority = target.priority }
+        if touched.contains(.alarms) {
+            var originals = (reminder.alarms ?? []).filter { AlarmSpec.read($0) == nil }.makeIterator()
+            // The original objects: a copy loses parts such as the sound.
+            reminder.alarms = target.alarms.compactMap { spec in spec?.makeAlarm() ?? originals.next() }
         }
-        let proposedRules: [EKRecurrenceRule]?
-        switch recurrenceChange {
-        case .keep: proposedRules = reminder.recurrenceRules
-        case .clear: proposedRules = nil
-        case .set(let rule): proposedRules = [rule]
+        if touched.contains(.recurrence) {
+            reminder.recurrenceRules = target.recurrence.spec.map { [$0.makeRule()] }
         }
-        if let rules = proposedRules, !rules.isEmpty {
-            guard let proposedDue else { return "recurrence_requires_due" }
-            if rules.count != 1 ||
-               !ReminderRecurrenceChange.set(rules[0]).matchesAnchor(proposedDue) {
-                return "recurrence_anchor_mismatch"
-            }
-        }
-        if !creating, let rules = proposedRules, !rules.isEmpty,
-           !reminder.hasRecurrenceRules, case .keep = dueChange,
-           (reminder.alarms ?? []).contains(where: { $0.absoluteDate != nil }) {
-            return "recurrence_requires_alarm_reset"
-        }
-        if !creating && reminder.isCompleted {
-            if case .keep = dueChange {} else { return "completed_reminder_due_unsupported" }
-            if case .keep = recurrenceChange {} else {
-                return "completed_reminder_recurrence_unsupported"
-            }
-        }
-        if case .set(let spec) = dueChange, let alarm = spec.alarmAt,
-           alarm <= Date() { return "alarm_in_past" }
-        if !creating {
-            if case .keep = dueChange {} else {
-                if let start = reminder.startDateComponents {
-                    guard let due = reminder.dueDateComponents,
-                          ReminderDueSpec.sameDayAndTime(start, due) else {
-                        return "complex_start_unsupported"
-                    }
-                }
-                let alarms = reminder.alarms ?? []
-                guard alarms.count <= 1,
-                      alarms.allSatisfy({ alarm in
-                          alarm.type == .display && alarm.structuredLocation == nil &&
-                          alarm.proximity == .none && alarm.soundName == nil &&
-                          alarm.emailAddress == nil &&
-                          (alarm.absoluteDate != nil || reminder.hasRecurrenceRules)
-                      }) else {
-                    return "complex_alarm_unsupported"
-                }
-            }
-        }
-        return nil
+        if touched.contains(.completed) { reminder.isCompleted = target.completed }
     }
-    static func apply(_ dueChange: ReminderDueChange,
-                                       _ recurrenceChange: ReminderRecurrenceChange,
-                                       to reminder: EKReminder) {
-        switch dueChange {
-        case .keep: break
-        case .clear:
-            reminder.startDateComponents = nil
-            reminder.dueDateComponents = nil
-            reminder.alarms = []
-        case .set(let spec):
-            reminder.startDateComponents = spec.components
-            reminder.dueDateComponents = spec.components
-            let recurring: Bool
-            switch recurrenceChange {
-            case .set: recurring = true
-            case .clear: recurring = false
-            case .keep: recurring = reminder.hasRecurrenceRules
-            }
-            if let alarm = spec.alarmAt, recurring,
-               let start = spec.components.calendar?.date(from: spec.components) {
-                reminder.alarms = [EKAlarm(relativeOffset: alarm.timeIntervalSince(start))]
-            } else {
-                reminder.alarms = spec.alarmAt.map { [EKAlarm(absoluteDate: $0)] } ?? []
-            }
+
+    /// One reminder as read results show it (§15.3). List rows carry a notes
+    /// preview; `full` rows the notes.
+    static func describe(_ reminder: EKReminder, full: Bool = false) -> [String: Any] {
+        let (title, titleTruncated) = ItemText.prefix(reminder.title ?? "", maxBytes: 200)
+        let due = reminder.dueDateComponents
+        let (alarms, alarmsTruncated) = AlarmSpec.readback(reminder.alarms)
+        var row: [String: Any] = [
+            "id": reminder.calendarItemIdentifier,
+            "title": title,
+            "titleTruncated": titleTruncated,
+            "completed": reminder.isCompleted,
+            "recurring": reminder.hasRecurrenceRules,
+            "due": ReminderDueSpec.readback(due),
+            "start": ReminderDueSpec.readback(reminder.startDateComponents),
+            "recurrence": RecurrenceRead(reminder.recurrenceRules).core(zone: due?.timeZone ?? .current),
+            "alarms": alarms, "alarmCount": reminder.alarms?.count ?? 0,
+            "alarmsTruncated": alarmsTruncated,
+            "priority": ReminderPriority.read(reminder.priority)?.rawValue as Any? ?? NSNull(),
+            "priorityRaw": reminder.priority,
+            "completedAt": reminder.completionDate.map { $0.timeIntervalSince1970 as Any } ?? NSNull(),
+            "created": reminder.creationDate.map { $0.timeIntervalSince1970 as Any } ?? NSNull(),
+            "modified": reminder.lastModifiedDate.map { $0.timeIntervalSince1970 as Any } ?? NSNull(),
+            "externalID": reminder.calendarItemExternalIdentifier as Any? ?? NSNull(),
+        ]
+        let notes = EventKitText.text(reminder.notes) ?? ""
+        if full {
+            let (text, truncated) = ItemText.prefix(notes, maxBytes: ItemText.maxReadNotesBytes)
+            row["notes"] = notes.isEmpty ? NSNull() : text
+            row["notesTruncated"] = truncated
+        } else {
+            let (text, truncated) = ItemText.prefix(notes, maxBytes: ItemText.notesPreviewBytes)
+            row["notesPreview"] = notes.isEmpty ? NSNull() : text
+            row["hasNotes"] = !notes.isEmpty
+            row["notesTruncated"] = truncated
         }
-        switch recurrenceChange {
-        case .keep: break
-        case .clear: reminder.recurrenceRules = nil
-        case .set(let rule): reminder.recurrenceRules = [rule]
+        let location = EventKitText.text(reminder.location) ?? ""
+        let (place, locationTruncated) = ItemText.prefix(location, maxBytes: ItemText.maxLocationBytes)
+        row["location"] = location.isEmpty ? NSNull() : place
+        row["locationTruncated"] = locationTruncated
+        if let url = reminder.url?.absoluteString {
+            row["url"] = url
+            row["urlSchemeAllowed"] = ItemText.schemeAllowed(url)
+        } else {
+            row["url"] = NSNull()
         }
+        return row
+    }
+}
+
+/// Everything a write may change on a reminder, as EventKit values, so a
+/// failed readback can put it back (§14). Held in memory only.
+struct ReminderSnapshot {
+    let calendar: EKCalendar?
+    let title: String?
+    let due: DateComponents?
+    let start: DateComponents?
+    let notes: String?
+    let url: URL?
+    let location: String?
+    let priority: Int
+    let alarms: [EKAlarm]
+    let rules: [EKRecurrenceRule]?
+    let completed: Bool
+
+    init(_ reminder: EKReminder) {
+        calendar = reminder.calendar
+        title = reminder.title
+        due = reminder.dueDateComponents
+        start = reminder.startDateComponents
+        notes = reminder.notes
+        url = reminder.url
+        location = reminder.location
+        priority = reminder.priority
+        // The objects themselves: a copy loses parts such as an alarm's sound.
+        alarms = reminder.alarms ?? []
+        rules = reminder.recurrenceRules
+        completed = reminder.isCompleted
+    }
+
+    func restore(to reminder: EKReminder) {
+        if let calendar { reminder.calendar = calendar }
+        reminder.title = title
+        reminder.startDateComponents = start
+        reminder.dueDateComponents = due
+        reminder.notes = notes
+        reminder.url = url
+        reminder.location = location
+        reminder.priority = priority
+        reminder.alarms = alarms
+        reminder.recurrenceRules = rules
+        reminder.isCompleted = completed
     }
 }

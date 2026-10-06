@@ -1,0 +1,57 @@
+{
+  "calendars" : [
+    {
+      "account" : "iCloud",
+      "actions" : [
+        "read",
+        "create",
+        "edit",
+        "delete"
+      ],
+      "availabilities" : [
+        "busy",
+        "free",
+        "tentative"
+      ],
+      "available" : true,
+      "id" : "CAL-WORK",
+      "name" : "Work",
+      "writable" : true
+    },
+    {
+      "account" : "Subscribed",
+      "actions" : [
+        "read"
+      ],
+      "availabilities" : [
+
+      ],
+      "available" : true,
+      "id" : "CAL-SUB",
+      "name" : "Holidays",
+      "writable" : false
+    }
+  ],
+  "macos_access" : {
+    "calendars" : "full",
+    "reminders" : "full"
+  },
+  "now" : "2026-10-05T12:00:00-04:00",
+  "reminder_lists" : [
+    {
+      "account" : "iCloud",
+      "actions" : [
+        "read",
+        "create",
+        "edit",
+        "delete",
+        "complete"
+      ],
+      "available" : true,
+      "id" : "LIST-GROC",
+      "name" : "Groceries",
+      "writable" : true
+    }
+  ],
+  "time_zone" : "America/New_York"
+}

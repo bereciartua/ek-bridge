@@ -7,9 +7,10 @@ struct MCPToolFailure: Error, Equatable {
     let message: String
 }
 
-// Pure MCP ⇄ core translation (plan §9.3–9.6). One tool call builds exactly one
-// BridgeRequest; one core result becomes one CallToolResult. Arguments have
-// already passed MCPToolCatalog's schema check, but nothing here trusts that.
+// Pure MCP ⇄ core translation (plan 02 §9.3–9.6, plan 03 §15). One tool call
+// builds exactly one BridgeRequest; one core result becomes one CallToolResult.
+// Arguments have already passed MCPToolCatalog's schema check, but nothing
+// here trusts that.
 enum MCPToolMapping {
     static let maxResultBytes = 200_000
     static let defaultLimit = 50
@@ -65,14 +66,27 @@ enum MCPToolMapping {
             try a.only([])
             return (.listCollections, [:])
         case "read_events":
-            try a.only(["calendar_id", "start", "end", "limit"])
+            try a.only(["calendar_id", "start", "end", "limit", "cursor"])
             let calendarID = try a.required("calendar_id")
             let (start, end) = try timedRange(a, zone: zone, maxDays: 31)
-            return (.readEvents, ["calendarID": calendarID, "start": start, "end": end,
-                                  "limit": try limit(a)])
+            var p: [String: Any] = ["calendarID": calendarID, "start": start, "end": end, "limit": try limit(a)]
+            if let cursor = try a.string("cursor") {
+                guard cursor.utf8.count <= 600, EventPageKey(cursor: cursor) != nil else {
+                    throw invalid("cursor: expected next_cursor from the previous page, unchanged")
+                }
+                p["afterKey"] = cursor
+            }
+            return (.readEvents, p)
+        case "get_event":
+            try a.only(["calendar_id", "event_id", "occurrence_start"])
+            var p: [String: Any] = ["calendarID": try a.required("calendar_id"),
+                                    "itemID": try identifier(try a.required("event_id"), "event_id", 512)]
+            if a.has("occurrence_start") { p["occurrenceStart"] = try instant(a, "occurrence_start", zone: zone) }
+            return (.getEvent, p)
         case "create_event":
             try a.only(["calendar_id", "title", "start", "end", "all_day", "start_date", "end_date",
-                        "time_zone", "notes", "idempotency_key"])
+                        "time_zone", "notes", "location", "structured_location", "url", "alarms",
+                        "availability", "recurrence", "idempotency_key"])
             var p: [String: Any] = ["calendarID": try a.required("calendar_id"),
                                     "title": try title(a)]
             let eventZone = try timeZone(a, "time_zone", default: zone)
@@ -82,62 +96,113 @@ enum MCPToolMapping {
                         + "pass start_date and end_date (inclusive) instead")
                 }
                 let (start, end) = try allDayRange(a, zone: eventZone)
-                // Any of allDay/timeZone/notes makes the core treat it as all-day.
                 p["start"] = start
                 p["end"] = end
                 p["allDay"] = true
-                p["timeZone"] = try coreZone(eventZone, field: "time_zone")
-                if let notes = try a.string("notes") {
-                    guard !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        throw invalid("notes: must not be blank; leave it out instead")
-                    }
-                    p["notes"] = notes
-                }
             } else {
                 for key in ["start_date", "end_date"] where a.has(key) {
                     throw invalid("\(key): only for all-day events; pass all_day true, "
                         + "or use start and end for a timed event")
                 }
-                if a.has("notes") { throw invalid("notes: only supported on all-day events (all_day true)") }
-                let (start, end) = try timedRange(a, zone: eventZone, maxDays: 7, missing:
+                let (start, end) = try timedRange(a, zone: eventZone, maxDays: 31, missing:
                     " for a timed event (or pass all_day true with start_date)")
                 p["start"] = start
                 p["end"] = end
             }
+            p["timeZone"] = try coreZone(eventZone, field: "time_zone")
+            try eventFields(a, into: &p, creating: true, zone: eventZone)
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.createEvent, p)
         case "update_event":
-            try a.only(["calendar_id", "event_id", "version", "title", "start", "end",
-                        "idempotency_key"])
+            try a.only(["calendar_id", "event_id", "version", "occurrence_start", "span", "title", "start",
+                        "end", "all_day", "start_date", "end_date", "time_zone", "notes", "location",
+                        "structured_location", "url", "alarms", "availability", "recurrence",
+                        "replace_unsupported_alarms", "target_calendar_id", "idempotency_key"])
             var p = try itemTarget(a, collection: "calendar_id", item: "event_id")
-            p["title"] = try title(a)
-            let (start, end) = try timedRange(a, zone: zone, maxDays: 7)
-            p["start"] = start
-            p["end"] = end
+            if a.has("occurrence_start") { p["occurrenceStart"] = try instant(a, "occurrence_start", zone: zone) }
+            if let span = try a.string("span") {
+                guard ["this", "future", "all"].contains(span) else {
+                    throw invalid("span: expected this, future or all")
+                }
+                p["span"] = span
+            }
+            if a.has("title") { p["title"] = try title(a) }
+            try eventTimes(a, into: &p, zone: zone)
+            try eventFields(a, into: &p, creating: false,
+                            zone: try a.has("time_zone") ? timeZone(a, "time_zone", default: zone) : zone)
+            if let flag = try a.bool("replace_unsupported_alarms") { p["replaceUnsupportedAlarms"] = flag }
+            if let destination = try a.string("target_calendar_id") {
+                p["targetCalendarID"] = try identifier(destination, "target_calendar_id", 512)
+            }
+            let changing = ["title", "start", "end", "all_day", "start_date", "end_date", "time_zone", "notes",
+                            "location", "structured_location", "url", "alarms", "availability",
+                            "recurrence", "target_calendar_id"]
+            guard changing.contains(where: a.has) else {
+                throw MCPToolFailure(code: "nothing_to_change", message: "send at least one field to change, "
+                    + "like title, start, notes or recurrence")
+            }
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.updateEvent, p)
         case "delete_event":
-            try a.only(["calendar_id", "event_id", "version", "idempotency_key"])
+            try a.only(["calendar_id", "event_id", "version", "occurrence_start", "span", "idempotency_key"])
             var p = try itemTarget(a, collection: "calendar_id", item: "event_id")
+            if a.has("occurrence_start") { p["occurrenceStart"] = try instant(a, "occurrence_start", zone: zone) }
+            if let span = try a.string("span") {
+                guard ["this", "future", "all"].contains(span) else {
+                    throw invalid("span: expected this, future or all")
+                }
+                p["span"] = span
+            }
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.deleteEvent, p)
         case "read_reminders":
-            try a.only(["list_id", "limit", "cursor"])
+            try a.only(["list_id", "limit", "cursor", "status", "due_after", "due_before"])
             var p: [String: Any] = ["listID": try a.required("list_id"), "limit": try limit(a)]
             if let cursor = try a.string("cursor") { p["afterID"] = try identifier(cursor, "cursor", 512) }
+            let status = try a.string("status") ?? "incomplete"
+            guard ["incomplete", "completed", "all"].contains(status) else {
+                throw invalid("status: expected incomplete, completed or all")
+            }
+            p["status"] = status
+            if a.has("due_after") { p["dueAfter"] = try instant(a, "due_after", zone: zone) }
+            if a.has("due_before") { p["dueBefore"] = try instant(a, "due_before", zone: zone) }
+            if let after = p["dueAfter"] as? Int, let before = p["dueBefore"] as? Int, before <= after {
+                throw invalid("due_before: must be after due_after")
+            }
             return (.readReminders, p)
+        case "get_reminder":
+            try a.only(["list_id", "reminder_id"])
+            return (.getReminder, ["listID": try a.required("list_id"),
+                                   "itemID": try identifier(try a.required("reminder_id"), "reminder_id", 512)])
         case "create_reminder":
-            try a.only(["list_id", "title", "due", "alarm", "recurrence", "idempotency_key"])
+            try reminderLocation(a)
+            try a.only(["list_id", "title", "due", "start", "alarm", "alarms", "recurrence", "notes", "url",
+                        "priority", "idempotency_key"])
             var p: [String: Any] = ["listID": try a.required("list_id"), "title": try title(a)]
             p.merge(try schedule(a, creating: true, zone: zone)) { _, new in new }
+            try reminderFields(a, into: &p, creating: true)
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.createReminder, p)
         case "update_reminder":
-            try a.only(["list_id", "reminder_id", "version", "title", "due", "alarm", "recurrence",
-                        "idempotency_key"])
+            try reminderLocation(a)
+            try a.only(["list_id", "reminder_id", "version", "title", "due", "start", "alarm", "alarms",
+                        "recurrence", "notes", "url", "priority", "completed",
+                        "replace_unsupported_alarms", "target_list_id", "idempotency_key"])
             var p = try itemTarget(a, collection: "list_id", item: "reminder_id")
-            p["title"] = try title(a)
+            if a.has("title") { p["title"] = try title(a) }
             p.merge(try schedule(a, creating: false, zone: zone)) { _, new in new }
+            try reminderFields(a, into: &p, creating: false)
+            if let completed = try a.bool("completed") { p["completed"] = completed }
+            if let flag = try a.bool("replace_unsupported_alarms") { p["replaceUnsupportedAlarms"] = flag }
+            if let destination = try a.string("target_list_id") {
+                p["targetListID"] = try identifier(destination, "target_list_id", 512)
+            }
+            let changing = ["title", "due", "start", "alarm", "alarms", "recurrence", "notes", "url",
+                            "priority", "completed", "target_list_id"]
+            guard changing.contains(where: a.has) else {
+                throw MCPToolFailure(code: "nothing_to_change", message: "send at least one field to change, "
+                    + "like title, due, notes or completed")
+            }
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.updateReminder, p)
         case "complete_reminder":
@@ -159,8 +224,12 @@ enum MCPToolMapping {
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.completeReminder, p)
         case "delete_reminder":
-            try a.only(["list_id", "reminder_id", "version", "idempotency_key"])
+            try a.only(["list_id", "reminder_id", "version", "scope", "idempotency_key"])
             var p = try itemTarget(a, collection: "list_id", item: "reminder_id")
+            if let scope = try a.string("scope") {
+                guard scope == "series" else { throw invalid("scope: expected \"series\"") }
+                p["recurrenceScope"] = "series"
+            }
             p["idempotencyKey"] = try idempotencyKey(a, now: now)
             return (.deleteReminder, p)
         default:
@@ -188,6 +257,9 @@ enum MCPToolMapping {
         let title = try a.required("title")
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw invalid("title: must not be blank")
+        }
+        guard !title.contains("\u{0000}"), title.utf8.count <= 200 else {
+            throw invalid("title: at most 200 bytes, without NUL characters")
         }
         return title
     }
@@ -247,55 +319,232 @@ enum MCPToolMapping {
         }
     }
 
+    // MARK: Events
+
+    /// update_event's times: any of start/end, all-day dates (which make the
+    /// event all-day), a conversion, or just a new zone (§6, §11.4).
+    private static func eventTimes(_ a: Arguments, into p: inout [String: Any],
+                                   zone: TimeZone) throws(MCPToolFailure) {
+        let given = a.has("time_zone") ? try timeZone(a, "time_zone", default: zone) : nil
+        let eventZone = given ?? zone
+        let allDay = try a.bool("all_day")
+        let dates = a.has("start_date") || a.has("end_date")
+        if allDay == true || (allDay == nil && dates) {
+            for key in ["start", "end"] where a.has(key) {
+                throw invalid("\(key): not used for an all-day event; pass start_date and end_date (inclusive)")
+            }
+            let (start, end) = try allDayRange(a, zone: eventZone)
+            p["start"] = start
+            p["end"] = end
+            p["allDay"] = true
+            p["timeZone"] = try coreZone(eventZone, field: "time_zone")
+            return
+        }
+        for key in ["start_date", "end_date"] where a.has(key) {
+            throw invalid("\(key): only for all-day events; use start and end for a timed event")
+        }
+        if allDay == false {
+            for key in ["start", "end"] where !a.has(key) {
+                throw invalid("\(key): required to change an all-day event into a timed one")
+            }
+            p["allDay"] = false
+        }
+        if a.has("start") { p["start"] = try instant(a, "start", zone: eventZone) }
+        if a.has("end") { p["end"] = try instant(a, "end", zone: eventZone) }
+        if let start = p["start"] as? Int, let end = p["end"] as? Int {
+            guard end > start else { throw invalid("end: must be after start") }
+            guard end - start <= 31 * 86_400 else { throw invalid("end: must be at most 31 days after start") }
+        }
+        if let given { p["timeZone"] = try coreZone(given, field: "time_zone") }
+    }
+
+    /// Notes, location, URL, alarms, availability and recurrence of an event.
+    private static func eventFields(_ a: Arguments, into p: inout [String: Any], creating: Bool,
+                                    zone: TimeZone) throws(MCPToolFailure) {
+        try text(a, "notes", into: &p, creating: creating) { ItemText.notes($0, present: true, creating: creating) }
+        try text(a, "location", into: &p, creating: creating) {
+            ItemText.location($0, present: true, creating: creating)
+        }
+        try text(a, "url", into: &p, creating: creating) { ItemText.url($0, present: true, creating: creating) }
+        if a.has("structured_location") {
+            if a.values["structured_location"] is NSNull {
+                guard !creating else { throw invalid("structured_location: leave it out instead of null") }
+                p["structuredLocation"] = NSNull()
+            } else {
+                guard let place = try a.object("structured_location") else { return }
+                p["structuredLocation"] = try self.place(place, field: "structured_location")
+            }
+        }
+        if let place = p["structuredLocation"] as? [String: Any] {
+            if p["location"] is NSNull {
+                throw invalid("location: can't be null while setting structured_location")
+            }
+            if let text = p["location"] as? String, text != place["title"] as? String {
+                throw invalid("location: must be the same as structured_location.title (Calendar keeps "
+                    + "one value), or leave it out")
+            }
+        }
+        if a.has("alarms") { p["alarms"] = try alarms(a, creating: creating, zone: zone, reminders: false) }
+        if a.has("availability") {
+            if a.values["availability"] is NSNull {
+                guard !creating else { throw invalid("availability: leave it out instead of null") }
+                p["availability"] = NSNull()
+            } else {
+                let value = try a.required("availability")
+                guard EventAvailability(rawValue: value) != nil else {
+                    throw invalid("availability: expected busy, free, tentative or unavailable")
+                }
+                p["availability"] = value
+            }
+        }
+        if let recurrence = try a.object("recurrence") {
+            if recurrence.has("none") {
+                guard try recurrence.bool("none") == true, recurrence.values.count == 1 else {
+                    throw invalid("recurrence: {\"none\": true} can't be combined with other fields")
+                }
+                guard !creating else {
+                    throw invalid("recurrence: {\"none\": true} only works in update_event; "
+                        + "leave out recurrence for an event that doesn't repeat")
+                }
+                p["recurrence"] = ["kind": "none"]
+            } else {
+                p["recurrence"] = try rule(recurrence, zone: zone)
+            }
+        }
+    }
+
+    /// A text field through the core's own rules (§9), so a refusal here is
+    /// exactly what the core would say.
+    private static func text(_ a: Arguments, _ key: String, into p: inout [String: Any], creating: Bool,
+                             _ check: (Any) -> Result<ItemText.Change<String>, FieldError>) throws(MCPToolFailure) {
+        guard let raw = a.values[key] else { return }
+        if !(raw is NSNull) { _ = try a.string(key) }
+        switch check(raw) {
+        case .success(.set(let value)): p[coreKey(key)] = value
+        case .success(.clear): p[coreKey(key)] = NSNull()
+        case .success(.keep): break
+        case .failure(let error):
+            switch error.code {
+            case "url_scheme_not_allowed":
+                throw MCPToolFailure(code: error.code, message: "\(key): only http, https, mailto and tel "
+                    + "links can be written")
+            case "invalid_url":
+                throw MCPToolFailure(code: error.code, message: "\(key): expected a complete URL like "
+                    + "https://example.com/page, with no spaces")
+            case "notes_too_long", "location_too_long":
+                throw invalid("\(key): too long")
+            default:
+                throw invalid("\(key): " + (creating && (raw is NSNull ||
+                        (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true)
+                    ? "must not be blank; leave it out instead"
+                    : "control characters other than tab and newline aren't allowed"
+                        + (key == "location" ? ", and it must be one line" : "")))
+            }
+        }
+    }
+
+    private static func coreKey(_ key: String) -> String {
+        ["notes": "notes", "location": "location", "url": "url"][key] ?? key
+    }
+
+    private static func place(_ a: Arguments, field: String) throws(MCPToolFailure) -> [String: Any] {
+        try a.only(["title", "latitude", "longitude", "radius_m"])
+        var core: [String: Any] = ["title": try a.required("title")]
+        for key in ["latitude", "longitude"] {
+            guard let value = a.values[key] as? NSNumber, MCPToolMapping.bool(value) == nil,
+                  value.doubleValue.isFinite else { throw invalid("\(field).\(key): required, a number") }
+            core[key] = value.doubleValue
+        }
+        if let radius = a.values["radius_m"] {
+            guard let value = radius as? NSNumber, MCPToolMapping.bool(value) == nil else {
+                throw invalid("\(field).radius_m: expected a number of meters")
+            }
+            core["radius"] = value.doubleValue
+        }
+        guard PlaceSpec.parse(core) != nil else {
+            throw invalid("\(field): expected a one-line title up to 500 bytes, latitude -90 to 90, "
+                + "longitude -180 to 180 and radius_m 1 to 100000")
+        }
+        return core
+    }
+
+    /// The `alarms` list (§10). minutes_before counts back from an event's
+    /// start or a reminder's due time.
+    private static func alarms(_ a: Arguments, creating: Bool, zone: TimeZone,
+                               reminders: Bool) throws(MCPToolFailure) -> Any {
+        if a.values["alarms"] is NSNull {
+            guard !creating else { throw invalid("alarms: leave it out instead of null") }
+            return NSNull()
+        }
+        guard let list = a.values["alarms"] as? [Any] else { throw invalid("alarms: expected an array") }
+        guard list.count <= AlarmSpec.maxCount else { throw invalid("alarms: at most 5") }
+        var result = [[String: Any]]()
+        for (index, item) in list.enumerated() {
+            let path = "alarms[\(index)]"
+            guard let object = item as? [String: Any] else { throw invalid("\(path): expected an object") }
+            let alarm = Arguments(values: object, path: "\(path).")
+            try alarm.only(["minutes_before", "at", "location", "proximity"])
+            let forms = ["minutes_before", "at", "location"].filter(alarm.has)
+            guard forms.count == 1 else {
+                throw invalid("\(path): expected exactly one of minutes_before, at, or location with proximity")
+            }
+            switch forms[0] {
+            case "minutes_before":
+                if alarm.has("proximity") { throw invalid("\(path).proximity: only with location") }
+                let minutes = try alarm.integer("minutes_before")!
+                guard (-1_440...40_320).contains(minutes) else {
+                    throw invalid("\(path).minutes_before: expected -1440 to 40320 (4 weeks)")
+                }
+                result.append(["kind": "relative", "offset": -minutes * 60])
+            case "at":
+                if alarm.has("proximity") { throw invalid("\(path).proximity: only with location") }
+                result.append(["kind": "absolute", "at": try instant(alarm, "at", zone: zone)])
+            default:
+                guard let proximity = try alarm.string("proximity"), ["arrive", "leave"].contains(proximity)
+                else { throw invalid("\(path).proximity: expected arrive or leave") }
+                let place = try self.place(try alarm.object("location")!, field: "\(path).location")
+                result.append(["kind": "location", "location": place, "proximity": proximity])
+            }
+            let parsed = result.last.flatMap(AlarmSpec.parse)
+            if let parsed, result.dropLast().compactMap(AlarmSpec.parse).contains(parsed) {
+                throw invalid("\(path): the same alarm appears twice")
+            }
+        }
+        return result
+    }
+
+    // MARK: Reminders
+
     // The due date, its alarm and the repeat rule (§9.3 cross-field rules, §9.4 rows).
     private static func schedule(_ a: Arguments, creating: Bool,
                                  zone: TimeZone) throws(MCPToolFailure) -> [String: Any] {
         var p = [String: Any]()
         let alarm = try a.string("alarm")
+        if alarm != nil && a.has("alarms") {
+            throw invalid("alarm: use alarms or the older alarm, not both")
+        }
         var dueZone = zone
         var dueForm: String?
         if let due = try a.object("due") {
-            try due.only(["date", "date_time", "time_zone", "none"])
-            let forms = ["date", "date_time", "none"].filter(due.has)
-            guard forms.count == 1, let form = forms.first else {
-                throw invalid("due: expected exactly one of date, date_time or none")
-            }
+            let (spec, form, specZone) = try dueSpec(due, field: "due", creating: creating, zone: zone)
             dueForm = form
+            dueZone = specZone
             if form == "none" {
-                guard try due.bool("none") == true else { throw invalid("due.none: expected true") }
-                guard !creating else {
-                    throw invalid("due: {\"none\": true} only works in update_reminder; "
-                        + "leave out due for a reminder without a due date")
-                }
-                if due.has("time_zone") { throw invalid("due.time_zone: not used with none") }
                 if alarm != nil {
                     throw invalid("alarm: not used when removing the due date; leave it out")
                 }
-                p["due"] = ["kind": "none"]
+                p["due"] = spec
             } else {
-                dueZone = try timeZone(due, "time_zone", default: zone)
-                var spec: [String: Any] = ["timeZone": try coreZone(dueZone, field: "due.time_zone")]
-                if form == "date" {
-                    let date = try due.required("date")
-                    guard MCPTime.date(date) != nil else {
-                        throw invalid("due.date: \(MCPTimeError.invalidDate(date).message)")
-                    }
-                    spec["kind"] = "all_day"
-                    spec["date"] = date
-                } else {
-                    let at = try instant(due, "date_time", zone: dueZone)
-                    try checkWallClock(at, zone: dueZone)
-                    spec["kind"] = "timed"
-                    spec["at"] = at
-                }
+                var spec = spec
                 switch alarm {
                 case nil:
-                    break  // Core default: at the due time for a timed due, none for a day.
+                    break  // Core default: at the due time for a new timed due.
                 case "at_due":
                     guard form == "date_time" else {
                         throw invalid("alarm: at_due needs a due time (due.date_time); for a due "
                             + "day use none or an ISO 8601 date-time")
                     }
+                    spec["alarmAt"] = spec["at"]
                 case "none":
                     spec["alarmAt"] = NSNull()
                 case let text?:
@@ -315,6 +564,15 @@ enum MCPToolMapping {
             throw invalid("alarm: only together with due; send due as well"
                 + (creating ? "" : " (the current one, if it isn't changing)"))
         }
+        if a.has("start") {
+            if a.values["start"] is NSNull {
+                guard !creating else { throw invalid("start: leave it out instead of null") }
+                p["start"] = NSNull()
+            } else if let start = try a.object("start") {
+                p["start"] = try dueSpec(start, field: "start", creating: creating, zone: zone).spec
+            }
+        }
+        if a.has("alarms") { p["alarms"] = try alarms(a, creating: creating, zone: zone, reminders: true) }
         if let recurrence = try a.object("recurrence") {
             if recurrence.has("none") {
                 guard try recurrence.bool("none") == true, recurrence.values.count == 1 else {
@@ -339,57 +597,126 @@ enum MCPToolMapping {
         return p
     }
 
+    /// A due or start date: {date}, {date_time, time_zone?} or {none: true}.
+    private static func dueSpec(_ due: Arguments, field: String, creating: Bool,
+                                zone: TimeZone) throws(MCPToolFailure) -> (spec: [String: Any], form: String,
+                                                                           zone: TimeZone) {
+        try due.only(["date", "date_time", "time_zone", "none"])
+        let forms = ["date", "date_time", "none"].filter(due.has)
+        guard forms.count == 1, let form = forms.first else {
+            throw invalid("\(field): expected exactly one of date, date_time or none")
+        }
+        if form == "none" {
+            guard try due.bool("none") == true else { throw invalid("\(field).none: expected true") }
+            guard !creating else {
+                throw invalid("\(field): {\"none\": true} only works in update_reminder; "
+                    + "leave out \(field) for a reminder without one")
+            }
+            if due.has("time_zone") { throw invalid("\(field).time_zone: not used with none") }
+            return (["kind": "none"], form, zone)
+        }
+        let dueZone = try timeZone(due, "time_zone", default: zone)
+        var spec: [String: Any] = ["timeZone": try coreZone(dueZone, field: "\(field).time_zone")]
+        if form == "date" {
+            let date = try due.required("date")
+            guard MCPTime.date(date) != nil else {
+                throw invalid("\(field).date: \(MCPTimeError.invalidDate(date).message)")
+            }
+            spec["kind"] = "all_day"
+            spec["date"] = date
+        } else {
+            let at = try instant(due, "date_time", zone: dueZone)
+            try checkWallClock(at, zone: dueZone, field: field)
+            spec["kind"] = "timed"
+            spec["at"] = at
+        }
+        return (spec, form, dueZone)
+    }
+
+    /// EventKit ignores a reminder's location text, so say what works instead.
+    private static func reminderLocation(_ a: Arguments) throws(MCPToolFailure) {
+        if a.has("location") {
+            throw invalid("location: a reminder's location can't be set through EventKit; add an alarm with "
+                + "location and proximity instead")
+        }
+    }
+
+    private static func reminderFields(_ a: Arguments, into p: inout [String: Any],
+                                       creating: Bool) throws(MCPToolFailure) {
+        try text(a, "notes", into: &p, creating: creating) { ItemText.notes($0, present: true, creating: creating) }
+        try text(a, "url", into: &p, creating: creating) { ItemText.url($0, present: true, creating: creating) }
+        if let priority = try a.string("priority") {
+            guard ReminderPriority(rawValue: priority) != nil else {
+                throw invalid("priority: expected none, low, medium or high")
+            }
+            p["priority"] = priority
+        }
+    }
+
+    /// The shared repeat rule (§7.1), with the 0.5 names as aliases.
     private static func rule(_ r: Arguments, zone: TimeZone) throws(MCPToolFailure) -> [String: Any] {
-        try r.only(["frequency", "interval", "weekdays", "day_of_month", "end_count", "end_until"])
-        let frequencies = ["daily", "weekly", "monthly", "yearly"]
-        guard let frequency = try r.string("frequency"), frequencies.contains(frequency) else {
+        try r.only(["frequency", "interval", "weekdays", "month_days", "months", "set_positions", "end",
+                    "day_of_month", "end_count", "end_until"])
+        guard let name = try r.string("frequency"), let frequency = RecurrenceSpec.Frequency(rawValue: name) else {
             throw invalid("recurrence.frequency: expected daily, weekly, monthly or yearly")
         }
-        let interval = try r.integer("interval") ?? 1
-        guard (1...366).contains(interval) else {
-            throw invalid("recurrence.interval: expected 1 to 366; got \(interval)")
-        }
-        var rule: [String: Any] = ["kind": "rule", "frequency": frequency, "interval": interval]
-        if let weekdays = try r.strings("weekdays") {
-            guard frequency == "weekly" else { throw invalid("recurrence.weekdays: only for weekly rules") }
-            let codes = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
-            guard !weekdays.isEmpty, Set(weekdays).count == weekdays.count,
-                  weekdays.allSatisfy(codes.contains) else {
-                throw invalid("recurrence.weekdays: expected distinct codes from MO, TU, WE, TH, FR, SA, SU")
+        var spec = RecurrenceSpec(frequency: frequency)
+        spec.interval = try r.integer("interval") ?? 1
+        if let codes = try r.strings("weekdays") {
+            var days = [RecurrenceSpec.Weekday]()
+            for code in codes {
+                guard let day = RecurrenceSpec.Weekday(code: code) else {
+                    throw invalid("recurrence.weekdays: expected codes like MO, or 2TU and -1FR in monthly "
+                        + "and yearly rules; got \(quoted(code))")
+                }
+                days.append(day)
             }
-            rule["weekdays"] = weekdays
+            spec.weekdays = days
         }
+        spec.monthDays = try r.integers("month_days") ?? []
         if let day = try r.integer("day_of_month") {
-            guard frequency == "monthly" else {
-                throw invalid("recurrence.day_of_month: only for monthly rules")
+            guard spec.monthDays.isEmpty else {
+                throw invalid("recurrence: pass month_days or day_of_month, not both")
             }
-            guard (1...31).contains(day) else {
-                throw invalid("recurrence.day_of_month: expected 1 to 31; got \(day)")
-            }
-            rule["dayOfMonth"] = day
+            guard frequency == .monthly else { throw invalid("recurrence.day_of_month: only for monthly rules") }
+            spec.monthDays = [day]
         }
-        let count = try r.integer("end_count")
-        guard count == nil || !r.has("end_until") else {
-            throw invalid("recurrence: pass end_count or end_until, not both")
+        spec.months = try r.integers("months") ?? []
+        spec.setPositions = try r.integers("set_positions") ?? []
+        var ends = [RecurrenceSpec.End]()
+        if let end = try r.object("end") {
+            try end.only(["count", "until"])
+            guard end.values.count == 1 else { throw invalid("recurrence.end: expected exactly one of count or until") }
+            if let count = try end.integer("count") { ends.append(.count(count)) }
+            if end.has("until") { ends.append(.until(try until(end, "until", zone: zone))) }
         }
-        if let count {
-            guard (1...10_000).contains(count) else {
-                throw invalid("recurrence.end_count: expected 1 to 10000; got \(count)")
-            }
-            rule["end"] = ["kind": "count", "count": count]
-        } else if r.has("end_until") {
-            rule["end"] = ["kind": "until", "at": try instant(r, "end_until", zone: zone)]
+        if let count = try r.integer("end_count") { ends.append(.count(count)) }
+        if r.has("end_until") { ends.append(.until(try until(r, "end_until", zone: zone))) }
+        guard ends.count <= 1 else { throw invalid("recurrence: give one end, a count or an until") }
+        spec.end = ends.first
+        if let problem = spec.problem { throw invalid("recurrence.\(problem)") }
+        var core = spec.core(zone: nil)
+        for key in ["supported", "rrule", "summary"] { core[key] = nil }
+        return core
+    }
+
+    /// An until: a date-time, or a whole day (its last second in `zone`).
+    private static func until(_ a: Arguments, _ key: String, zone: TimeZone) throws(MCPToolFailure) -> Int64 {
+        let text = try a.required(key)
+        if let day = MCPTime.date(text) {
+            return Int64(MCPTime.startOfDay(year: day.year, month: day.month, day: day.day, zone: zone,
+                                            adding: 1) - 1)
         }
-        return rule
+        return Int64(try instant(a, key, zone: zone))
     }
 
     // Reminders store a timed due as wall-clock time in its zone, so the second
     // pass through a DST fold can't be saved exactly (the core would refuse it).
-    private static func checkWallClock(_ at: Int, zone: TimeZone) throws(MCPToolFailure) {
+    private static func checkWallClock(_ at: Int, zone: TimeZone, field: String) throws(MCPToolFailure) {
         let local = String(MCPTime.format(Double(at), zone: zone).prefix(19))
         if case .failure(.ambiguousLocalTime(_, _, let offsets, let instants)) =
             MCPTime.instant(local, zone: zone), instants.first != at {
-            throw invalid("due.date_time: \(local) happens twice in \(zone.identifier), and a "
+            throw invalid("\(field).date_time: \(local) happens twice in \(zone.identifier), and a "
                 + "reminder keeps only the wall-clock time, so only the first one "
                 + "(\(offsets.first ?? "")) can be saved. Use a different time")
         }
@@ -462,6 +789,14 @@ enum MCPToolMapping {
             return number
         }
 
+        func integers(_ key: String) throws(MCPToolFailure) -> [Int]? {
+            guard let value = values[key] else { return nil }
+            guard let list = value as? [Any] else { throw wrongType(key, "an array of integers") }
+            let numbers = list.compactMap(MCPToolMapping.integer)
+            guard numbers.count == list.count else { throw wrongType(key, "an array of integers") }
+            return numbers
+        }
+
         func bool(_ key: String) throws(MCPToolFailure) -> Bool? {
             guard let value = values[key] else { return nil }
             guard let flag = MCPToolMapping.bool(value) else { throw wrongType(key, "true or false") }
@@ -501,7 +836,14 @@ enum MCPToolMapping {
                   let items = core["items"] as? [[String: Any]] else { return nil }
             let events = items.compactMap { eventRow($0, zone: zone) }
             guard events.count == items.count else { return nil }
-            return ["calendar_id": calendarID, "events": events]
+            return ["calendar_id": calendarID, "events": events,
+                    "truncated": bool(core["truncated"]) ?? false,
+                    "next_cursor": core["nextCursor"] as? String ?? NSNull()]
+        case "get_event":
+            guard let calendarID = p["calendarID"] as? String,
+                  let event = (core["item"] as? [String: Any]).flatMap({ eventRow($0, zone: zone) })
+            else { return nil }
+            return ["calendar_id": calendarID, "event": event]
         case "read_reminders":
             guard let listID = p["listID"] as? String,
                   let items = core["items"] as? [[String: Any]] else { return nil }
@@ -509,17 +851,24 @@ enum MCPToolMapping {
             guard reminders.count == items.count else { return nil }
             return ["list_id": listID, "reminders": reminders,
                     "next_cursor": core["nextCursor"] as? String ?? NSNull()]
+        case "get_reminder":
+            guard let listID = p["listID"] as? String,
+                  let reminder = (core["item"] as? [String: Any]).flatMap({ reminderRow($0, zone: zone) })
+            else { return nil }
+            return ["list_id": listID, "reminder": reminder]
         case "create_event", "update_event":
             guard let calendarID = p["calendarID"] as? String, let key,
                   let item = core["item"] as? [String: Any],
                   let event = eventReceipt(item, p, zone: zone) else { return nil }
-            result = ["calendar_id": calendarID, "event": event, "idempotency_key": key]
+            result = ["calendar_id": item["calendarID"] as? String ?? calendarID, "event": event,
+                      "idempotency_key": key]
         case "create_reminder", "update_reminder", "complete_reminder":
             guard let listID = p["listID"] as? String, let key else { return nil }
             result = ["list_id": listID, "idempotency_key": key]
             if let item = core["item"] as? [String: Any] {
                 guard let reminder = reminderRow(item, zone: zone) else { return nil }
                 result["reminder"] = reminder
+                if let moved = item["listID"] as? String, !moved.isEmpty { result["list_id"] = moved }
             } else {
                 // A repeating completion: the completed copy and the series' next occurrence.
                 guard let completed = (core["completedOccurrence"] as? [String: Any])
@@ -546,7 +895,7 @@ enum MCPToolMapping {
         var calendars = [[String: Any]](), lists = [[String: Any]]()
         for row in rows {
             guard let id = row["id"] as? String, let mask = integer(row["mask"]) else { return nil }
-            let entry: [String: Any] = [
+            var entry: [String: Any] = [
                 "id": id, "name": row["name"] as? String ?? NSNull(),
                 "account": row["account"] as? String ?? NSNull(),
                 "available": bool(row["available"]) ?? false,
@@ -554,7 +903,11 @@ enum MCPToolMapping {
                 "actions": bits.filter { mask & $0.1 != 0 }.map(\.0),
             ]
             switch row["resource"] as? String {
-            case "calendar": calendars.append(entry)
+            case "calendar":
+                if let values = row["availabilities"] as? [String] {
+                    entry["availabilities"] = values.filter { EventAvailability(rawValue: $0) != nil }
+                }
+                calendars.append(entry)
             case "reminderList": lists.append(entry)
             default: return nil
             }
@@ -569,28 +922,106 @@ enum MCPToolMapping {
                                  "reminders": access(core["remindersAccess"])]]
     }
 
+    /// Times in the event's own zone (F3); floating events in the Mac's,
+    /// without an offset.
+    private static func eventClock(_ seconds: Double, eventZone: TimeZone?, zone: TimeZone) -> String {
+        guard let eventZone else { return String(MCPTime.format(seconds, zone: zone).prefix(19)) }
+        return MCPTime.format(seconds, zone: eventZone)
+    }
+
     private static func eventRow(_ row: [String: Any], zone: TimeZone) -> [String: Any]? {
         guard let id = row["id"] as? String, let title = row["title"] as? String,
               let start = number(row["start"]), let end = number(row["end"]) else { return nil }
-        let eventZone = row["timeZone"] as? String ?? ""
+        let zoneID = row["timeZone"] as? String ?? ""
+        let eventZone: TimeZone? = zoneID.isEmpty ? nil : (TimeZone(identifier: zoneID) ?? zone)
         let allDay = bool(row["allDay"]) ?? false
         let recurring = bool(row["recurring"]) ?? false
         let hasAttendees = bool(row["hasAttendees"]) ?? false
         var event: [String: Any] = [
-            "id": id, "title": title, "start": MCPTime.format(start, zone: zone),
-            "end": MCPTime.format(end, zone: zone), "all_day": allDay, "recurring": recurring,
-            "time_zone": eventZone.isEmpty ? NSNull() : eventZone,
-            "editable": !recurring && !allDay && !hasAttendees && !eventZone.isEmpty,
+            "id": id, "title": title,
+            "start": eventClock(start, eventZone: eventZone, zone: zone),
+            "end": eventClock(end, eventZone: eventZone, zone: zone),
+            "all_day": allDay, "recurring": recurring,
+            "time_zone": zoneID.isEmpty ? NSNull() : zoneID,
+            "floating": zoneID.isEmpty,
+            "occurrence_start": number(row["occurrenceStart"])
+                .map { eventClock($0, eventZone: eventZone, zone: zone) as Any } ?? NSNull(),
+            "recurrence": recurrence(row["recurrence"], zone: eventZone ?? zone),
         ]
         if let version = row["version"] as? String { event["version"] = version }
         if let truncated = bool(row["titleTruncated"]) { event["title_truncated"] = truncated }
         if allDay {
-            let dates = MCPTime.allDayDates(start: start, end: end,
-                                            zone: TimeZone(identifier: eventZone) ?? zone)
+            let dates = MCPTime.allDayDates(start: start, end: end, zone: eventZone ?? zone)
             event["start_date"] = dates.startDate
             event["end_date"] = dates.endDate
         }
+        if let detached = bool(row["detached"]) { event["detached"] = detached }
+        copyText(row, "notesPreview", "notes_preview", into: &event)
+        copyText(row, "notes", "notes", into: &event)
+        copyBool(row, "hasNotes", "has_notes", into: &event)
+        copyBool(row, "notesTruncated", "notes_truncated", into: &event)
+        copyText(row, "location", "location", into: &event)
+        copyBool(row, "locationTruncated", "location_truncated", into: &event)
+        if row.keys.contains("structuredLocation") {
+            event["structured_location"] = (row["structuredLocation"] as? [String: Any]).flatMap(place) ?? NSNull()
+        }
+        copyText(row, "url", "url", into: &event)
+        if row["url"] is String { copyBool(row, "urlSchemeAllowed", "url_scheme_allowed", into: &event) }
+        if let alarms = row["alarms"] as? [[String: Any]] {
+            event["alarms"] = alarms.compactMap { alarm($0, zone: eventZone ?? zone) }
+        }
+        copyBool(row, "alarmsTruncated", "alarms_truncated", into: &event)
+        if row.keys.contains("availability") {
+            event["availability"] = (row["availability"] as? String)
+                .flatMap { EventAvailability(rawValue: $0)?.rawValue } ?? NSNull()
+        }
+        if let status = row["status"] as? String,
+           ["none", "confirmed", "tentative", "canceled"].contains(status) { event["status"] = status }
+        for (coreKey, key) in [("created", "created"), ("modified", "modified")] where row.keys.contains(coreKey) {
+            event[key] = number(row[coreKey]).map { MCPTime.format($0, zone: zone) as Any } ?? NSNull()
+        }
+        copyText(row, "externalID", "external_id", into: &event)
+        if let count = integer(row["attendeeCount"]) { event["attendee_count"] = count }
+        copyBool(row, "organizerIsYou", "organizer_is_you", into: &event)
+        if row.keys.contains("yourStatus") {
+            event["your_status"] = (row["yourStatus"] as? String).flatMap(participantStatus) ?? NSNull()
+        }
+        if row.keys.contains("organizer") {
+            event["organizer"] = (row["organizer"] as? [String: Any]).map(participant) ?? NSNull()
+        }
+        if let attendees = row["attendees"] as? [[String: Any]] { event["attendees"] = attendees.map(participant) }
+        copyBool(row, "attendeesTruncated", "attendees_truncated", into: &event)
+        if let editable = row["editable"] as? [String: Any] {
+            let reasons: Set = ["read_only_calendar", "invitation", "floating_time", "unsupported_recurrence"]
+            let reason: Any = (editable["reason"] as? String).flatMap { reasons.contains($0) ? $0 : nil }
+                ?? NSNull()
+            let fields: Bool = bool(editable["fields"]) ?? false
+            let times: Bool = bool(editable["times"]) ?? false
+            let rule: Bool = bool(editable["recurrence"]) ?? false
+            event["editable"] = ["fields": fields, "times": times, "recurrence": rule, "reason": reason]
+        } else {
+            // A row from an older core: what 0.5 could change.
+            let fixed = recurring || allDay || hasAttendees || zoneID.isEmpty
+            let reason: Any = hasAttendees ? "invitation" as Any
+                : zoneID.isEmpty && !allDay ? "floating_time" as Any : NSNull()
+            event["editable"] = ["fields": !fixed, "times": !fixed, "recurrence": false, "reason": reason]
+        }
         return event
+    }
+
+    private static func participant(_ row: [String: Any]) -> [String: Any] {
+        let roles: Set = ["required", "optional", "chair", "non_participant", "unknown"]
+        let types: Set = ["person", "room", "resource", "group", "unknown"]
+        return ["name": row["name"] as? String ?? NSNull(), "email": row["email"] as? String ?? NSNull(),
+                "role": (row["role"] as? String).flatMap { roles.contains($0) ? $0 : nil } ?? "unknown",
+                "status": (row["status"] as? String).flatMap(participantStatus) ?? "unknown",
+                "type": (row["type"] as? String).flatMap { types.contains($0) ? $0 : nil } ?? "unknown",
+                "is_you": bool(row["isYou"]) ?? false]
+    }
+
+    private static func participantStatus(_ value: String) -> String? {
+        ["pending", "accepted", "declined", "tentative", "delegated", "completed", "in_process", "unknown"]
+            .contains(value) ? value : nil
     }
 
     private static func eventReceipt(_ item: [String: Any], _ p: [String: Any],
@@ -598,34 +1029,74 @@ enum MCPToolMapping {
         guard let id = item["id"] as? String else { return nil }
         var event: [String: Any] = ["id": id]
         if let version = item["version"] as? String { event["version"] = version }
-        if bool(item["allDayVerified"]) == true, let start = number(item["start"]),
-           let end = number(item["end"]) {
-            let allDayZone = (p["timeZone"] as? String).flatMap(TimeZone.init(identifier:)) ?? zone
-            let dates = MCPTime.allDayDates(start: start, end: end, zone: allDayZone)
-            event["start_date"] = dates.startDate
-            event["end_date"] = dates.endDate
-            event["verified"] = true
-        } else if p["allDay"] == nil, let start = number(p["start"]), let end = number(p["end"]) {
-            // Timed writes save exactly the requested instants.
-            event["start"] = MCPTime.format(start, zone: zone)
-            event["end"] = MCPTime.format(end, zone: zone)
+        let zoneID = item["timeZone"] as? String ?? p["timeZone"] as? String ?? ""
+        let eventZone: TimeZone? = zoneID.isEmpty ? nil : (TimeZone(identifier: zoneID) ?? zone)
+        let allDay = bool(item["allDay"]) ?? (p["allDay"] as? Bool ?? false)
+        if let start = number(item["start"]) ?? number(p["start"]),
+           let end = number(item["end"]) ?? number(p["end"]) {
+            if allDay {
+                let dates = MCPTime.allDayDates(start: start, end: end, zone: eventZone ?? zone)
+                event["start_date"] = dates.startDate
+                event["end_date"] = dates.endDate
+            } else {
+                event["start"] = eventClock(start, eventZone: eventZone, zone: zone)
+                event["end"] = eventClock(end, eventZone: eventZone, zone: zone)
+            }
+        }
+        if item["start"] != nil || item["timeZone"] != nil {
+            event["all_day"] = allDay
+            event["time_zone"] = zoneID.isEmpty ? NSNull() : zoneID
+        }
+        if let recurring = bool(item["recurring"]) { event["recurring"] = recurring }
+        if let occurrence = number(item["occurrenceStart"]) {
+            event["occurrence_start"] = eventClock(occurrence, eventZone: eventZone, zone: zone)
+        }
+        if let verified = item["verified"] as? [String] {
+            event["verified"] = verified
+        } else if bool(item["allDayVerified"]) == true {
+            // A 0.5 all-day receipt replayed from the journal.
+            event["verified"] = ["title", "start", "end", "all_day", "notes"]
         }
         return event
     }
 
     private static func reminderRow(_ row: [String: Any], zone: TimeZone) -> [String: Any]? {
         guard let id = row["id"] as? String, let title = row["title"] as? String else { return nil }
+        let dueZone = ((row["due"] as? [String: Any])?["timeZone"] as? String).flatMap(TimeZone.init(identifier:))
         var reminder: [String: Any] = [
             "id": id, "title": title,
             "completed": bool(row["completed"]) ?? false,
             "recurring": bool(row["recurring"]) ?? false,
             "due": due(row["due"], zone: zone),
-            "recurrence": recurrence(row["recurrence"], zone: zone),
+            "recurrence": recurrence(row["recurrence"], zone: dueZone ?? zone),
             "alarms": (row["alarms"] as? [[String: Any]] ?? []).compactMap { alarm($0, zone: zone) },
         ]
+        if row.keys.contains("start") { reminder["start"] = due(row["start"], zone: zone) }
         if let version = row["version"] as? String { reminder["version"] = version }
         if let truncated = bool(row["titleTruncated"]) { reminder["title_truncated"] = truncated }
         if bool(row["alarmsTruncated"]) == true { reminder["alarms_truncated"] = true }
+        if row.keys.contains("completedAt") {
+            reminder["completed_at"] = number(row["completedAt"]).map { MCPTime.format($0, zone: zone) as Any }
+                ?? NSNull()
+        }
+        copyText(row, "notesPreview", "notes_preview", into: &reminder)
+        copyText(row, "notes", "notes", into: &reminder)
+        copyBool(row, "hasNotes", "has_notes", into: &reminder)
+        copyBool(row, "notesTruncated", "notes_truncated", into: &reminder)
+        copyText(row, "url", "url", into: &reminder)
+        if row["url"] is String { copyBool(row, "urlSchemeAllowed", "url_scheme_allowed", into: &reminder) }
+        copyText(row, "location", "location", into: &reminder)
+        copyBool(row, "locationTruncated", "location_truncated", into: &reminder)
+        if row.keys.contains("priority") {
+            reminder["priority"] = (row["priority"] as? String)
+                .flatMap { ReminderPriority(rawValue: $0)?.rawValue } ?? NSNull()
+        }
+        if let raw = integer(row["priorityRaw"]) { reminder["priority_raw"] = raw }
+        for key in ["created", "modified"] where row.keys.contains(key) {
+            reminder[key] = number(row[key]).map { MCPTime.format($0, zone: zone) as Any } ?? NSNull()
+        }
+        copyText(row, "externalID", "external_id", into: &reminder)
+        if let verified = row["verified"] as? [String] { reminder["verified"] = verified }
         if let candidate = row["completionCandidate"] as? [String: Any],
            let at = number(candidate["occurrenceDue"]),
            let fingerprint = candidate["occurrenceFingerprint"] as? String {
@@ -633,6 +1104,17 @@ enum MCPToolMapping {
                                                 "occurrence_fingerprint": fingerprint]
         }
         return reminder
+    }
+
+    private static func copyText(_ row: [String: Any], _ coreKey: String, _ key: String,
+                                 into result: inout [String: Any]) {
+        guard row.keys.contains(coreKey) else { return }
+        result[key] = row[coreKey] as? String ?? NSNull()
+    }
+
+    private static func copyBool(_ row: [String: Any], _ coreKey: String, _ key: String,
+                                 into result: inout [String: Any]) {
+        if let value = bool(row[coreKey]) { result[key] = value }
     }
 
     private static func due(_ value: Any?, zone: TimeZone) -> Any {
@@ -666,17 +1148,38 @@ enum MCPToolMapping {
         guard let rule = value as? [String: Any], rule["kind"] as? String != "none" else { return NSNull() }
         guard rule["kind"] as? String == "rule", bool(rule["supported"]) == true,
               let frequency = rule["frequency"] as? String,
-              let interval = integer(rule["interval"]) else { return ["supported": false] }
+              RecurrenceSpec.Frequency(rawValue: frequency) != nil,
+              let interval = integer(rule["interval"]) else {
+            var unsupported: [String: Any] = ["supported": false]
+            if let summary = rule["summary"] as? String { unsupported["summary"] = summary }
+            return unsupported
+        }
         var result: [String: Any] = ["frequency": frequency, "interval": interval, "supported": true]
         if let weekdays = rule["weekdays"] as? [String] { result["weekdays"] = weekdays }
-        if let day = integer(rule["dayOfMonth"]) { result["day_of_month"] = day }
+        if let days = (rule["monthDays"] as? [Any])?.compactMap(integer) { result["month_days"] = days }
+        if let day = integer(rule["dayOfMonth"]) { result["month_days"] = [day] }  // A 0.5 row.
+        if let months = (rule["months"] as? [Any])?.compactMap(integer) { result["months"] = months }
+        if let positions = (rule["setPositions"] as? [Any])?.compactMap(integer) {
+            result["set_positions"] = positions
+        }
+        if let start = rule["weekStart"] as? String, ["MO", "SU"].contains(start) { result["week_start"] = start }
         if let end = rule["end"] as? [String: Any] {
             if let count = integer(end["count"]) {
-                result["end_count"] = count
+                result["end"] = ["count": count]
             } else if let at = number(end["at"]) {
-                result["end_until"] = MCPTime.format(at, zone: zone)
+                result["end"] = ["until": MCPTime.format(at, zone: zone)]
             }
         }
+        if let text = rule["rrule"] as? String { result["rrule"] = text }
+        if let text = rule["summary"] as? String { result["summary"] = text }
+        return result
+    }
+
+    private static func place(_ row: [String: Any]) -> [String: Any]? {
+        guard let title = row["title"] as? String, let latitude = number(row["latitude"]),
+              let longitude = number(row["longitude"]) else { return nil }
+        var result: [String: Any] = ["title": title, "latitude": latitude, "longitude": longitude]
+        if let radius = number(row["radius"]) { result["radius_m"] = radius }
         return result
     }
 
@@ -685,11 +1188,18 @@ enum MCPToolMapping {
         case "absolute":
             return number(row["at"]).map { ["at": MCPTime.format($0, zone: zone)] }
         case "relative":
-            // Core offsets are seconds relative to the due time, negative before it.
+            // Core offsets are seconds relative to the start or due time, negative before it.
             guard let offset = number(row["offset"]) else { return nil }
             let minutes = -offset / 60
             let whole = minutes.rounded() == minutes && abs(minutes) < 1e15
-            return ["minutes_before_due": whole ? Int(minutes) as Any : minutes as Any]
+            return ["minutes_before": whole ? Int(minutes) as Any : minutes as Any]
+        case "location":
+            guard let place = (row["location"] as? [String: Any]).flatMap(place),
+                  let proximity = row["proximity"] as? String, ["arrive", "leave"].contains(proximity)
+            else { return nil }
+            return ["location": place, "proximity": proximity]
+        case "unsupported":
+            return ["supported": false, "summary": row["summary"] as? String ?? "an alarm the bridge can't express"]
         default:
             return nil
         }

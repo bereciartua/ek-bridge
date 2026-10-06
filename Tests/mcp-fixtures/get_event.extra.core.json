@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "span: unknown argument",
+    "text" : "Invalid arguments: span: unknown argument. (code: invalid_arguments)"
+  }
+}

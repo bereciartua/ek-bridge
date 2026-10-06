@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "location: must be the same as structured_location.title (Calendar keeps one value), or leave it out",
+    "text" : "Invalid arguments: location: must be the same as structured_location.title (Calendar keeps one value), or leave it out. (code: invalid_arguments)"
+  }
+}

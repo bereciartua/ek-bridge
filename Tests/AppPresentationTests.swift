@@ -34,6 +34,7 @@ struct AppPresentationTests {
             #"return "([a-z]+(?:_[a-z]+)+)""#,
             #"\? nil : "([a-z]+(?:_[a-z]+)+)""#,
             #"case [a-zA-Z]+ = "([a-z]+(?:_[a-z]+)+)""#,
+            #"FieldError\("([a-z_]+)"\)"#,
         ].map { try! NSRegularExpression(pattern: $0) }
         var codes = Set<String>()
         for file in files {

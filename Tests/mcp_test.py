@@ -217,7 +217,7 @@ def expected_tools(contract, grants):
             continue
         verb, _, kind = name.partition("_")
         resource = "calendar" if kind in ("event", "events") else "reminderList"
-        bit = {"read": 1, "create": 2, "update": 4, "delete": 8, "complete": 16}[verb]
+        bit = {"read": 1, "get": 1, "create": 2, "update": 4, "delete": 8, "complete": 16}[verb]
         if any(g["resource"] == resource and g["mask"] & bit for g in grants):
             names.append(name)
     return names
@@ -238,6 +238,7 @@ def main():
     try:
         run_core(h, catalog, contract)
         run_writes(h)
+        run_plan03_writes(h)
         run_limits(h)
     finally:
         h.close()
@@ -299,8 +300,9 @@ def run_core(h, catalog, contract):
     # tools/list follows the saved grants (Work: Read+Create, Groceries: Read+Create+Complete).
     _, _, body, _ = c.legacy("tools/list")
     names = [t["name"] for t in body["result"]["tools"]]
-    check("A.1 visible tools", names == ["list_collections", "read_events", "create_event",
-                                         "read_reminders", "create_reminder", "complete_reminder"], names)
+    check("A.1 visible tools", names == ["list_collections", "read_events", "get_event", "create_event",
+                                         "read_reminders", "get_reminder", "create_reminder",
+                                         "complete_reminder"], names)
     for tool in body["result"]["tools"]:
         check(f"definition {tool['name']}", tool == catalog[tool["name"]], tool["name"])
     check("legacy list has no ttl", "ttlMs" not in body["result"] and "nextCursor" not in body["result"])
@@ -323,16 +325,55 @@ def run_core(h, catalog, contract):
     result = body["result"]
     check("read_events ok", status == 200 and result["isError"] is False, body)
     event = result["structuredContent"]["events"][0]
-    check("A.1 event", event == {"id": "EV1", "version": "1791200000.123456", "title": "Design review",
-                                 "title_truncated": False, "start": "2026-10-06T10:00:00-04:00",
-                                 "end": "2026-10-06T11:00:00-04:00", "all_day": False,
-                                 "recurring": False, "time_zone": "GMT", "editable": True}, event)
+    check("A.1 event", {k: event[k] for k in ["id", "version", "title", "start", "end", "all_day", "recurring",
+                                               "time_zone", "floating", "occurrence_start", "recurrence",
+                                               "editable", "notes_preview", "has_notes", "availability"]} == {
+        "id": "EV1", "version": "1791200000.123456", "title": "Design review",
+        "start": "2026-10-06T14:00:00+00:00", "end": "2026-10-06T15:00:00+00:00", "all_day": False,
+        "recurring": False, "time_zone": "GMT", "floating": False, "occurrence_start": None, "recurrence": None,
+        "editable": {"fields": True, "times": True, "recurrence": True, "reason": None},
+        "notes_preview": None, "has_notes": False, "availability": "busy"}, event)
+    check("read_events page", result["structuredContent"]["truncated"] is False and
+          result["structuredContent"]["next_cursor"] is None and len(result["structuredContent"]["events"]) == 3)
+    weekly = result["structuredContent"]["events"][2]
+    check("recurring occurrence row", weekly["occurrence_start"] == "2026-10-06T18:00:00+02:00" and
+          weekly["start"] == "2026-10-06T18:00:00+02:00" and weekly["recurrence"]["summary"] == "Weekly on Tuesday"
+          and weekly["alarms"] == [{"minutes_before": 10}] and weekly["structured_location"]["radius_m"] == 50
+          and weekly["notes_preview"] == "Agenda: roadmap" and "attendees" not in weekly, weekly)
     check("text mirrors structured", json.loads(text_of(result)) == result["structuredContent"])
     errors = validate(result["structuredContent"], catalog["read_events"]["outputSchema"])
     check("read_events schema", not errors, errors)
     allday = result["structuredContent"]["events"][1]
     check("all-day row", allday.get("start_date") == "2026-10-06" and allday.get("end_date") == "2026-10-06"
-          and allday["editable"] is False, allday)
+          and allday["editable"]["times"] is True, allday)
+
+    # Plan 03 reads: paging, get_event with attendees, get_reminder with notes.
+    args = {"calendar_id": "CAL-WORK", "start": "2026-10-06T00:00:00-04:00", "end": "2026-10-07T00:00:00-04:00"}
+    _, body = c.call("read_events", {**args, "limit": 2})
+    page = body["result"]["structuredContent"]
+    check("first page", [e["id"] for e in page["events"]] == ["EV1", "EV2"] and page["truncated"] is True
+          and page["next_cursor"] == "v1:1791259200:0:EV2", page)
+    _, body = c.call("read_events", {**args, "limit": 2, "cursor": page["next_cursor"]})
+    rest = body["result"]["structuredContent"]
+    check("second page", [e["id"] for e in rest["events"]] == ["EV3"] and rest["next_cursor"] is None, rest)
+    _, body = c.call("read_events", {**args, "cursor": "page 2"})
+    check("bad cursor", body["result"]["isError"] and "cursor: expected next_cursor" in text_of(body["result"]), body)
+    status, body = c.call("get_event", {"calendar_id": "CAL-WORK", "event_id": "EV3",
+                                        "occurrence_start": "2026-10-06T18:00:00+02:00"})
+    full = body["result"].get("structuredContent", {"event": {}})
+    check("get_event", status == 200 and full["event"]["notes"] == "Agenda: roadmap" and
+          full["event"]["attendees"][0]["email"] == "sam@example.com" and full["event"]["organizer"]["is_you"],
+          body)
+    errors = validate(full, catalog["get_event"]["outputSchema"])
+    check("get_event schema", not errors, errors)
+    _, body = c.call("get_event", {"calendar_id": "CAL-WORK", "event_id": "EV3",
+                                   "occurrence_start": "2026-10-13T18:00:00+02:00"})
+    check("get_event other occurrence", body["result"]["isError"] and
+          text_of(body["result"]).endswith("(code: occurrence_not_found)"), body)
+    status, body = c.call("get_reminder", {"list_id": "LIST-GROC", "reminder_id": "R1"})
+    got = body["result"]["structuredContent"]
+    check("get_reminder", status == 200 and got["reminder"]["notes"] == "Oat, not almond." and
+          not validate(got, catalog["get_reminder"]["outputSchema"]), body)
 
     _, body = c.call("list_collections", {})
     lc = body["result"]["structuredContent"]
@@ -681,7 +722,10 @@ def run_writes(h):
     # That was 10 writes: the burst. The next one waits.
     event = bodies[1]["result"]["structuredContent"]["event"]
     check("all-day readback dates", event.get("start_date") == "2026-12-24" and event.get("end_date") == "2026-12-26"
-          and event.get("verified") is True, event)
+          and "all_day" in event.get("verified", []), event)
+    timed = bodies[0]["result"]["structuredContent"]["event"]
+    check("timed events keep the Mac's zone (F1)", timed["time_zone"] == "America/New_York" and
+          timed["start"] == "2026-10-06T09:00:00-04:00", timed)
     _, body = c.call("delete_reminder", {"list_id": "LIST-GROC", "reminder_id": "R2", "version": "1"})
     check("write burst limited", "rate_limited" in text_of(body["result"]), body)
     _, body = c.call("create_event", {"calendar_id": "CAL-WORK", "title": "Gap", "start": "2026-03-08T02:30",
@@ -713,6 +757,71 @@ def run_writes(h):
     status, _, _, _ = reader.legacy("ping")
     check("revoked token 401", status == 401, status)
     reader.close()
+    c.close()
+
+
+def run_plan03_writes(h):
+    """Partial updates, nulls, spans, moves and series deletes, end to end."""
+    c = Client(h, h.token("mover"))
+    work = {"calendar_id": "CAL-WORK", "version": "1791200000.123456"}
+
+    def ok(tool, arguments, name):
+        status, body = c.call(tool, arguments)
+        result = body.get("result", {})
+        good = status == 200 and result.get("isError") is False
+        check(name, good, body)
+        if good:
+            errors = validate(result["structuredContent"], inline_schema(tool))
+            check(f"{name} schema", not errors, errors)
+            return result["structuredContent"]
+        return {}
+
+    s = ok("update_event", {**work, "event_id": "EV1", "title": "Renamed"}, "partial update")
+    check("only the title verified", s.get("event", {}).get("verified") == ["title"], s)
+    s = ok("update_event", {**work, "event_id": "EV1", "notes": None, "location": None, "url": None,
+                            "alarms": None, "availability": None, "structured_location": None}, "nulls clear")
+    check("cleared fields verified", s.get("event", {}).get("verified") ==
+          ["alarms", "availability", "location", "notes", "structured_location", "url"], s)
+    s = ok("update_event", {**work, "event_id": "EV3", "occurrence_start": "2026-10-06T18:00:00+02:00",
+                            "span": "future", "start": "2026-10-06T19:00:00+02:00",
+                            "end": "2026-10-06T20:00:00+02:00"}, "span future")
+    check("a future split may have a new ID", s.get("event", {}).get("id") == "EV3-future", s)
+    s = ok("update_event", {**work, "event_id": "EV1", "target_calendar_id": "CAL-HOME"}, "move")
+    check("move result names the new calendar", s.get("calendar_id") == "CAL-HOME", s)
+    _, body = c.call("update_event", {**work, "event_id": "EV1", "target_calendar_id": "CAL-HOLIDAYS"})
+    check("move needs Create on the destination", body["result"]["isError"] and
+          text_of(body["result"]).endswith("(code: forbidden)"), body)
+    s = ok("update_reminder", {"list_id": "LIST-GROC", "reminder_id": "R1", "version": "1791200002.000000",
+                               "target_list_id": "LIST-HOME"}, "reminder move")
+    check("reminder move result", s.get("list_id") == "LIST-HOME", s)
+    s = ok("update_reminder", {"list_id": "LIST-GROC", "reminder_id": "R1", "version": "1791200002.000000",
+                               "notes": "Oat, not almond.", "priority": "high"}, "reminder partial update")
+    check("reminder fields verified", s.get("reminder", {}).get("verified") == ["notes", "priority"] and
+          s.get("reminder", {}).get("priority") == "high", s)
+    s = ok("create_event", {"calendar_id": "CAL-WORK", "title": "Weekly sync", "start": "2026-10-13T10:00",
+                            "end": "2026-10-13T11:00", "time_zone": "Europe/Madrid", "notes": "Agenda",
+                            "location": "Sala 2", "url": "https://meet.example.com/abc",
+                            "alarms": [{"minutes_before": 15}],
+                            "recurrence": {"frequency": "weekly", "weekdays": ["TU"]}}, "create with every field")
+    check("saved in the requested zone", s.get("event", {}).get("time_zone") == "Europe/Madrid" and
+          s["event"]["start"] == "2026-10-13T10:00:00+02:00", s)
+    ok("delete_event", {**work, "event_id": "EV3", "occurrence_start": "2026-10-06T18:00:00+02:00", "span": "all"},
+       "delete a series")
+    ok("delete_reminder", {"list_id": "LIST-GROC", "reminder_id": "R1", "version": "1791200002.000000",
+                           "scope": "series"}, "delete a repeating reminder")
+    _, body = c.call("update_event", {**work, "event_id": "EV1"})
+    check("nothing to change", body["result"]["isError"] and
+          text_of(body["result"]).endswith("(code: nothing_to_change)"), body)
+    _, body = c.call("create_event", {"calendar_id": "CAL-WORK", "title": "x", "start": "2026-10-06T09:00:00Z",
+                                      "end": "2026-10-06T10:00:00Z", "url": "javascript:alert(1)"})
+    check("scheme refused", text_of(body["result"]).endswith("(code: url_scheme_not_allowed)"), body)
+    _, body = c.call("list_collections", {})
+    calendars = {x["id"]: x for x in body["result"]["structuredContent"]["calendars"]}
+    check("availabilities listed", calendars["CAL-WORK"]["availabilities"] == ["busy", "free", "tentative"] and
+          calendars["CAL-HOLIDAYS"]["availabilities"] == [], calendars)
+    move_rows = [r for r in h.activity() if r["command"] == "update_event" and r.get("outcome") == "success"]
+    check("a move is recorded on the source calendar", move_rows and move_rows[0]["targetID"] == "CAL-WORK",
+          move_rows[:1])
     c.close()
 
 
@@ -892,8 +1001,8 @@ def run_remote(h, catalog):
     remote = Remote(h, port, token)
     _, _, body, _ = remote.raw(body=ping)
     names = [t["name"] for t in body["result"]["tools"]]
-    check("remote tools follow grants", names == ["list_collections", "read_events", "create_event",
-                                                  "read_reminders", "create_reminder"], names)
+    check("remote tools follow grants", names == ["list_collections", "read_events", "get_event", "create_event",
+                                                  "read_reminders", "get_reminder", "create_reminder"], names)
     status, body = remote.call("read_events", {"calendar_id": "CAL-WORK", "start": "2026-10-06T00:00:00Z",
                                                "end": "2026-10-07T00:00:00Z"})
     check("remote read", status == 200 and body["result"]["isError"] is False, body)

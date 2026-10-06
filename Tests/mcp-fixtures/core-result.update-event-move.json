@@ -1,0 +1,24 @@
+{
+  "tool": "update_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV1",
+    "version": "1791200000.123456",
+    "target_calendar_id": "CAL-HOME"
+  },
+  "core": {
+    "item": {
+      "id": "EV1",
+      "version": "1791216003.000000",
+      "calendarID": "CAL-HOME",
+      "start": 1791295200,
+      "end": 1791298800,
+      "allDay": false,
+      "timeZone": "America/New_York",
+      "recurring": false,
+      "verified": [
+        "calendar"
+      ]
+    }
+  }
+}

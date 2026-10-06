@@ -1,0 +1,96 @@
+{
+  "tool": "get_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV-M",
+    "occurrence_start": "2026-10-20T10:00:00+02:00"
+  },
+  "core": {
+    "item": {
+      "id": "EV-M",
+      "version": "1791200000.123456",
+      "title": "Weekly sync",
+      "titleTruncated": false,
+      "start": 1792483200,
+      "end": 1792486800,
+      "recurring": true,
+      "allDay": false,
+      "timeZone": "Europe/Madrid",
+      "hasAttendees": true,
+      "occurrenceStart": 1792483200,
+      "detached": false,
+      "recurrence": {
+        "kind": "rule",
+        "supported": true,
+        "frequency": "weekly",
+        "interval": 1,
+        "weekdays": [
+          "TU"
+        ],
+        "end": {
+          "kind": "until",
+          "at": 1798761599
+        },
+        "rrule": "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T225959Z",
+        "summary": "Weekly on Tuesday, until Dec 31, 2026"
+      },
+      "status": "none",
+      "created": 1791100000.0,
+      "modified": 1791200000.123456,
+      "externalID": "ext-EV-M",
+      "notesTruncated": false,
+      "location": "Sala 2",
+      "locationTruncated": false,
+      "structuredLocation": null,
+      "url": null,
+      "alarms": [],
+      "alarmsTruncated": false,
+      "availability": "busy",
+      "attendeeCount": 2,
+      "organizerIsYou": true,
+      "yourStatus": "accepted",
+      "editable": {
+        "fields": false,
+        "times": false,
+        "recurrence": false,
+        "reason": "invitation"
+      },
+      "notes": "Agenda:\n1. Roadmap\n2. Hiring",
+      "organizer": {
+        "name": "Me",
+        "email": "me@example.com",
+        "role": "chair",
+        "status": "accepted",
+        "type": "person",
+        "isYou": true
+      },
+      "attendees": [
+        {
+          "name": "Sam Lee",
+          "email": "sam@example.com",
+          "role": "required",
+          "status": "accepted",
+          "type": "person",
+          "isYou": false
+        },
+        {
+          "name": "Room 4",
+          "email": null,
+          "role": "non_participant",
+          "status": "accepted",
+          "type": "room",
+          "isYou": false
+        },
+        {
+          "name": null,
+          "email": "guest@example.org",
+          "role": "optional",
+          "status": "pending",
+          "type": "unknown",
+          "isYou": false
+        }
+      ],
+      "attendeesTruncated": false
+    }
+  }
+}

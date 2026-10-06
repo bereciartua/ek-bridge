@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "location: must not be blank; leave it out instead",
+    "text" : "Invalid arguments: location: must not be blank; leave it out instead. (code: invalid_arguments)"
+  }
+}

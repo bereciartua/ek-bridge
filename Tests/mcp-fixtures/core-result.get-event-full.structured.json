@@ -1,0 +1,89 @@
+{
+  "calendar_id" : "CAL-WORK",
+  "event" : {
+    "alarms" : [
+
+    ],
+    "alarms_truncated" : false,
+    "all_day" : false,
+    "attendee_count" : 2,
+    "attendees" : [
+      {
+        "email" : "sam@example.com",
+        "is_you" : false,
+        "name" : "Sam Lee",
+        "role" : "required",
+        "status" : "accepted",
+        "type" : "person"
+      },
+      {
+        "email" : null,
+        "is_you" : false,
+        "name" : "Room 4",
+        "role" : "non_participant",
+        "status" : "accepted",
+        "type" : "room"
+      },
+      {
+        "email" : "guest@example.org",
+        "is_you" : false,
+        "name" : null,
+        "role" : "optional",
+        "status" : "pending",
+        "type" : "unknown"
+      }
+    ],
+    "attendees_truncated" : false,
+    "availability" : "busy",
+    "created" : "2026-10-04T03:46:40-04:00",
+    "detached" : false,
+    "editable" : {
+      "fields" : false,
+      "reason" : "invitation",
+      "recurrence" : false,
+      "times" : false
+    },
+    "end" : "2026-10-20T11:00:00+02:00",
+    "external_id" : "ext-EV-M",
+    "floating" : false,
+    "id" : "EV-M",
+    "location" : "Sala 2",
+    "location_truncated" : false,
+    "modified" : "2026-10-05T07:33:20-04:00",
+    "notes" : "Agenda:\n1. Roadmap\n2. Hiring",
+    "notes_truncated" : false,
+    "occurrence_start" : "2026-10-20T10:00:00+02:00",
+    "organizer" : {
+      "email" : "me@example.com",
+      "is_you" : true,
+      "name" : "Me",
+      "role" : "chair",
+      "status" : "accepted",
+      "type" : "person"
+    },
+    "organizer_is_you" : true,
+    "recurrence" : {
+      "end" : {
+        "until" : "2027-01-01T00:59:59+01:00"
+      },
+      "frequency" : "weekly",
+      "interval" : 1,
+      "rrule" : "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T225959Z",
+      "summary" : "Weekly on Tuesday, until Dec 31, 2026",
+      "supported" : true,
+      "weekdays" : [
+        "TU"
+      ]
+    },
+    "recurring" : true,
+    "start" : "2026-10-20T10:00:00+02:00",
+    "status" : "none",
+    "structured_location" : null,
+    "time_zone" : "Europe/Madrid",
+    "title" : "Weekly sync",
+    "title_truncated" : false,
+    "url" : null,
+    "version" : "1791200000.123456",
+    "your_status" : "accepted"
+  }
+}

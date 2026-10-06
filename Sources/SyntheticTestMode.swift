@@ -31,6 +31,12 @@ enum SyntheticTestMode {
         case "--synthetic-phone-sync-verify-cleanup": SyntheticPhoneSyncProbe.verifyCleanup()
         case "--synthetic-all-day-probe": SyntheticAllDayProbe.run()
         case "--synthetic-all-day-cleanup": SyntheticAllDayProbe.cleanupOnly()
+        case "--synthetic-fields-probe": SyntheticFieldsProbe.run(source: "iCloud")
+        case "--synthetic-fields-probe-local": SyntheticFieldsProbe.run(source: "local")
+        case "--synthetic-fields-cleanup": SyntheticFieldsProbe.cleanupOnly()
+        case "--synthetic-request-access": SyntheticFieldsProbe.requestAccess()
+        case "--synthetic-fields-diagnose": SyntheticFieldsProbe.diagnose()
+        case "--synthetic-phone-stage": SyntheticFieldsProbe.stageForPhone()
         default: report("invalid_arguments")
         }
     }

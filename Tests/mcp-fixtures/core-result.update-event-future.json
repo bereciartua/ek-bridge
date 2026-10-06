@@ -1,0 +1,31 @@
+{
+  "tool": "update_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV-M",
+    "version": "1791200000.123456",
+    "occurrence_start": "2026-10-27T10:00:00+01:00",
+    "span": "future",
+    "start": "2026-10-27T11:00:00+01:00",
+    "end": "2026-10-27T12:00:00+01:00"
+  },
+  "core": {
+    "item": {
+      "id": "EV-M2",
+      "version": "1791216002.000000",
+      "calendarID": "CAL-WORK",
+      "start": 1793095200,
+      "end": 1793098800,
+      "allDay": false,
+      "timeZone": "Europe/Madrid",
+      "recurring": true,
+      "occurrenceStart": 1793095200,
+      "verified": [
+        "start",
+        "end",
+        "all_day",
+        "time_zone"
+      ]
+    }
+  }
+}

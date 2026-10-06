@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "url_scheme_not_allowed",
+    "message" : "url: only http, https, mailto and tel links can be written",
+    "text" : "Link not allowed: only http, https, mailto and tel links can be written. Fix url and call again. (code: url_scheme_not_allowed)"
+  }
+}

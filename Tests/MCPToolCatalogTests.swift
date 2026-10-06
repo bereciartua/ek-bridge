@@ -2,8 +2,8 @@ import Foundation
 
 @main
 struct MCPToolCatalogTests {
-    static let allNames = ["list_collections", "read_events", "create_event", "update_event",
-                           "delete_event", "read_reminders", "create_reminder", "update_reminder",
+    static let allNames = ["list_collections", "read_events", "get_event", "create_event", "update_event",
+                           "delete_event", "read_reminders", "get_reminder", "create_reminder", "update_reminder",
                            "complete_reminder", "delete_reminder"]
 
     static func main() throws {
@@ -81,23 +81,23 @@ struct MCPToolCatalogTests {
         }
         let table: [(String, [ClientGrant], [String])] = [
             ("no grants", [], ["list_collections"]),
-            ("calendar read", [cal(r)], ["list_collections", "read_events"]),
+            ("calendar read", [cal(r)], ["list_collections", "read_events", "get_event"]),
             ("calendar create without read", [cal(c)], ["list_collections", "create_event"]),
             ("calendar edit and delete", [cal(e | d)], ["list_collections", "update_event", "delete_event"]),
             ("reminders complete only", [list(done)], ["list_collections", "complete_reminder"]),
             ("everything", [cal(15), list(31)], allNames),
             ("read-only calendar + full list", [cal(r), list(31)],
-             ["list_collections", "read_events", "read_reminders", "create_reminder", "update_reminder",
-              "complete_reminder", "delete_reminder"]),
+             ["list_collections", "read_events", "get_event", "read_reminders", "get_reminder", "create_reminder",
+              "update_reminder", "complete_reminder", "delete_reminder"]),
             ("full calendar only", [cal(15)],
-             ["list_collections", "read_events", "create_event", "update_event", "delete_event"]),
+             ["list_collections", "read_events", "get_event", "create_event", "update_event", "delete_event"]),
             ("two calendars, read on one and create on the other", [cal(r, "A"), cal(c, "B")],
-             ["list_collections", "read_events", "create_event"]),
+             ["list_collections", "read_events", "get_event", "create_event"]),
             ("two lists, read+create and delete", [list(r | c, "A"), list(d, "B")],
-             ["list_collections", "read_reminders", "create_reminder", "delete_reminder"]),
+             ["list_collections", "read_reminders", "get_reminder", "create_reminder", "delete_reminder"]),
             ("list edit only", [list(e)], ["list_collections", "update_reminder"]),
             ("grant order doesn't change tool order", [list(r), cal(r)],
-             ["list_collections", "read_events", "read_reminders"]),
+             ["list_collections", "read_events", "get_event", "read_reminders", "get_reminder"]),
         ]
         for (name, grants, expected) in table {
             let visible = MCPToolCatalog.visibleTools(grants: grants).map(\.name)
@@ -124,7 +124,7 @@ struct MCPToolCatalogTests {
             // Unknown arguments.
             ("list_collections", #"{"foo":1}"#, "foo: isn't a known argument; this tool takes none"),
             ("read_reminders", #"{"list_id":"L","page":2}"#,
-             "page: isn't a known argument (expected: cursor, limit, list_id)"),
+             "page: isn't a known argument (expected: cursor, due_after, due_before, limit, list_id, status)"),
             ("create_reminder", #"{"list_id":"L","title":"t","due":{"date":"2026-10-06","at":"9"}}"#,
              "due.at: isn't a known argument (expected: date, date_time, none, time_zone)"),
             // Wrong types.
@@ -154,8 +154,41 @@ struct MCPToolCatalogTests {
             ("create_event", #"{"calendar_id":"C","title":"\#(long197)éé"}"#,
              "title: must be at most 200 bytes of UTF-8, got 201"),
             ("create_event", #"{"calendar_id":"C","title":""}"#, "title: must not be empty"),
-            ("create_event", #"{"calendar_id":"C","title":"t","notes":"\#(String(repeating: "€", count: 667))"}"#,
-             "notes: must be at most 2000 bytes of UTF-8, got 2001"),
+            ("create_event", #"{"calendar_id":"C","title":"t","notes":"\#(String(repeating: "€", count: 2_667))"}"#,
+             "notes: must be at most 8000 bytes of UTF-8, got 8001"),
+            ("create_event", #"{"calendar_id":"C","title":"t","notes":"\#(String(repeating: "€", count: 2_666))ab"}"#,
+             nil),
+            ("update_event", #"{"calendar_id":"C","event_id":"E","version":"1","notes":null,"url":null,"alarms":null,"availability":null,"structured_location":null,"location":null}"#,
+             nil),
+            ("update_event", #"{"calendar_id":"C","event_id":"E","version":"1","title":null}"#,
+             "title: expected a string, got null"),
+            ("update_event", #"{"calendar_id":"C","event_id":"E","version":"1","span":"most"}"#,
+             #"span: expected one of "this", "future", "all", got "most""#),
+            ("update_event", #"{"calendar_id":"C","event_id":"E","version":"1","availability":"away"}"#,
+             #"availability: expected one of "busy", "free", "tentative", "unavailable", null, got "away""#),
+            ("create_event", #"{"calendar_id":"C","title":"t","availability":null}"#,
+             "availability: expected a string, got null"),
+            ("create_event", #"{"calendar_id":"C","title":"t","alarms":[{},{},{},{},{},{}]}"#,
+             "alarms: allows at most 5 items"),
+            ("create_event", #"{"calendar_id":"C","title":"t","alarms":[{"minutes_before":40321}]}"#,
+             "alarms[0].minutes_before: must be at most 40320"),
+            ("create_event", #"{"calendar_id":"C","title":"t","alarms":[{"proximity":"near"}]}"#,
+             #"alarms[0].proximity: expected one of "arrive", "leave", got "near""#),
+            ("create_event", #"{"calendar_id":"C","title":"t","structured_location":{"title":"x","latitude":91,"longitude":0}}"#,
+             "structured_location.latitude: must be at most 90"),
+            ("create_event", #"{"calendar_id":"C","title":"t","url":"\#(String(repeating: "a", count: 2_049))"}"#,
+             "url: must be at most 2048 bytes of UTF-8, got 2049"),
+            ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"monthly","month_days":[32]}}"#,
+             "recurrence.month_days[0]: must be at most 31"),
+            ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"monthly","end":{"count":0}}}"#,
+             "recurrence.end.count: must be at least 1"),
+            ("read_reminders", #"{"list_id":"L","status":"done"}"#,
+             #"status: expected one of "incomplete", "completed", "all", got "done""#),
+            ("delete_reminder", #"{"list_id":"L","reminder_id":"R","version":"1","scope":"occurrence"}"#,
+             #"scope: must be "series""#),
+            ("update_reminder", #"{"list_id":"L","reminder_id":"R","version":"1","priority":null}"#,
+             "priority: expected a string, got null"),
+            ("get_event", #"{"calendar_id":"C"}"#, "event_id: is required"),
             // enum and const.
             ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"hourly"}}"#,
              #"recurrence.frequency: expected one of "daily", "weekly", "monthly", "yearly", got "hourly""#),
@@ -180,8 +213,8 @@ struct MCPToolCatalogTests {
              #"recurrence.weekdays: "MO" appears more than once"#),
             ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"weekly","weekdays":["MO","TU","WE","TH","FR","SA","SU","MO"]}}"#,
              "recurrence.weekdays: allows at most 7 items"),
-            ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"weekly","weekdays":["MO","XX"]}}"#,
-             #"recurrence.weekdays[1]: expected one of "MO", "TU", "WE", "TH", "FR", "SA", "SU", got "XX""#),
+            ("create_reminder", #"{"list_id":"L","title":"t","recurrence":{"frequency":"weekly","weekdays":["MO",5]}}"#,
+             "recurrence.weekdays[1]: expected a string, got 5"),
             // Long values are shortened in messages.
             ("read_events", #"{"calendar_id":"C","start":"s","end":"e","limit":"\#(String(repeating: "x", count: 70))"}"#,
              #"limit: expected a whole number, got ""# + String(repeating: "x", count: 64) + #"…""#),
@@ -239,5 +272,7 @@ struct MCPToolCatalogTests {
         }.map(\.name)
         precondition(destructive == ["update_event", "delete_event", "update_reminder", "delete_reminder"])
         precondition(MCPToolCatalog.tools.filter(\.isWrite).count == 7)
+        precondition(MCPToolCatalog.tools.filter { !$0.isWrite }.map(\.name) ==
+                     ["list_collections", "read_events", "get_event", "read_reminders", "get_reminder"])
     }
 }

@@ -43,7 +43,7 @@ extension MCPTimeError {
         case .dateOutOfRange(let text):
             return "expected a date from 1900-01-02 to 2099-12-30; got \(Self.quoted(text))"
         case .allDayTooLong:
-            return "an all-day event can span at most 7 days"
+            return "an all-day event can span at most 366 days"
         case .allDayEndBeforeStart:
             return "end_date must be on or after start_date"
         }
@@ -144,7 +144,7 @@ enum MCPTime {
         let days = daysFromCivil(last.year, last.month, last.day)
             - daysFromCivil(first.year, first.month, first.day) + 1
         if days < 1 { return .failure(.allDayEndBeforeStart) }
-        if days > 7 { return .failure(.allDayTooLong) }
+        if days > 366 { return .failure(.allDayTooLong) }
         let start = startOfDay(year: first.year, month: first.month, day: first.day, zone: zone)
         let end = startOfDay(year: last.year, month: last.month, day: last.day, zone: zone, adding: 1)
         guard inRange(start) else { return .failure(.dateOutOfRange(startDate)) }

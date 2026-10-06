@@ -1,0 +1,20 @@
+{
+  "calendar_id" : "CAL-WORK",
+  "event" : {
+    "all_day" : false,
+    "end" : "2026-10-27T12:00:00+01:00",
+    "id" : "EV-M2",
+    "occurrence_start" : "2026-10-27T11:00:00+01:00",
+    "recurring" : true,
+    "start" : "2026-10-27T11:00:00+01:00",
+    "time_zone" : "Europe/Madrid",
+    "verified" : [
+      "start",
+      "end",
+      "all_day",
+      "time_zone"
+    ],
+    "version" : "1791216002.000000"
+  },
+  "idempotency_key" : "ekb3_1791216000_6f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+}

@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "notes: control characters other than tab and newline aren't allowed",
+    "text" : "Invalid arguments: notes: control characters other than tab and newline aren't allowed. (code: invalid_arguments)"
+  }
+}

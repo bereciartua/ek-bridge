@@ -1,7 +1,9 @@
 {
-  "$failure" : {
-    "code" : "invalid_arguments",
-    "message" : "notes: only supported on all-day events (all_day true)",
-    "text" : "Invalid arguments: notes: only supported on all-day events (all_day true). (code: invalid_arguments)"
-  }
+  "calendarID" : "CAL-WORK",
+  "end" : 1791295200,
+  "idempotencyKey" : "$generated",
+  "notes" : "Bring card",
+  "start" : 1791291600,
+  "timeZone" : "America/New_York",
+  "title" : "Dentist"
 }

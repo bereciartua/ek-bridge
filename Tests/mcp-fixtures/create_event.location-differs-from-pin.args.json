@@ -1,0 +1,13 @@
+{
+  "calendar_id": "CAL-WORK",
+  "title": "Weekly sync",
+  "start": "2026-10-13T10:00",
+  "end": "2026-10-13T11:00",
+  "time_zone": "Europe/Madrid",
+  "location": "Sala 2, Oficina Centro",
+  "structured_location": {
+    "title": "Sala 2",
+    "latitude": 40.4168,
+    "longitude": -3.7038
+  }
+}

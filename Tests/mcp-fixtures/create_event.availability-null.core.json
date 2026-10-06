@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "availability: leave it out instead of null",
+    "text" : "Invalid arguments: availability: leave it out instead of null. (code: invalid_arguments)"
+  }
+}

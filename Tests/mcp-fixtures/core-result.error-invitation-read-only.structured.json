@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Invitation: this event has attendees, and changing it could notify them, so the bridge doesn't change or delete invitations. Tell the user to change it in Calendar. (code: invitation_read_only)"
+}

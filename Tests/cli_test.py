@@ -23,7 +23,7 @@ PRODUCT = "EventKit Bridge"
 NOT_RUNNING = (f"error: {PRODUCT} isn't running, or the bridge is off. "
                "Turn it on from the menu bar.")
 SESSION_CHANGED = "error: the bridge session changed. Run the command again."
-PARAMS_INVALID = "error: params must be a JSON object under 8 KB."
+PARAMS_INVALID = "error: params must be a JSON object under 30 KB."
 RETRY_ADVICE = "  Read the item before retrying, and reuse the same idempotencyKey."
 
 
@@ -173,7 +173,7 @@ def main() -> int:
         junk = f.write_private(f.tmp / "junk.json", '{"clientID":"x","key":"nope"}')
         params_list = f.write_private(f.tmp / "list.json", "[1, 2]")
         params_big = f.write_private(
-            f.tmp / "big.json", json.dumps({"title": "x" * 9_000}))
+            f.tmp / "big.json", json.dumps({"title": "x" * 31_000}))
         params_ok = f.write_private(
             f.tmp / "ok.json", json.dumps({"listID": "L", "limit": 1}))
         no_registry = f.make_dir(f.tmp / "support-empty")
@@ -234,6 +234,16 @@ def main() -> int:
             ("help create_event", ["help", "create_event"], 0, None, None, {},
              has("Needs Create access to the calendar.", "Optional: allDay, timeZone, notes",
                  "60 s")),
+            ("help get_event", ["help", "get_event"], 0, None, None, {},
+             has("Read an event. Needs Read access to the calendar.", "Required: calendarID, itemID",
+                 "Optional: occurrenceStart", "10 s")),
+            ("help update_event", ["update_event", "--help"], 0, None, None, {},
+             has("Required: calendarID, itemID, expectedVersion, idempotencyKey",
+                 "Optional: title, start, end, allDay, timeZone, notes, location, structuredLocation, url, "
+                 "alarms, availability, recurrence, occurrenceStart, span, targetCalendarID, "
+                 "replaceUnsupportedAlarms", "under 30 KB")),
+            ("help read_reminders filters", ["read_reminders", "--help"], 0, None, None, {},
+             has("Optional: afterID, status, dueAfter, dueBefore")),
             ("help for unknown command", ["read_reminder", "--help"], 2,
              'error: unknown command "read_reminder". Did you mean read_reminders?',
              None, {}, None),
@@ -251,7 +261,7 @@ def main() -> int:
             ("params too big", ["read_reminders", *cred, "--params-file", str(params_big)],
              2, PARAMS_INVALID, None, {}, None),
             ("params from stdin, too big", ["read_reminders", *cred, "--params-file", "-"],
-             2, PARAMS_INVALID, None, {"stdin": json.dumps({"t": "x" * 9_000})}, None),
+             2, PARAMS_INVALID, None, {"stdin": json.dumps({"t": "x" * 31_000})}, None),
             ("params from stdin, not an object",
              ["read_reminders", *cred, "--params-file", "-"], 2, PARAMS_INVALID, None,
              {"stdin": '"text"'}, None),

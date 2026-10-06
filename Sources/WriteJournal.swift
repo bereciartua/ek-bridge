@@ -84,8 +84,8 @@ final class WriteJournal {
             else { return .reject("idempotency_pending_review") }
             return .repeatResult(result)
         }
-        if let semantic = semanticDigest(request), hasSemanticDigest(semantic) {
-            return .reject("occurrence_already_requested")
+        if let semantic = semanticDigest(request), let match = semanticMatch(semantic) {
+            return .reject(Self.semanticCode(request, done: match))
         }
         let all = shards!.values.lazy.flatMap(\.entries.values)
         guard all.count < maxEntries else { return .reject("journal_full") }
@@ -104,7 +104,9 @@ final class WriteJournal {
         guard let key = request.parameters["idempotencyKey"] as? String,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
         let semantic = semanticDigest(request)
-        if let semantic, hasSemanticDigest(semantic) { return .reject("occurrence_already_requested") }
+        if let semantic, let match = semanticMatch(semantic) {
+            return .reject(Self.semanticCode(request, done: match))
+        }
         let shard = Self.shardName(clientID)
         shards![shard, default: State(highWater: highWater, entries: [:])].entries[key] =
             Entry(digest: digest, semanticDigest: semantic, result: nil, clientID: clientID)
@@ -141,8 +143,26 @@ final class WriteJournal {
         return nil
     }
 
-    private func hasSemanticDigest(_ semantic: String) -> Bool {
-        shards!.values.contains { $0.entries.values.contains { $0.semanticDigest == semantic } }
+    /// An earlier request for the same occurrence: true when it finished
+    /// successfully, false while its outcome is unknown (pending), nil when
+    /// none, or when it failed (a failed write doesn't block a deliberate retry).
+    private func semanticMatch(_ semantic: String) -> Bool? {
+        var pending = false
+        for shard in shards!.values {
+            for entry in shard.entries.values where entry.semanticDigest == semantic {
+                guard let data = entry.result,
+                      let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else { pending = true; continue }
+                if result["error"] == nil { return true }
+            }
+        }
+        return pending ? false : nil
+    }
+
+    private static func semanticCode(_ request: BridgeRequest, done: Bool) -> String {
+        guard request.command == .deleteEvent else { return "occurrence_already_requested" }
+        // Only a delete that's known to have happened is "already applied".
+        return done ? "already_applied" : "idempotency_pending_review"
     }
 
     private func pruneCompletedExpired(now current: TimeInterval) {
@@ -176,6 +196,21 @@ final class WriteJournal {
     // twice. The due instant is part of the identity, so a later day's
     // occurrence of the same series is a separate, deliberate request.
     private func semanticDigest(_ request: BridgeRequest) -> String? {
+        // Two keys can't delete the same occurrence (plan 03 §8.3).
+        if request.command == .deleteEvent {
+            guard let calendar = request.parameters["calendarID"] as? String,
+                  let item = request.parameters["itemID"] as? String,
+                  let number = request.parameters["occurrenceStart"] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite,
+                  number.doubleValue.rounded() == number.doubleValue else { return nil }
+            let start = number.int64Value
+            let object: [String: Any] = ["command": "delete_event", "calendarID": calendar, "itemID": item,
+                                         "occurrenceStart": start,
+                                         "span": request.parameters["span"] as? String ?? "this"]
+            guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            else { return nil }
+            return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
         guard request.command == .completeReminder,
               request.parameters["recurrenceScope"] as? String == "occurrence",
               let list = request.parameters["listID"] as? String,

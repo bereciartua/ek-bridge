@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "span: expected this, future or all",
+    "text" : "Invalid arguments: span: expected this, future or all. (code: invalid_arguments)"
+  }
+}
