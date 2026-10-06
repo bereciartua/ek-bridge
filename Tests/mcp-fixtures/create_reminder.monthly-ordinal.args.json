@@ -1,0 +1,16 @@
+{
+  "list_id": "LIST-GROC",
+  "title": "Pay rent",
+  "due": {
+    "date": "2026-11-02"
+  },
+  "recurrence": {
+    "frequency": "monthly",
+    "weekdays": [
+      "1MO"
+    ],
+    "end": {
+      "until": "2027-06-30T23:59:59-04:00"
+    }
+  }
+}

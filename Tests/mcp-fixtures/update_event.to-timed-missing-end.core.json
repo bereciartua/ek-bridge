@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "end: required to change an all-day event into a timed one",
+    "text" : "Invalid arguments: end: required to change an all-day event into a timed one. (code: invalid_arguments)"
+  }
+}

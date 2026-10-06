@@ -1,0 +1,23 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1793394000,
+  "idempotencyKey" : "$generated",
+  "recurrence" : {
+    "frequency" : "monthly",
+    "interval" : 1,
+    "kind" : "rule",
+    "setPositions" : [
+      -1
+    ],
+    "weekdays" : [
+      "MO",
+      "TU",
+      "WE",
+      "TH",
+      "FR"
+    ]
+  },
+  "start" : 1793390400,
+  "timeZone" : "America/New_York",
+  "title" : "Report"
+}

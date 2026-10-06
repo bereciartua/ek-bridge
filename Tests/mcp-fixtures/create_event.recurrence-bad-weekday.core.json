@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "recurrence.weekdays: expected codes like MO, or 2TU and -1FR in monthly and yearly rules; got \"2XX\"",
+    "text" : "Invalid arguments: recurrence.weekdays: expected codes like MO, or 2TU and -1FR in monthly and yearly rules; got \"2XX\". (code: invalid_arguments)"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1793970000,
+  "idempotencyKey" : "$generated",
+  "start" : 1791291600,
+  "timeZone" : "America/New_York",
+  "title" : "Residency"
+}

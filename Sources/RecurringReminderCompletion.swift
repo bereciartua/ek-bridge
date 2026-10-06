@@ -2,10 +2,60 @@ import CryptoKit
 import EventKit
 import Foundation
 
-// Only the timed, alarm-free, unbounded daily iCloud shape observed in the
-// supervised two-device test is eligible. This type never mutates EventKit.
+// Completing one occurrence of a repeating reminder. EventKit has no span for
+// reminders: the provider splits off a completed copy and advances the series,
+// so the bridge only does it for shapes and account types where a supervised
+// probe (spike S6, `--synthetic-completion-probe`) saw exactly one completed
+// copy and one advanced series. This type never mutates EventKit.
 enum RecurringReminderCompletion {
-    private static let verifiedSourceKey = "EKBridgeVerifiedICloudReminderSourceID"
+    enum Provider: String { case iCloud = "icloud", local, exchange, calDAV = "caldav" }
+
+    /// A shape the probe verified on one account type.
+    struct VerifiedShape: Equatable {
+        let provider: Provider
+        let frequencies: Set<RecurrenceSpec.Frequency>
+        /// Weekdays, month days, months or set positions.
+        let selectors: Bool
+        /// An interval over 1.
+        let intervals: Bool
+        let timedDue: Bool
+        let allDayDue: Bool
+        /// Relative alarms.
+        let alarms: Bool
+        /// A count or until end.
+        let ends: Bool
+
+        func allows(_ provider: Provider, _ spec: RecurrenceSpec, timed: Bool, hasAlarms: Bool) -> Bool {
+            provider == self.provider && frequencies.contains(spec.frequency) &&
+                (selectors || (spec.weekdays.isEmpty && spec.monthDays.isEmpty && spec.months.isEmpty &&
+                               spec.setPositions.isEmpty)) &&
+                (intervals || spec.interval == 1) && (timed ? timedDue : allDayDue) &&
+                (alarms || !hasAlarms) && (ends || spec.end == nil)
+        }
+    }
+
+    /// Only what a probe has shown. October 4, 2026, two devices: an iCloud
+    /// daily reminder with a due time, no alarm and no end.
+    static let verifiedShapes = [
+        VerifiedShape(provider: .iCloud, frequencies: [.daily], selectors: false, intervals: false,
+                      timedDue: true, allDayDue: false, alarms: false, ends: false),
+    ]
+
+    static func provider(title: String, type: EKSourceType, delegated: Bool) -> Provider? {
+        guard !delegated else { return nil }
+        switch type {
+        case .calDAV: return title == "iCloud" ? .iCloud : .calDAV
+        case .local: return .local
+        case .exchange: return .exchange
+        default: return nil
+        }
+    }
+
+    static func verified(_ provider: Provider?, _ spec: RecurrenceSpec, timed: Bool, hasAlarms: Bool,
+                         shapes: [VerifiedShape] = verifiedShapes) -> Bool {
+        guard let provider else { return false }
+        return shapes.contains { $0.allows(provider, spec, timed: timed, hasAlarms: hasAlarms) }
+    }
 
     struct Candidate {
         let listID: String
@@ -17,6 +67,8 @@ enum RecurringReminderCompletion {
         let url: String
         let itemTimeZone: String
         let priority: Int
+        let spec: RecurrenceSpec
+        let alarms: [AlarmSpec?]
         let due: Date
         let nextDue: Date
         let fingerprint: String
@@ -36,9 +88,9 @@ enum RecurringReminderCompletion {
         let completed: Bool
         let hasCompletionDate: Bool
         let hasRules: Bool
-        let eligibleDailyRule: Bool
+        let rule: RecurrenceSpec?
         let startMatchesDue: Bool
-        let hasAlarms: Bool
+        let alarms: [AlarmSpec?]
     }
 
     struct Transition {
@@ -46,38 +98,25 @@ enum RecurringReminderCompletion {
         let nextID: String
     }
 
-    static func candidate(_ reminder: EKReminder) -> Candidate? {
+    static func candidate(_ reminder: EKReminder, shapes: [VerifiedShape] = verifiedShapes) -> Candidate? {
         guard let list = reminder.calendar, let source = list.source,
               list.allowsContentModifications,
-              supportedProvider(title: source.title, type: source.sourceType,
-                                delegated: source.isDelegate,
-                                sourceID: source.sourceIdentifier,
-                                verifiedSourceID: Bundle.main.object(
-                                    forInfoDictionaryKey: verifiedSourceKey) as? String),
               !reminder.isCompleted, reminder.completionDate == nil,
               !reminder.hasAttendees,
-              let rules = reminder.recurrenceRules, rules.count == 1,
-              exactDailyRule(rules[0]),
-              !reminder.hasAlarms, (reminder.alarms ?? []).isEmpty,
+              let spec = RecurrenceRead(reminder.recurrenceRules).spec,
               let dueParts = reminder.dueDateComponents,
               let startParts = reminder.startDateComponents,
               ReminderDueSpec.sameDayAndTime(startParts, dueParts),
               let zone = dueParts.timeZone,
-              let readback = ReminderDueSpec.readback(dueParts) as? [String: Any],
-              readback["kind"] as? String == "timed",
-              let at = readback["at"] as? NSNumber,
-              at.doubleValue.isFinite,
-              at.doubleValue.rounded() == at.doubleValue,
               let modified = reminder.lastModifiedDate else { return nil }
-        let due = Date(timeIntervalSince1970: at.doubleValue)
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        guard let next = calendar.date(byAdding: .day, value: 1, to: due),
-              calendar.component(.hour, from: next) == dueParts.hour,
-              calendar.component(.minute, from: next) == dueParts.minute,
-              calendar.component(.second, from: next) == (dueParts.second ?? 0) else {
-            return nil
-        }
+        let alarms = (reminder.alarms ?? []).map(AlarmSpec.read)
+        guard alarms.allSatisfy({ $0?.isRelative == true }) else { return nil }
+        let timed = dueParts.hour != nil
+        guard verified(provider(title: source.title, type: source.sourceType, delegated: source.isDelegate),
+                       spec, timed: timed, hasAlarms: !alarms.isEmpty, shapes: shapes),
+              let due = ReminderFields.instant(dueParts),
+              timed ? (ReminderDueSpec.readback(dueParts) as? [String: Any])?["kind"] as? String == "timed" : true,
+              let next = nextDue(spec, after: dueParts, zone: zone) else { return nil }
         let identity: [String: Any] = [
             "listID": list.calendarIdentifier,
             "sourceID": source.sourceIdentifier,
@@ -88,11 +127,11 @@ enum RecurringReminderCompletion {
             "url": reminder.url?.absoluteString ?? "",
             "itemTimeZone": reminder.timeZone?.identifier ?? "",
             "priority": reminder.priority,
-            "due": Int64(at.doubleValue),
+            "due": Int64(due.timeIntervalSince1970),
             "timeZone": zone.identifier,
             "version": String(format: "%.6f", modified.timeIntervalSince1970),
-            "rule": "daily:1:no-end:no-selectors",
-            "alarms": 0,
+            "rule": spec.rrule,
+            "alarms": alarms.map { $0?.core ?? [:] },
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: identity,
                                                       options: [.sortedKeys]) else { return nil }
@@ -106,28 +145,32 @@ enum RecurringReminderCompletion {
                          location: reminder.location ?? "",
                          url: reminder.url?.absoluteString ?? "",
                          itemTimeZone: reminder.timeZone?.identifier ?? "",
-                         priority: reminder.priority, due: due, nextDue: next,
-                         fingerprint: fingerprint)
+                         priority: reminder.priority, spec: spec, alarms: alarms,
+                         due: due, nextDue: next, fingerprint: fingerprint)
     }
 
-    static func exactDailyRule(_ rule: EKRecurrenceRule) -> Bool {
-        rule.frequency == .daily && rule.interval == 1 &&
-            rule.recurrenceEnd == nil && rule.daysOfTheWeek == nil &&
-            rule.daysOfTheMonth == nil && rule.monthsOfTheYear == nil &&
-            rule.weeksOfTheYear == nil && rule.daysOfTheYear == nil &&
-            rule.setPositions == nil
-    }
-
-    static func supportedProvider(title: String, type: EKSourceType,
-                                  delegated: Bool, sourceID: String,
-                                  verifiedSourceID: String?) -> Bool {
-        guard let verifiedSourceID, !verifiedSourceID.isEmpty else { return false }
-        return title == "iCloud" && type == .calDAV && !delegated &&
-            sourceID == verifiedSourceID
+    /// The occurrence after `due`, at the same wall time; nil when the rule
+    /// ends there or the wall time doesn't exist that day.
+    static func nextDue(_ spec: RecurrenceSpec, after due: DateComponents, zone: TimeZone) -> Date? {
+        guard let year = due.year, let month = due.month, let day = due.day else { return nil }
+        let anchor = RecurrenceExpansion.daysFromCivil(year, month, day)
+        let days = RecurrenceExpansion.days(spec, anchor: anchor, through: anchor + 4 * 366, limit: 2)
+        guard days.count == 2, days[0] == anchor else { return nil }
+        let (y, m, d) = RecurrenceExpansion.civil(days[1])
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        var parts = DateComponents(year: y, month: m, day: d, hour: due.hour, minute: due.minute,
+                                   second: due.hour == nil ? nil : (due.second ?? 0))
+        parts.timeZone = zone
+        guard let next = calendar.date(from: parts) else { return nil }
+        let back = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: next)
+        guard back.year == y, back.month == m, back.day == d,
+              due.hour == nil || (back.hour == due.hour && back.minute == due.minute) else { return nil }
+        if case .until(let at)? = spec.end, next.timeIntervalSince1970 > TimeInterval(at) { return nil }
+        return next
     }
 
     static func record(_ reminder: EKReminder) -> Record {
-        let rules = reminder.recurrenceRules ?? []
         let sourceID = reminder.calendar?.source?.sourceIdentifier ?? ""
         let startMatchesDue = reminder.startDateComponents.flatMap { start in
             reminder.dueDateComponents.map {
@@ -142,24 +185,28 @@ enum RecurringReminderCompletion {
                       url: reminder.url?.absoluteString ?? "",
                       itemTimeZone: reminder.timeZone?.identifier ?? "",
                       priority: reminder.priority,
-                      due: reminder.dueDateComponents?.date,
+                      due: ReminderFields.instant(reminder.dueDateComponents),
                       completed: reminder.isCompleted,
                       hasCompletionDate: reminder.completionDate != nil,
-                      hasRules: !rules.isEmpty,
-                      eligibleDailyRule: rules.count == 1 && exactDailyRule(rules[0]),
+                      hasRules: !(reminder.recurrenceRules ?? []).isEmpty,
+                      rule: RecurrenceRead(reminder.recurrenceRules).spec,
                       startMatchesDue: startMatchesDue,
-                      hasAlarms: reminder.hasAlarms || !(reminder.alarms ?? []).isEmpty)
+                      alarms: (reminder.alarms ?? []).map(AlarmSpec.read))
+    }
+
+    private static func sameContent(_ row: Record, _ before: Candidate) -> Bool {
+        row.listID == before.listID && row.sourceID == before.sourceID &&
+            row.title == before.title &&
+            row.notes == before.notes && row.location == before.location &&
+            row.url == before.url && row.itemTimeZone == before.itemTimeZone &&
+            row.priority == before.priority && row.alarms == before.alarms
     }
 
     static func ambiguousExistingCompletion(_ before: Candidate,
                                             records: [Record]) -> Bool {
         records.contains { row in
-            row.listID == before.listID && row.sourceID == before.sourceID &&
-                row.itemID != before.itemID && row.title == before.title &&
-                row.notes == before.notes && row.location == before.location &&
-                row.url == before.url && row.itemTimeZone == before.itemTimeZone &&
-                row.priority == before.priority && row.completed &&
-                row.hasCompletionDate && !row.hasRules && !row.hasAlarms &&
+            sameContent(row, before) && row.itemID != before.itemID && row.completed &&
+                row.hasCompletionDate && !row.hasRules &&
                 row.due.map { abs($0.timeIntervalSince(before.due)) < 0.5 } == true
         }
     }
@@ -169,22 +216,15 @@ enum RecurringReminderCompletion {
     static func verifiedTransition(_ before: Candidate,
                                    preExistingIDs: Set<String>,
                                    records: [Record]) -> Transition? {
-        func sameContent(_ row: Record) -> Bool {
-            row.listID == before.listID && row.sourceID == before.sourceID &&
-                row.title == before.title &&
-                row.notes == before.notes && row.location == before.location &&
-                row.url == before.url && row.itemTimeZone == before.itemTimeZone &&
-                row.priority == before.priority && !row.hasAlarms
-        }
         let completed = records.filter { row in
-            sameContent(row) && row.itemID != before.itemID &&
+            sameContent(row, before) && row.itemID != before.itemID &&
                 !preExistingIDs.contains(row.itemID) &&
                 row.completed && row.hasCompletionDate && !row.hasRules &&
                 row.due.map { abs($0.timeIntervalSince(before.due)) < 0.5 } == true
         }
         let next = records.filter { row in
-            sameContent(row) && row.itemID == before.itemID &&
-                !row.completed && !row.hasCompletionDate && row.eligibleDailyRule &&
+            sameContent(row, before) && row.itemID == before.itemID &&
+                !row.completed && !row.hasCompletionDate && row.rule == before.spec &&
                 row.startMatchesDue &&
                 row.due.map { abs($0.timeIntervalSince(before.nextDue)) < 0.5 } == true
         }

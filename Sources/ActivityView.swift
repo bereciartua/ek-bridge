@@ -383,8 +383,8 @@ struct ActivityInspector: View {
 
     static func purpose(_ command: String) -> String {
         switch BridgeCommand(rawValue: command) {
-        case .readEvents: String(localized: "read its events")
-        case .readReminders: String(localized: "read its reminders")
+        case .readEvents, .getEvent: String(localized: "read its events")
+        case .readReminders, .getReminder: String(localized: "read its reminders")
         case .createEvent: String(localized: "add events")
         case .createReminder: String(localized: "add reminders")
         case .updateEvent: String(localized: "change events")

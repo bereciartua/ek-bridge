@@ -46,8 +46,8 @@ final class UIReview {
     var mcpMode: String
     weak var model: BridgeAppModel?
     private(set) lazy var approvals = ApprovalCenter(summarize: { request in
-        Self.fixtureSummary(request) ?? ApprovalSummaries.build(
-            request, store: nil, collections: Self.collections(many: false))
+        ApprovalSummaries.build(request, lookup: Self.fixtureLookup(request),
+                                collections: Self.collections(many: false))
     })
     private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private(set) lazy var oauth = OAuthServer(
@@ -202,17 +202,31 @@ final class UIReview {
         defaults.set(Self.remoteOrigin, forKey: "RemoteAccessPublicAddress")
     }
 
-    // Before/after rows for the update snapshot, which has no EventKit to read.
-    static func fixtureSummary(_ request: ApprovalRequest) -> ApprovalSummary? {
-        guard request.request.parameters["itemID"] as? String == "fixture-update" else { return nil }
-        return ApprovalSummary(
-            title: String(localized: "\(request.clientName) wants to change an event"),
-            subtitle: "Work · iCloud",
-            rows: [.init(label: String(localized: "Event"), value: "Design review"),
-                   .init(label: String(localized: "When"), value: "Tue, Oct 6, 11:00 AM–12:00 PM",
-                         before: "Tue, Oct 6, 10:00–11:00 AM")],
-            isDelete: false,
-            collectionColor: collections(many: false).first { $0.id == "cal-work" }?.color)
+    // The current item for update and delete snapshots, which have no EventKit
+    // to read: the real summary builder compares against these.
+    static func fixtureLookup(_ request: ApprovalRequest) -> ApprovalLookup {
+        let reviewZone = TimeZone.current.identifier
+        switch request.request.parameters["itemID"] as? String {
+        case "fixture-update":
+            return ApprovalLookup(event: EventFields(
+                calendarID: "cal-work", title: "Design review", start: 1_791_295_200, end: 1_791_298_800,
+                allDay: false, timeZone: reviewZone, notes: "Agenda: roadmap", location: "Room 4", place: nil,
+                url: nil, alarms: [.relative(-600)], availability: .busy, recurrence: .none))
+        case "fixture-series":
+            return ApprovalLookup(event: EventFields(
+                calendarID: "cal-work", title: "Weekly sync", start: 1_792_504_800, end: 1_792_508_400,
+                allDay: false, timeZone: reviewZone, notes: nil, location: nil, place: nil, url: nil, alarms: [],
+                availability: .busy, recurrence: .rule(RecurrenceSpec(frequency: .weekly))),
+                recurring: true, occurrenceStart: Date(timeIntervalSince1970: 1_792_504_800), occurrences: 37)
+        case "fixture-reminder":
+            var due = DateComponents(year: 2026, month: 11, day: 1, hour: 9, minute: 0, second: 0)
+            due.timeZone = TimeZone.current
+            return ApprovalLookup(reminder: ReminderFields(
+                listID: "list-errands", title: "Return library books", due: due, start: due, notes: nil,
+                url: nil, location: nil, priority: 0, alarms: [], recurrence: .none, completed: true))
+        default:
+            return ApprovalLookup()
+        }
     }
 
     /// Queues fixture approvals the way the pipeline would.
@@ -1112,8 +1126,41 @@ final class SnapshotReview {
             step("approval-panel-update") {
                 self.review.approvals.withdrawAll()
                 self.review.queueApproval(.updateEvent, ["calendarID": "cal-work", "itemID": "fixture-update",
-                                                         "title": "Design review"], agent: "codex 0.98.0",
-                                          client: UIReview.cursorID, name: "Codex")
+                                                         "expectedVersion": "1", "idempotencyKey": "k",
+                                                         "start": 1_791_298_800, "end": 1_791_302_400],
+                                          agent: "codex 0.98.0", client: UIReview.cursorID, name: "Codex")
+                return self.review.approvalPanel.window
+            }
+            step("approval-panel-event-fields") {
+                self.review.approvals.withdrawAll()
+                let start = Int(Date().addingTimeInterval(7 * 86_400).timeIntervalSince1970) / 3_600 * 3_600
+                self.review.queueApproval(.createEvent, [
+                    "calendarID": "cal-work", "title": "Weekly sync", "start": start, "end": start + 3_600,
+                    "timeZone": "Europe/Madrid", "idempotencyKey": "k",
+                    "notes": "Agenda:\n1. Roadmap\n2. Hiring\n3. Offsite dates\n4. Anything else",
+                    "location": "Sala 2", "structuredLocation": ["title": "Sala 2", "latitude": 40.4168,
+                                                                 "longitude": -3.7038],
+                    "url": "https://meet.example.com/abc-defg-hij", "availability": "busy",
+                    "alarms": [["kind": "relative", "offset": -900], ["kind": "relative", "offset": -86_400]],
+                ], agent: "claude-code 2.4.1")
+                return self.review.approvalPanel.window
+            }
+            step("approval-panel-recurring-delete") {
+                self.review.approvals.withdrawAll()
+                self.review.queueApproval(.deleteEvent, ["calendarID": "cal-work", "itemID": "fixture-series",
+                                                         "expectedVersion": "1", "idempotencyKey": "k",
+                                                         "occurrenceStart": 1_792_504_800, "span": "future"],
+                                          agent: "claude-code 2.4.1")
+                return self.review.approvalPanel.window
+            }
+            step("approval-panel-reminder-fields") {
+                self.review.approvals.withdrawAll()
+                self.review.queueApproval(.updateReminder, ["listID": "list-errands", "itemID": "fixture-reminder",
+                                                            "expectedVersion": "1", "idempotencyKey": "k",
+                                                            "completed": false, "priority": "high",
+                                                            "notes": "Two are overdue.",
+                                                            "url": "tel:+15555550100"],
+                                          agent: "codex 0.98.0", client: UIReview.cursorID, name: "Codex")
                 return self.review.approvalPanel.window
             }
             step("approval-panel-delete-queued") {

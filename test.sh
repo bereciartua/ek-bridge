@@ -16,10 +16,14 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/MutationPolicy.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/BridgeProtocolTests.swift" \
@@ -37,15 +41,55 @@ xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
-    "$project_dir/Tests/ReminderRecurrenceTests.swift" \
-    -o "$project_dir/build/reminder-recurrence-tests"
-"$project_dir/build/reminder-recurrence-tests"
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
+    "$project_dir/Tests/RecurrenceTests.swift" \
+    -o "$project_dir/build/recurrence-tests"
+"$project_dir/build/recurrence-tests"
 xcrun swiftc -parse-as-library \
     -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
+    "$project_dir/Tests/EventFieldsTests.swift" \
+    -o "$project_dir/build/event-fields-tests"
+"$project_dir/build/event-fields-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
+    "$project_dir/Tests/ReminderFieldsTests.swift" \
+    -o "$project_dir/build/reminder-fields-tests"
+"$project_dir/build/reminder-fields-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/ReminderDue.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/RecurringReminderCompletion.swift" \
     "$project_dir/Tests/RecurringReminderCompletionTests.swift" \
     -o "$project_dir/build/recurring-completion-tests"
@@ -55,7 +99,12 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderSchedule.swift" \
     "$project_dir/Tests/ReminderScheduleTests.swift" \
     -o "$project_dir/build/reminder-schedule-tests"
@@ -74,9 +123,13 @@ xcrun swiftc -parse-as-library \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
@@ -186,9 +239,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
@@ -232,9 +289,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
@@ -254,9 +315,41 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
+    "$project_dir/Sources/ReminderSchedule.swift" \
+    "$project_dir/Sources/WriteIdempotencyKey.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/MCP/RateLimiter.swift" \
+    "$project_dir/Sources/ApprovalCenter.swift" \
+    "$project_dir/Sources/ApprovalSummaries.swift" \
+    "$project_dir/Tests/ApprovalSummariesTests.swift" \
+    -o "$project_dir/build/approval-summaries-tests"
+"$project_dir/build/approval-summaries-tests"
+xcrun swiftc -parse-as-library \
+    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/CommandPolicy.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
+    "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
@@ -316,9 +409,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/MCP/MCPTime.swift" \
     "$project_dir/Sources/MCP/AgentOutcomeText.swift" \
@@ -336,9 +433,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/EventCreation.swift" \
+    "$project_dir/Sources/ItemText.swift" \
+    "$project_dir/Sources/ItemAlarms.swift" \
+    "$project_dir/Sources/Recurrence.swift" \
+    "$project_dir/Sources/RecurrenceText.swift" \
+    "$project_dir/Sources/EventFields.swift" \
+    "$project_dir/Sources/ReminderFields.swift" \
     "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderRecurrence.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \

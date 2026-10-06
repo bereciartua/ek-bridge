@@ -1,0 +1,43 @@
+{
+  "tool": "list_collections",
+  "arguments": {},
+  "core": {
+    "calendarsAccess": "full",
+    "remindersAccess": "full",
+    "collections": [
+      {
+        "resource": "calendar",
+        "id": "CAL-WORK",
+        "name": "Work",
+        "account": "iCloud",
+        "writable": true,
+        "available": true,
+        "mask": 15,
+        "availabilities": [
+          "busy",
+          "free",
+          "tentative"
+        ]
+      },
+      {
+        "resource": "calendar",
+        "id": "CAL-SUB",
+        "name": "Holidays",
+        "account": "Subscribed",
+        "writable": false,
+        "available": true,
+        "mask": 1,
+        "availabilities": []
+      },
+      {
+        "resource": "reminderList",
+        "id": "LIST-GROC",
+        "name": "Groceries",
+        "account": "iCloud",
+        "writable": true,
+        "available": true,
+        "mask": 31
+      }
+    ]
+  }
+}

@@ -160,13 +160,13 @@
     {
       "alarms" : [
         {
-          "minutes_before_due" : 15
+          "minutes_before" : 15
         },
         {
-          "minutes_before_due" : 0
+          "minutes_before" : 0
         },
         {
-          "minutes_before_due" : -7.5
+          "minutes_before" : -7.5
         },
         {
           "at" : "2026-11-05T18:00:00-05:00"
@@ -180,7 +180,9 @@
       },
       "id" : "R8",
       "recurrence" : {
-        "end_until" : "2026-12-31T23:59:59-05:00",
+        "end" : {
+          "until" : "2026-12-31T23:59:59-05:00"
+        },
         "frequency" : "weekly",
         "interval" : 2,
         "supported" : true,
@@ -205,10 +207,14 @@
       },
       "id" : "R9",
       "recurrence" : {
-        "day_of_month" : 5,
-        "end_count" : 12,
+        "end" : {
+          "count" : 12
+        },
         "frequency" : "monthly",
         "interval" : 1,
+        "month_days" : [
+          5
+        ],
         "supported" : true
       },
       "recurring" : true,

@@ -1,0 +1,43 @@
+{
+  "calendar_id": "CAL-WORK",
+  "title": "Weekly sync",
+  "start": "2026-10-13T10:00",
+  "end": "2026-10-13T11:00",
+  "time_zone": "Europe/Madrid",
+  "notes": "Agenda:\r\n1. Roadmap\n2. Hiring",
+  "location": "Sala 2, Oficina Centro",
+  "structured_location": {
+    "title": "Sala 2",
+    "latitude": 40.4168,
+    "longitude": -3.7038,
+    "radius_m": 50
+  },
+  "url": "https://meet.example.com/abc?pwd=1",
+  "alarms": [
+    {
+      "minutes_before": 15
+    },
+    {
+      "at": "2026-10-13T08:30:00+02:00"
+    },
+    {
+      "location": {
+        "title": "Sala 2",
+        "latitude": 40.4168,
+        "longitude": -3.7038,
+        "radius_m": 50
+      },
+      "proximity": "arrive"
+    }
+  ],
+  "availability": "free",
+  "recurrence": {
+    "frequency": "monthly",
+    "weekdays": [
+      "2TU"
+    ],
+    "end": {
+      "count": 10
+    }
+  }
+}

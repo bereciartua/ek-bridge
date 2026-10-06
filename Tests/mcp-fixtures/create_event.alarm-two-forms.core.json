@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarms[0]: expected exactly one of minutes_before, at, or location with proximity",
+    "text" : "Invalid arguments: alarms[0]: expected exactly one of minutes_before, at, or location with proximity. (code: invalid_arguments)"
+  }
+}

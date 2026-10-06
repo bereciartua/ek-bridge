@@ -165,6 +165,23 @@ struct OutcomePresentation: Equatable {
             + group(["save_failed", "fetch_failed", "all_day_readback_failed_rolled_back",
                      "response_too_large", "app_unavailable", "client_unavailable",
                      "activity_unavailable", "journal_unavailable", "journal_full"], failure)
+            + group(["nothing_to_change", "invalid_url", "url_scheme_not_allowed", "invalid_notes",
+                     "notes_too_long", "invalid_location", "location_too_long", "invalid_alarms",
+                     "invalid_recurrence", "occurrence_required", "span_not_applicable",
+                     "alarm_requires_due"], invalid)
+            + group(["occurrence_not_found"], Entry(
+                label: String(localized: "Not found"), tone: .warn,
+                why: String(localized: "No occurrence of the repeating event starts at that time."),
+                fix: String(localized: "Read again to get current occurrences.")))
+            + group(["invitation_read_only"], Entry(
+                label: String(localized: "Invitation"), tone: .warn,
+                why: String(localized: "The event has attendees; changing it could notify them, so the bridge leaves it alone."),
+                fix: String(localized: "Change it in Calendar.")))
+            + group(["floating_time_read_only", "availability_unsupported", "alarms_unsupported",
+                     "move_across_accounts_unsupported"], unsupported)
+            + group(["already_applied"], Entry(
+                label: String(localized: "Already done"), tone: .neutral,
+                why: String(localized: "An earlier request already did this."), fix: nil))
         groups.forEach { table[$0.0] = $0.1 }
         return table
     }()
@@ -173,6 +190,17 @@ struct OutcomePresentation: Equatable {
     private static func prefixEntry(_ code: String) -> Entry? {
         if code.hasPrefix("recurrence_") || code.hasPrefix("completed_reminder_") {
             return unsupported
+        }
+        // `<field>_readback_failed_<outcome>` (plan 03 §14).
+        if code.contains("_readback_failed_") {
+            if code.hasSuffix("_rolled_back") || code.hasSuffix("_restored") {
+                return Entry(label: String(localized: "Not saved"), tone: .warn,
+                             why: String(localized: "The saved item didn't match the request, so the bridge undid the change."),
+                             fix: String(localized: "The account may not support that value."))
+            }
+            if code.hasSuffix("_cleanup_needed") || code.hasSuffix("_restore_failed") {
+                return reviewNeeded
+            }
         }
         return nil
     }
@@ -191,7 +219,9 @@ enum CommandPresentation {
         case .calendarCount: return String(localized: "Count calendars")
         case .reminderListCount: return String(localized: "Count lists")
         case .readEvents: return String(localized: "Read events")
+        case .getEvent: return String(localized: "Read an event")
         case .readReminders: return String(localized: "Read reminders")
+        case .getReminder: return String(localized: "Read a reminder")
         case .createEvent: return String(localized: "Create event")
         case .updateEvent: return String(localized: "Update event")
         case .deleteEvent: return String(localized: "Delete event")
@@ -205,7 +235,7 @@ enum CommandPresentation {
     /// The access a command needs, as shown in the access table ("Read", "Create"…).
     static func requiredAction(_ command: String) -> String? {
         switch BridgeCommand(rawValue: command) {
-        case .readEvents, .readReminders: String(localized: "Read")
+        case .readEvents, .readReminders, .getEvent, .getReminder: String(localized: "Read")
         case .createEvent, .createReminder: String(localized: "Create")
         case .updateEvent, .updateReminder: String(localized: "Edit")
         case .deleteEvent, .deleteReminder: String(localized: "Delete")
@@ -217,7 +247,7 @@ enum CommandPresentation {
     /// True for commands that target a list rather than a calendar.
     static func targetsList(_ command: String) -> Bool {
         switch BridgeCommand(rawValue: command) {
-        case .readReminders, .createReminder, .updateReminder, .completeReminder,
+        case .readReminders, .getReminder, .createReminder, .updateReminder, .completeReminder,
              .deleteReminder: true
         default: false
         }

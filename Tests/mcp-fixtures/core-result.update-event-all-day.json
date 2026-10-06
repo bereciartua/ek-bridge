@@ -1,0 +1,30 @@
+{
+  "tool": "update_event",
+  "arguments": {
+    "calendar_id": "CAL-WORK",
+    "event_id": "EV1",
+    "version": "1791200000.123456",
+    "all_day": true,
+    "start_date": "2026-10-06",
+    "end_date": "2026-10-07"
+  },
+  "core": {
+    "item": {
+      "id": "EV1",
+      "version": "1791216004.000000",
+      "calendarID": "CAL-WORK",
+      "start": 1791259200,
+      "end": 1791431999,
+      "allDay": true,
+      "timeZone": "America/New_York",
+      "recurring": false,
+      "allDayVerified": true,
+      "verified": [
+        "start",
+        "end",
+        "all_day",
+        "time_zone"
+      ]
+    }
+  }
+}

@@ -3,15 +3,25 @@
   "events" : [
     {
       "all_day" : false,
-      "editable" : true,
-      "end" : "2026-10-06T11:00:00-04:00",
+      "editable" : {
+        "fields" : true,
+        "reason" : null,
+        "recurrence" : false,
+        "times" : true
+      },
+      "end" : "2026-10-06T15:00:00+00:00",
+      "floating" : false,
       "id" : "EV1",
+      "occurrence_start" : null,
+      "recurrence" : null,
       "recurring" : false,
-      "start" : "2026-10-06T10:00:00-04:00",
+      "start" : "2026-10-06T14:00:00+00:00",
       "time_zone" : "GMT",
       "title" : "Design review",
       "title_truncated" : false,
       "version" : "1791200000.123456"
     }
-  ]
+  ],
+  "next_cursor" : null,
+  "truncated" : false
 }

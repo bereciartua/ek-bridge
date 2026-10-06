@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "scope: expected \"series\"",
+    "text" : "Invalid arguments: scope: expected \"series\". (code: invalid_arguments)"
+  }
+}

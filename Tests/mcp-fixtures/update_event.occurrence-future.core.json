@@ -1,0 +1,18 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1792490400,
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV3",
+  "occurrenceStart" : 1792483200,
+  "recurrence" : {
+    "frequency" : "weekly",
+    "interval" : 1,
+    "kind" : "rule",
+    "weekdays" : [
+      "TU"
+    ]
+  },
+  "span" : "future",
+  "start" : 1792486800
+}

@@ -1,0 +1,39 @@
+{
+  "alarms" : [
+    {
+      "kind" : "relative",
+      "offset" : -3600
+    },
+    {
+      "at" : 1793484000,
+      "kind" : "absolute"
+    },
+    {
+      "kind" : "location",
+      "location" : {
+        "latitude" : 40.700000000000003,
+        "longitude" : -74,
+        "radius" : 150,
+        "title" : "Home"
+      },
+      "proximity" : "arrive"
+    }
+  ],
+  "due" : {
+    "at" : 1793541600,
+    "kind" : "timed",
+    "timeZone" : "America/New_York"
+  },
+  "idempotencyKey" : "$generated",
+  "listID" : "LIST-GROC",
+  "location" : "Home",
+  "notes" : "Transfer, not check",
+  "priority" : "high",
+  "start" : {
+    "date" : "2026-10-30",
+    "kind" : "all_day",
+    "timeZone" : "America/New_York"
+  },
+  "title" : "Pay rent",
+  "url" : "https://bank.example.com/pay"
+}

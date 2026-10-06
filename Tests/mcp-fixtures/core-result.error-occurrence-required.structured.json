@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Needs occurrence: this event repeats. Pass occurrence_start from read_events, and span (this, future or all) to say which occurrences change. (code: occurrence_required)"
+}

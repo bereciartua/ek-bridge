@@ -1,0 +1,14 @@
+{
+  "calendar_id": "CAL-WORK",
+  "title": "Alarm",
+  "start": "2026-10-06T09:00:00-04:00",
+  "end": "2026-10-06T10:00:00-04:00",
+  "alarms": [
+    {
+      "minutes_before": 10
+    },
+    {
+      "minutes_before": 10
+    }
+  ]
+}

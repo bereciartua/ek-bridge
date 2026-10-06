@@ -1,0 +1,85 @@
+{
+  "list_id" : "LIST-GROC",
+  "next_cursor" : null,
+  "reminders" : [
+    {
+      "alarms" : [
+        {
+          "minutes_before" : 60
+        },
+        {
+          "location" : {
+            "latitude" : 40.700000000000003,
+            "longitude" : -74,
+            "radius_m" : 150,
+            "title" : "Home"
+          },
+          "proximity" : "leave"
+        }
+      ],
+      "completed" : false,
+      "completed_at" : null,
+      "created" : "2026-10-04T03:46:40-04:00",
+      "due" : {
+        "date_time" : "2026-11-01T09:00:00-05:00",
+        "time_zone" : "America/New_York"
+      },
+      "external_id" : "ext-R7",
+      "has_notes" : true,
+      "id" : "R7",
+      "location" : "Home",
+      "location_truncated" : false,
+      "modified" : "2026-10-05T07:33:22-04:00",
+      "notes_preview" : "Transfer, not check",
+      "notes_truncated" : false,
+      "priority" : "high",
+      "priority_raw" : 1,
+      "recurrence" : {
+        "frequency" : "monthly",
+        "interval" : 1,
+        "rrule" : "FREQ=MONTHLY;BYDAY=1MO",
+        "summary" : "Monthly on the first Monday",
+        "supported" : true,
+        "weekdays" : [
+          "1MO"
+        ]
+      },
+      "recurring" : true,
+      "start" : {
+        "date" : "2026-10-30",
+        "time_zone" : "America/New_York"
+      },
+      "title" : "Pay rent",
+      "title_truncated" : false,
+      "url" : "https://bank.example.com/pay",
+      "url_scheme_allowed" : true,
+      "version" : "1791200002.000000"
+    },
+    {
+      "alarms" : [
+
+      ],
+      "completed" : true,
+      "completed_at" : "2026-10-03T00:00:00-04:00",
+      "created" : "2026-10-04T03:46:40-04:00",
+      "due" : null,
+      "external_id" : "ext-R8",
+      "has_notes" : false,
+      "id" : "R8",
+      "location" : null,
+      "location_truncated" : false,
+      "modified" : "2026-10-05T07:33:22-04:00",
+      "notes_preview" : null,
+      "notes_truncated" : false,
+      "priority" : null,
+      "priority_raw" : 3,
+      "recurrence" : null,
+      "recurring" : false,
+      "start" : null,
+      "title" : "Old task",
+      "title_truncated" : false,
+      "url" : null,
+      "version" : "1791200002.000000"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "$isError" : true,
+  "text" : "Already done: this occurrence was already deleted by an earlier request. Nothing to do; don't retry. (code: already_applied)"
+}

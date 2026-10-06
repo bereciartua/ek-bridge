@@ -20,6 +20,8 @@ struct CollectionRecord: Equatable {
     let name: String
     let account: String
     let writable: Bool
+    /// Calendars: the availability values it accepts (busy, free…), possibly none.
+    var availabilities: [String]? = nil
 }
 
 /// What the pipeline needs to know about macOS access and collections.
@@ -150,7 +152,7 @@ final class RequestPipeline {
         let selected = BridgeScope(
             calendarID: call.grant?.resource == .calendar ? call.targetID : nil,
             reminderListID: call.grant?.resource == .reminderList ? call.targetID : nil,
-            generation: call.revision)
+            generation: call.revision, moveTargetID: call.moveTargetID)
         if let error = CommandPolicy.validate(request, scope: selected) {
             finish(call, ["error": error])
             return ticket
@@ -247,6 +249,7 @@ final class RequestPipeline {
                         "account": found?.account as Any? ?? NSNull(),
                         "writable": found?.writable ?? false,
                         "available": found != nil, "mask": grant.mask]
+                    .merging(found?.availabilities.map { ["availabilities": $0] } ?? [:]) { _, new in new }
             }
             return ["calendarsAccess": collections.access(.calendar),
                     "remindersAccess": collections.access(.reminderList),

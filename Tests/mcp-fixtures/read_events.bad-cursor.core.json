@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "cursor: expected next_cursor from the previous page, unchanged",
+    "text" : "Invalid arguments: cursor: expected next_cursor from the previous page, unchanged. (code: invalid_arguments)"
+  }
+}

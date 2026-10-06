@@ -1,0 +1,10 @@
+{
+  "allDay" : true,
+  "calendarID" : "CAL-WORK",
+  "end" : 1791518400,
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV1",
+  "start" : 1791432000,
+  "timeZone" : "America/New_York"
+}

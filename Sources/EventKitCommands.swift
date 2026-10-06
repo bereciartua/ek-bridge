@@ -1,44 +1,44 @@
 import EventKit
 import Foundation
 
+// The EventKit side of every item command. Events are in EventCommands.swift
+// and reminders in ReminderCommands.swift; this file dispatches and holds what
+// they share (lookups, versions, the write journal).
 @MainActor
 final class EventKitCommands: BridgeCommandExecutor {
-    private let store: EKEventStore
-    private let journal = WriteJournal()
+    let store: EKEventStore
+    let journal = WriteJournal()
 
     init(store: EKEventStore) { self.store = store }
 
     func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
                        stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
                        completion: @escaping ([String: Any]) -> Void) {
-        run(Call(request: request, clientID: clientID, isCancelled: isCancelled),
-            selected: selected, stillAuthorized: stillAuthorized, completion: completion)
+        run(Call(request: request, clientID: clientID, isCancelled: isCancelled, selected: selected,
+                 stillAuthorized: stillAuthorized),
+            completion: completion)
     }
 
-    private struct Call {
+    struct Call {
         let request: BridgeRequest
         let clientID: String
         let isCancelled: () -> Bool
+        let selected: BridgeScope
+        let stillAuthorized: () -> Bool
+
+        var p: [String: Any] { request.parameters }
     }
 
-    private func run(_ call: Call, selected: BridgeScope,
-                     stillAuthorized: @escaping () -> Bool,
-                     completion: @escaping ([String: Any]) -> Void) {
+    private func run(_ call: Call, completion: @escaping ([String: Any]) -> Void) {
         let request = call.request
-        guard stillAuthorized() else { completion(["error": "scope_changed"]); return }
+        let selected = call.selected
+        guard call.stillAuthorized() else { completion(["error": "scope_changed"]); return }
         if let error = CommandPolicy.validate(request, scope: selected) {
             completion(["error": error])
             return
         }
-        let p = request.parameters
         let command = request.command
-        let entity: EKEntityType = {
-            switch command {
-            case .readReminders, .createReminder, .updateReminder, .completeReminder,
-                 .deleteReminder, .reminderListCount: .reminder
-            default: .event
-            }
-        }()
+        let entity: EKEntityType = Self.targetsReminders(command) ? .reminder : .event
         if command != .authorizationStatus && command != .scopeStatus && command != .listCollections,
            EKEventStore.authorizationStatus(for: entity) != .fullAccess {
             completion(["error": "full_access_required"])
@@ -69,423 +69,71 @@ final class EventKitCommands: BridgeCommandExecutor {
             completion(["count": store.calendars(for: .event).count])
         case .reminderListCount:
             completion(["count": store.calendars(for: .reminder).count])
-        case .readEvents:
-            guard let calendar = calendar(p["calendarID"], .event) else {
-                completion(["error": "target_unavailable"]); return
-            }
-            let start = Date(timeIntervalSince1970: (p["start"] as! NSNumber).doubleValue)
-            let end = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
-            let predicate = store.predicateForEvents(withStart: start, end: end, calendars: [calendar])
-            let limit = (p["limit"] as! NSNumber).intValue
-            let generation = selected.generation
-            var rows = [[String: Any]]()
-            var truncated = false
-            store.enumerateEvents(matching: predicate) { event, stop in
-                if rows.count >= limit {
-                    truncated = true
-                    stop.pointee = true
-                } else {
-                    rows.append(self.eventRow(event))
-                }
-            }
-            guard CommandPolicy.scopeStillSelected(
-                    id: calendar.calendarIdentifier, generation: generation,
-                    scope: selected, reminders: false),
-                  stillAuthorized(),
-                  EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-                completion(["error": "scope_changed"]); return
-            }
-            rows.sort {
-                let first = $0["start"] as? Double ?? 0
-                let second = $1["start"] as? Double ?? 0
-                if first != second { return first < second }
-                return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
-            }
-            completion(truncated ? ["error": "too_many_events_narrow_range"] :
-                       ["items": rows, "truncated": false])
-        case .readReminders:
-            guard let list = calendar(p["listID"], .reminder) else {
-                completion(["error": "target_unavailable"]); return
-            }
-            let predicate = store.predicateForReminders(in: [list])
-            let limit = (p["limit"] as! NSNumber).intValue
-            let generation = selected.generation
-            store.fetchReminders(matching: predicate) { [weak self] reminders in
-                DispatchQueue.main.async {
-                    guard let self else { completion(["error": "app_unavailable"]); return }
-                    guard !call.isCancelled() else { completion(["error": "cancelled"]); return }
-                    guard CommandPolicy.scopeStillSelected(
-                            id: list.calendarIdentifier, generation: generation,
-                            scope: selected, reminders: true),
-                          stillAuthorized(),
-                          EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
-                        completion(["error": "scope_changed"]); return
-                    }
-                    guard let reminders else { completion(["error": "fetch_failed"]); return }
-                    let safe = reminders
-                        .filter { $0.calendar.calendarIdentifier == list.calendarIdentifier }
-                        .sorted { $0.calendarItemIdentifier < $1.calendarItemIdentifier }
-                    let after = p["afterID"] as? String
-                    let remaining = after.map { cursor in
-                        safe.filter { $0.calendarItemIdentifier > cursor }
-                    } ?? safe
-                    let page = Array(remaining.prefix(limit))
-                    var result: [String: Any] = [
-                        "items": page.map(self.reminderRow),
-                        "truncated": remaining.count > limit,
-                    ]
-                    if remaining.count > limit, let last = page.last {
-                        result["nextCursor"] = last.calendarItemIdentifier
-                    }
-                    completion(result)
-                }
-            }
-        case .createEvent:
-            guard let calendar = writableCalendar(p["calendarID"], .event) else {
-                completion(["error": "target_not_writable"]); return
-            }
-            guard let details = EventCreationDetails.parse(p) else {
-                completion(["error": "invalid_event_schedule"]); return
-            }
-            let event = EKEvent(eventStore: store)
-            event.calendar = calendar
-            event.title = p["title"] as? String
-            let requestedStart = Date(timeIntervalSince1970: (p["start"] as! NSNumber).doubleValue)
-            let requestedEnd = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
-            event.startDate = requestedStart
-            event.endDate = requestedEnd
-            switch details {
-            case .timed:
-                event.isAllDay = false
-                event.timeZone = TimeZone(secondsFromGMT: 0)
-            case .allDay(let zone, let notes):
-                event.timeZone = zone
-                event.isAllDay = true
-                event.notes = notes
-            }
-            guard reserveWrite(call, completion) else { return }
-            do {
-                try store.save(event, span: .thisEvent)
-                var receipt = eventReceipt(event)
-                if case .allDay(let zone, let notes) = details {
-                    let persisted = event.eventIdentifier.flatMap(store.event(withIdentifier:))
-                    var local = Calendar(identifier: .gregorian)
-                    local.timeZone = zone
-                    let sameDays = persisted.map {
-                        local.isDate($0.startDate, inSameDayAs: requestedStart) &&
-                        // iCloud EventKit represents an all-day exclusive end
-                        // as the preceding day's 23:59:59 on this Mac.
-                        ($0.endDate == requestedEnd ||
-                         $0.endDate == requestedEnd.addingTimeInterval(-1))
-                    } ?? false
-                    guard let persisted,
-                          persisted.calendar.calendarIdentifier == calendar.calendarIdentifier,
-                          persisted.title == event.title,
-                          persisted.isAllDay, sameDays, persisted.notes == notes else {
-                        do {
-                            try store.remove(event, span: .thisEvent)
-                            finishWrite(["error": "all_day_readback_failed_rolled_back"], request, completion)
-                        } catch {
-                            finishWrite(["error": "all_day_readback_failed_cleanup_needed",
-                                         "itemID": event.eventIdentifier ?? ""], request, completion)
-                        }
-                        return
-                    }
-                    receipt["allDayVerified"] = true
-                    receipt["notesVerified"] = true
-                    receipt["start"] = persisted.startDate.timeIntervalSince1970
-                    receipt["end"] = persisted.endDate.timeIntervalSince1970
-                    receipt["endExclusive"] = requestedEnd.timeIntervalSince1970
-                }
-                finishWrite(["item": receipt], request, completion)
-            } catch { completion(["error": "save_failed"]) }
-        case .updateEvent, .deleteEvent:
-            guard writableCalendar(p["calendarID"], .event) != nil,
-                  let event = store.event(withIdentifier: p["itemID"] as! String),
-                  event.refresh(),
-                  event.calendar.calendarIdentifier == p["calendarID"] as? String else {
-                completion(["error": "item_unavailable"]); return
-            }
-            if let error = MutationPolicy.eventError(
-                recurring: isRecurring(event),
-                allDay: event.isAllDay, hasAttendees: event.hasAttendees,
-                floatingTime: event.timeZone == nil, updating: command == .updateEvent
-            ) {
-                completion(["error": error]); return
-            }
-            guard matchesVersion(event.lastModifiedDate, p["expectedVersion"]) else {
-                completion(["error": "conflict"]); return
-            }
-            guard reserveWrite(call, completion) else { return }
-            do {
-                if command == .deleteEvent {
-                    try store.remove(event, span: .thisEvent)
-                    finishWrite(["deleted": true], request, completion)
-                } else {
-                    event.title = p["title"] as? String
-                    event.startDate = Date(timeIntervalSince1970: (p["start"] as! NSNumber).doubleValue)
-                    event.endDate = Date(timeIntervalSince1970: (p["end"] as! NSNumber).doubleValue)
-                    try store.save(event, span: .thisEvent)
-                    finishWrite(["item": eventReceipt(event)], request, completion)
-                }
-            } catch { completion(["error": "save_failed"]) }
-        case .createReminder:
-            guard let list = writableCalendar(p["listID"], .reminder) else {
-                completion(["error": "target_not_writable"]); return
-            }
-            let reminder = EKReminder(eventStore: store)
-            reminder.calendar = list
-            reminder.title = p["title"] as? String
-            guard let dueChange = ReminderDueChange.parse(parameters: p),
-                  let recurrenceChange = ReminderRecurrenceChange.parse(parameters: p) else {
-                completion(["error": "invalid_schedule"]); return
-            }
-            if let error = ReminderSchedule.validate(dueChange, recurrenceChange,
-                                                     for: reminder, creating: true) {
-                completion(["error": error]); return
-            }
-            guard reserveWrite(call, completion) else { return }
-            ReminderSchedule.apply(dueChange, recurrenceChange, to: reminder)
-            do {
-                try store.save(reminder, commit: true)
-                let saved = store.calendarItem(withIdentifier: reminder.calendarItemIdentifier)
-                    as? EKReminder ?? reminder
-                finishWrite(["item": reminderReceipt(saved)], request, completion)
-            } catch { completion(["error": "save_failed"]) }
-        case .updateReminder, .completeReminder, .deleteReminder:
-            guard let list = writableCalendar(p["listID"], .reminder),
-                  let reminder = store.calendarItem(withIdentifier: p["itemID"] as! String) as? EKReminder,
-                  reminder.refresh(),
-                  reminder.calendar.calendarIdentifier == p["listID"] as? String else {
-                completion(["error": "item_unavailable"]); return
-            }
-            if command != .updateReminder {
-                if let error = MutationPolicy.reminderError(
-                    recurring: reminder.hasRecurrenceRules,
-                    completed: reminder.isCompleted,
-                    completing: command == .completeReminder,
-                    recurrenceScope: ReminderRecurrenceScope.parse(p["recurrenceScope"])
-                ) {
-                    completion(["error": error]); return
-                }
-            }
-            guard matchesVersion(reminder.lastModifiedDate, p["expectedVersion"]) else {
-                completion(["error": "conflict"]); return
-            }
-            if command == .completeReminder && reminder.hasRecurrenceRules {
-                completeRecurringOccurrence(call, list: list, selected: selected,
-                                            stillAuthorized: stillAuthorized,
-                                            completion: completion)
-                return
-            }
-            let dueChange: ReminderDueChange
-            let recurrenceChange: ReminderRecurrenceChange
-            if command == .updateReminder {
-                guard let due = ReminderDueChange.parse(parameters: p),
-                      let recurrence = ReminderRecurrenceChange.parse(parameters: p) else {
-                    completion(["error": "invalid_schedule"]); return
-                }
-                dueChange = due
-                recurrenceChange = recurrence
-                if let error = ReminderSchedule.validate(due, recurrence,
-                                                         for: reminder, creating: false) {
-                    completion(["error": error]); return
-                }
-            } else {
-                dueChange = .keep
-                recurrenceChange = .keep
-            }
-            guard reserveWrite(call, completion) else { return }
-            do {
-                if command == .deleteReminder {
-                    try store.remove(reminder, commit: true)
-                    finishWrite(["deleted": true], request, completion)
-                } else {
-                    if command == .completeReminder {
-                        reminder.isCompleted = true
-                    } else {
-                        reminder.title = p["title"] as? String
-                        ReminderSchedule.apply(dueChange, recurrenceChange, to: reminder)
-                    }
-                    try store.save(reminder, commit: true)
-                    let saved = store.calendarItem(withIdentifier: reminder.calendarItemIdentifier)
-                        as? EKReminder ?? reminder
-                    finishWrite(["item": reminderReceipt(saved)], request, completion)
-                }
-            } catch { completion(["error": "save_failed"]) }
+        case .readEvents: readEvents(call, completion)
+        case .getEvent: getEvent(call, completion)
+        case .createEvent: createEvent(call, completion)
+        case .updateEvent, .deleteEvent: changeEvent(call, completion)
+        case .readReminders: readReminders(call, completion)
+        case .getReminder: getReminder(call, completion)
+        case .createReminder: createReminder(call, completion)
+        case .updateReminder, .completeReminder, .deleteReminder: changeReminder(call, completion)
         }
     }
 
-    private func completeRecurringOccurrence(_ call: Call, list: EKCalendar,
-                                             selected: BridgeScope,
-                                             stillAuthorized: @escaping () -> Bool,
-                                             completion: @escaping ([String: Any]) -> Void) {
-        let request = call.request
-        let p = request.parameters
-        let listID = list.calendarIdentifier
-        let itemID = p["itemID"] as! String
-        let generation = selected.generation
-        store.fetchReminders(matching: store.predicateForReminders(in: [list])) {
-            [weak self] fetched in
-            DispatchQueue.main.async {
-                guard let self else { completion(["error": "app_unavailable"]); return }
-                guard !call.isCancelled() else { completion(["error": "cancelled"]); return }
-                guard CommandPolicy.scopeStillSelected(id: listID, generation: generation,
-                            scope: selected, reminders: true), stillAuthorized(),
-                      EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
-                    completion(["error": "scope_changed"]); return
-                }
-                guard let fetched else { completion(["error": "fetch_failed"]); return }
-                let before = fetched.filter { $0.calendar.calendarIdentifier == listID }
-                let preExistingIDs = Set(before.map(\.calendarItemIdentifier))
-                guard preExistingIDs.count == before.count,
-                      before.filter({ $0.calendarItemIdentifier == itemID }).count == 1,
-                      let target = self.store.calendarItem(withIdentifier: itemID) as? EKReminder,
-                      target.refresh(), target.calendar.calendarIdentifier == listID,
-                      self.matchesVersion(target.lastModifiedDate, p["expectedVersion"]) else {
-                    completion(["error": "conflict"]); return
-                }
-                guard let candidate = RecurringReminderCompletion.candidate(target) else {
-                    completion(["error": "recurrence_shape_unsupported"]); return
-                }
-                guard let due = ReminderDueSpec.timestamp(p["occurrenceDue"]),
-                      Double(due) == candidate.due.timeIntervalSince1970,
-                      p["occurrenceFingerprint"] as? String == candidate.fingerprint else {
-                    completion(["error": "occurrence_conflict"]); return
-                }
-                guard !RecurringReminderCompletion.ambiguousExistingCompletion(
-                    candidate, records: before.map(RecurringReminderCompletion.record)) else {
-                    completion(["error": "ambiguous_occurrence"]); return
-                }
-                guard self.reserveWrite(call, completion) else { return }
-                target.isCompleted = true
-                do { try self.store.save(target, commit: true) }
-                catch { completion(["error": "completion_pending_reconciliation"]); return }
-                self.store.fetchReminders(matching: self.store.predicateForReminders(in: [list])) {
-                    [weak self] fetchedAfter in
-                    DispatchQueue.main.async {
-                        guard let self else { completion(["error": "app_unavailable"]); return }
-                        guard CommandPolicy.scopeStillSelected(id: listID, generation: generation,
-                                    scope: selected, reminders: true), stillAuthorized(),
-                              EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
-                            self.finishWrite(["error": "scope_changed_after_write"],
-                                             request, completion)
-                            return
-                        }
-                        guard let fetchedAfter else {
-                            self.finishWrite(["error": "completion_readback_uncertain"],
-                                             request, completion)
-                            return
-                        }
-                        let rows = fetchedAfter.filter { $0.calendar.calendarIdentifier == listID }
-                        guard let transition = RecurringReminderCompletion.verifiedTransition(
-                                candidate, preExistingIDs: preExistingIDs,
-                                records: rows.map(RecurringReminderCompletion.record)),
-                              let completed = rows.first(where: {
-                                  $0.calendarItemIdentifier == transition.completedID
-                              }),
-                              let next = rows.first(where: {
-                                  $0.calendarItemIdentifier == transition.nextID
-                              }) else {
-                            self.finishWrite(["error": "completion_readback_uncertain"],
-                                             request, completion)
-                            return
-                        }
-                        self.finishWrite([
-                            "completedOccurrence": self.reminderReceipt(completed),
-                            "nextOccurrence": self.reminderReceipt(next),
-                            "completedDue": candidate.due.timeIntervalSince1970,
-                            "nextDue": candidate.nextDue.timeIntervalSince1970,
-                        ], request, completion)
-                    }
-                }
-            }
+    static func targetsReminders(_ command: BridgeCommand) -> Bool {
+        switch command {
+        case .readReminders, .getReminder, .createReminder, .updateReminder, .completeReminder,
+             .deleteReminder, .reminderListCount: true
+        default: false
         }
     }
 
-    private func calendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
+    // MARK: Shared helpers
+
+    func calendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
         guard let id = value as? String else { return nil }
         return store.calendars(for: type).first { $0.calendarIdentifier == id }
     }
-    private func writableCalendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
+
+    func writableCalendar(_ value: Any?, _ type: EKEntityType) -> EKCalendar? {
         guard let calendar = calendar(value, type), calendar.allowsContentModifications else { return nil }
         return calendar
     }
-    // Some providers populate occurrenceDate for a one-off event. Use recurrence
-    // rules and detachment to decide whether mutations need series handling.
-    private func isRecurring(_ event: EKEvent) -> Bool {
-        event.hasRecurrenceRules || event.isDetached
-    }
-    private func eventRow(_ event: EKEvent) -> [String: Any] {
-        let (title, titleTruncated) = boundedTitle(event.title)
-        var row: [String: Any] = [
-            "id": event.eventIdentifier ?? "",
-            "title": title,
-            "titleTruncated": titleTruncated,
-            "start": event.startDate.timeIntervalSince1970,
-            "end": event.endDate.timeIntervalSince1970,
-            "recurring": isRecurring(event),
-            "allDay": event.isAllDay,
-            "timeZone": event.timeZone?.identifier ?? "",
-            "hasAttendees": event.hasAttendees,
-        ]
-        if let version = version(event.lastModifiedDate) { row["version"] = version }
-        return row
-    }
-    private func reminderRow(_ reminder: EKReminder) -> [String: Any] {
-        let (title, titleTruncated) = boundedTitle(reminder.title)
-        var row: [String: Any] = [
-            "id": reminder.calendarItemIdentifier,
-            "title": title,
-            "titleTruncated": titleTruncated,
-            "completed": reminder.isCompleted,
-            "recurring": reminder.hasRecurrenceRules,
-        ]
-        row.merge(ReminderSchedule.describe(reminder)) { _, new in new }
-        if let candidate = RecurringReminderCompletion.candidate(reminder) {
-            row["completionCandidate"] = [
-                "recurrenceScope": "occurrence",
-                "occurrenceDue": candidate.due.timeIntervalSince1970,
-                "occurrenceFingerprint": candidate.fingerprint,
-            ] as [String: Any]
+
+    /// A move target: writable, in the same account as `source` (§13).
+    func moveTarget(_ value: Any?, _ type: EKEntityType, from source: EKCalendar) -> Result<EKCalendar, FieldError> {
+        guard let target = writableCalendar(value, type) else { return .failure(FieldError("target_not_writable")) }
+        guard target.source?.sourceIdentifier == source.source?.sourceIdentifier else {
+            return .failure(FieldError("move_across_accounts_unsupported"))
         }
-        if let version = version(reminder.lastModifiedDate) { row["version"] = version }
-        return row
+        return .success(target)
     }
-    private func eventReceipt(_ event: EKEvent) -> [String: Any] {
-        var receipt: [String: Any] = ["id": event.eventIdentifier ?? ""]
-        if let version = version(event.lastModifiedDate) { receipt["version"] = version }
-        return receipt
+
+    func boundedTitle(_ value: String?) -> (String, Bool) {
+        let (text, truncated) = ItemText.prefix(value ?? "", maxBytes: 200)
+        return (text, truncated)
     }
-    private func boundedTitle(_ value: String?) -> (String, Bool) {
-        let bytes = Array((value ?? "").utf8)
-        guard bytes.count > 200 else { return (value ?? "", false) }
-        return (String(decoding: bytes.prefix(200), as: UTF8.self), true)
-    }
-    private func reminderReceipt(_ reminder: EKReminder) -> [String: Any] {
-        var receipt: [String: Any] = [
-            "id": reminder.calendarItemIdentifier,
-            "title": boundedTitle(reminder.title).0,
-            "completed": reminder.isCompleted,
-            "recurring": reminder.hasRecurrenceRules,
-        ]
-        receipt.merge(ReminderSchedule.describe(reminder)) { _, new in new }
-        if let version = version(reminder.lastModifiedDate) { receipt["version"] = version }
-        return receipt
-    }
-    private func version(_ date: Date?) -> String? {
+
+    func version(_ date: Date?) -> String? {
         date.map { String(format: "%.6f", $0.timeIntervalSince1970) }
     }
-    private func matchesVersion(_ date: Date?, _ expected: Any?) -> Bool {
+
+    func matchesVersion(_ date: Date?, _ expected: Any?) -> Bool {
         guard let current = version(date), let expected = expected as? String else { return false }
         return current == expected
     }
-    private func finishWrite(_ result: [String: Any], _ request: BridgeRequest,
-                             _ completion: ([String: Any]) -> Void) {
+
+    func seconds(_ date: Date?) -> Any {
+        date.map { $0.timeIntervalSince1970 as Any } ?? NSNull()
+    }
+
+    func finishWrite(_ result: [String: Any], _ request: BridgeRequest,
+                     _ completion: ([String: Any]) -> Void) {
         completion(journal.finish(request, result: result)
                    ? result : ["error": "write_committed_journal_pending_review"])
     }
-    private func reserveWrite(_ call: Call, _ completion: ([String: Any]) -> Void) -> Bool {
+
+    func reserveWrite(_ call: Call, _ completion: ([String: Any]) -> Void) -> Bool {
         if call.isCancelled() { completion(["error": "cancelled"]); return false }
         switch journal.begin(call.request, clientID: call.clientID) {
         case .execute: return true
@@ -493,11 +141,20 @@ final class EventKitCommands: BridgeCommandExecutor {
         case .reject(let error): completion(["error": error]); return false
         }
     }
+
     /// A journal replay: the recorded result, marked so the caller knows the
     /// write wasn't done twice.
-    private static func repeated(_ result: [String: Any]) -> [String: Any] {
+    static func repeated(_ result: [String: Any]) -> [String: Any] {
         result.merging(["repeated": true]) { _, new in new }
     }
+
+    /// Stops adding list rows once they pass this many bytes (§16).
+    static let rowBudget = 180_000
+
+    static func rowSize(_ row: [String: Any]) -> Int {
+        (try? JSONSerialization.data(withJSONObject: row))?.count ?? rowBudget
+    }
+
     private func status(_ type: EKEntityType) -> String {
         switch EKEventStore.authorizationStatus(for: type) {
         case .notDetermined: "Not determined"
@@ -533,7 +190,9 @@ final class EventKitCollectionSource: CollectionSource {
         guard EKEventStore.authorizationStatus(for: type) == .fullAccess else { return nil }
         return store.calendars(for: type).map {
             CollectionRecord(id: $0.calendarIdentifier, name: $0.title, account: $0.source.title,
-                             writable: $0.allowsContentModifications)
+                             writable: $0.allowsContentModifications,
+                             availabilities: resource == .calendar
+                                ? EventAvailabilityMapping.supported($0).map(\.rawValue).sorted() : nil)
         }
     }
 
@@ -541,4 +200,3 @@ final class EventKitCollectionSource: CollectionSource {
         resource == .calendar ? .event : .reminder
     }
 }
-

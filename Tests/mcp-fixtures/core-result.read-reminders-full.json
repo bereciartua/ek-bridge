@@ -1,0 +1,102 @@
+{
+  "tool": "read_reminders",
+  "arguments": {
+    "list_id": "LIST-GROC",
+    "status": "all"
+  },
+  "core": {
+    "items": [
+      {
+        "id": "R7",
+        "title": "Pay rent",
+        "titleTruncated": false,
+        "completed": false,
+        "recurring": true,
+        "version": "1791200002.000000",
+        "due": {
+          "kind": "timed",
+          "at": 1793541600,
+          "local": "2026-11-01T09:00:00",
+          "timeZone": "America/New_York"
+        },
+        "start": {
+          "kind": "all_day",
+          "date": "2026-10-30",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": {
+          "kind": "rule",
+          "supported": true,
+          "frequency": "monthly",
+          "interval": 1,
+          "weekdays": [
+            "1MO"
+          ],
+          "rrule": "FREQ=MONTHLY;BYDAY=1MO",
+          "summary": "Monthly on the first Monday"
+        },
+        "alarms": [
+          {
+            "kind": "relative",
+            "offset": -3600
+          },
+          {
+            "kind": "location",
+            "location": {
+              "title": "Home",
+              "latitude": 40.7,
+              "longitude": -74.0,
+              "radius": 150.0
+            },
+            "proximity": "leave"
+          }
+        ],
+        "alarmCount": 2,
+        "alarmsTruncated": false,
+        "notesPreview": "Transfer, not check",
+        "hasNotes": true,
+        "notesTruncated": false,
+        "url": "https://bank.example.com/pay",
+        "urlSchemeAllowed": true,
+        "location": "Home",
+        "locationTruncated": false,
+        "priority": "high",
+        "priorityRaw": 1,
+        "completedAt": null,
+        "created": 1791100000.0,
+        "modified": 1791200002.0,
+        "externalID": "ext-R7"
+      },
+      {
+        "id": "R8",
+        "title": "Old task",
+        "titleTruncated": false,
+        "completed": true,
+        "recurring": false,
+        "version": "1791200002.000000",
+        "due": null,
+        "start": null,
+        "recurrence": {
+          "kind": "none",
+          "supported": true
+        },
+        "alarms": [],
+        "alarmCount": 0,
+        "alarmsTruncated": false,
+        "notesPreview": null,
+        "hasNotes": false,
+        "notesTruncated": false,
+        "url": null,
+        "location": null,
+        "locationTruncated": false,
+        "priority": null,
+        "priorityRaw": 3,
+        "completedAt": 1791000000.0,
+        "created": 1791100000.0,
+        "modified": 1791200002.0,
+        "externalID": "ext-R8"
+      }
+    ],
+    "truncated": false
+  }
+}

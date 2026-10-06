@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarm: use alarms or the older alarm, not both",
+    "text" : "Invalid arguments: alarm: use alarms or the older alarm, not both. (code: invalid_arguments)"
+  }
+}

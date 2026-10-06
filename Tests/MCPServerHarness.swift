@@ -22,9 +22,14 @@ final class FakeCollections: CollectionSource {
     func collections(_ resource: ClientResource) -> [CollectionRecord]? {
         if access(resource) != "full" { return nil }
         return resource == .calendar
-            ? [CollectionRecord(id: "CAL-WORK", name: "Work", account: "iCloud", writable: true),
-               CollectionRecord(id: "CAL-HOLIDAYS", name: "Holidays", account: "Subscribed", writable: false)]
-            : [CollectionRecord(id: "LIST-GROC", name: "Groceries", account: "iCloud", writable: true)]
+            ? [CollectionRecord(id: "CAL-WORK", name: "Work", account: "iCloud", writable: true,
+                                availabilities: ["busy", "free", "tentative"]),
+               CollectionRecord(id: "CAL-HOLIDAYS", name: "Holidays", account: "Subscribed", writable: false,
+                                availabilities: []),
+               CollectionRecord(id: "CAL-HOME", name: "Home", account: "iCloud", writable: true,
+                                availabilities: ["busy", "free"])]
+            : [CollectionRecord(id: "LIST-GROC", name: "Groceries", account: "iCloud", writable: true),
+               CollectionRecord(id: "LIST-HOME", name: "Home", account: "iCloud", writable: true)]
     }
 }
 
@@ -68,24 +73,100 @@ final class FakeExecutor: BridgeCommandExecutor {
         }
     }
 
+    /// A core event row with every plan 03 field (EventCommands.eventRow).
+    static func event(_ id: String, _ title: String, start: Double, end: Double, allDay: Bool = false,
+                      zone: String, full: Bool = false, extra: [String: Any] = [:]) -> [String: Any] {
+        var row: [String: Any] = [
+            "id": id, "version": "1791200000.123456", "title": title, "titleTruncated": false,
+            "start": start, "end": end, "recurring": false, "allDay": allDay, "timeZone": zone,
+            "hasAttendees": false, "occurrenceStart": NSNull(), "detached": false,
+            "recurrence": ["kind": "none", "supported": true], "status": "none",
+            "created": 1_791_100_000.0, "modified": 1_791_200_000.123456, "externalID": "ext-\(id)",
+            "location": NSNull(), "locationTruncated": false, "structuredLocation": NSNull(), "url": NSNull(),
+            "alarms": [[String: Any]](), "alarmsTruncated": false, "availability": "busy",
+            "attendeeCount": 0, "organizerIsYou": false, "yourStatus": NSNull(),
+            "editable": ["fields": true, "times": true, "recurrence": true, "reason": NSNull()],
+        ]
+        if full {
+            row["notes"] = NSNull()
+            row["notesTruncated"] = false
+            row["organizer"] = NSNull()
+            row["attendees"] = [[String: Any]]()
+            row["attendeesTruncated"] = false
+        } else {
+            row["notesPreview"] = NSNull()
+            row["hasNotes"] = false
+            row["notesTruncated"] = false
+        }
+        return row.merging(extra) { _, new in new }
+    }
+
+    /// EV1, a timed event; EV2, all-day; EV3, a weekly meeting with notes, a
+    /// place, a link and an alarm, in Madrid.
+    private func events(full: Bool) -> [[String: Any]] {
+        [Self.event("EV1", "Design review", start: 1_791_295_200, end: 1_791_298_800, zone: "GMT", full: full),
+         Self.event("EV2", "Offsite", start: 1_791_259_200, end: 1_791_345_600, allDay: true,
+                    zone: "America/New_York", full: full),
+         Self.event("EV3", "Weekly sync", start: 1_791_302_400, end: 1_791_306_000, zone: "Europe/Madrid",
+                    full: full, extra: [
+                        "recurring": true, "occurrenceStart": 1_791_302_400.0,
+                        "recurrence": ["kind": "rule", "supported": true, "frequency": "weekly", "interval": 1,
+                                       "weekdays": ["TU"], "rrule": "FREQ=WEEKLY;BYDAY=TU",
+                                       "summary": "Weekly on Tuesday"],
+                        full ? "notes" : "notesPreview": "Agenda: roadmap", "hasNotes": true,
+                        "location": "Sala 2", "url": "https://meet.example.com/abc", "urlSchemeAllowed": true,
+                        "structuredLocation": ["title": "Sala 2", "latitude": 40.4168, "longitude": -3.7038,
+                                               "radius": 50.0],
+                        "alarms": [["kind": "relative", "offset": -600]],
+                        "attendeeCount": 2, "organizerIsYou": true, "yourStatus": "accepted",
+                    ].merging(full ? [
+                        "organizer": ["name": "Me", "email": "me@example.com", "role": "chair",
+                                      "status": "accepted", "type": "person", "isYou": true],
+                        "attendees": [["name": "Sam Lee", "email": "sam@example.com", "role": "required",
+                                       "status": "tentative", "type": "person", "isYou": false]],
+                    ] : [:]) { _, new in new })]
+    }
+
     private func read(_ request: BridgeRequest) -> [String: Any] {
         let p = request.parameters
         switch request.command {
         case .readEvents:
             guard p["calendarID"] as? String == "CAL-WORK" else { return ["error": "target_unavailable"] }
-            return ["truncated": false, "items": [[
-                "id": "EV1", "version": "1791200000.123456", "title": "Design review",
-                "titleTruncated": false, "start": 1_791_295_200.0, "end": 1_791_298_800.0,
-                "recurring": false, "allDay": false, "timeZone": "GMT", "hasAttendees": false,
-            ], [
-                "id": "EV2", "version": "1791200001.000000", "title": "Offsite",
-                "titleTruncated": false, "start": 1_791_259_200.0, "end": 1_791_345_600.0,
-                "recurring": false, "allDay": true, "timeZone": "America/New_York",
-                "hasAttendees": false,
-            ]]]
+            // Paging, as the core does it: sorted rows after the cursor, up to limit.
+            var rows = events(full: false)
+            if let cursor = p["afterKey"] as? String {
+                guard let index = rows.firstIndex(where: { cursor.hasSuffix(":\($0["id"] as! String)") }) else {
+                    return ["error": "invalid_parameters_or_target"]
+                }
+                rows = Array(rows[(index + 1)...])
+            }
+            let limit = (p["limit"] as? NSNumber)?.intValue ?? 50
+            let page = Array(rows.prefix(limit))
+            var result: [String: Any] = ["truncated": rows.count > limit, "items": page]
+            if rows.count > limit, let last = page.last {
+                result["nextCursor"] = "v1:\(Int(last["start"] as! Double)):0:\(last["id"] as! String)"
+            }
+            return result
+        case .getEvent:
+            guard p["calendarID"] as? String == "CAL-WORK" else { return ["error": "target_unavailable"] }
+            guard let row = events(full: true).first(where: { $0["id"] as? String == p["itemID"] as? String })
+            else { return ["error": "item_unavailable"] }
+            if let occurrence = p["occurrenceStart"] as? NSNumber,
+               row["occurrenceStart"] as? Double != occurrence.doubleValue {
+                return ["error": "occurrence_not_found"]
+            }
+            return ["item": row]
         case .readReminders:
             guard p["listID"] as? String == "LIST-GROC" else { return ["error": "target_unavailable"] }
             return ["truncated": false, "items": [reminder(id: "R1", title: "Buy oat milk")]]
+        case .getReminder:
+            guard p["listID"] as? String == "LIST-GROC" else { return ["error": "target_unavailable"] }
+            guard p["itemID"] as? String == "R1" else { return ["error": "item_unavailable"] }
+            var row = reminder(id: "R1", title: "Buy oat milk")
+            row["notesPreview"] = nil
+            row["hasNotes"] = nil
+            row["notes"] = "Oat, not almond."
+            return ["item": row]
         default:
             return ["error": "invalid_request"]
         }
@@ -97,14 +178,24 @@ final class FakeExecutor: BridgeCommandExecutor {
         let version = String(format: "%.6f", 1_791_216_000.0 + Double(counter))
         switch request.command {
         case .createEvent, .updateEvent:
-            var item: [String: Any] = ["id": p["itemID"] as? String ?? "EV-\(counter)", "version": version]
-            if p["allDay"] != nil {
-                item["allDayVerified"] = true
-                item["notesVerified"] = true
-                item["start"] = p["start"]
-                item["end"] = (p["end"] as! NSNumber).doubleValue - 1
-                item["endExclusive"] = p["end"]
-            }
+            // The core's receipt: saved times, zone and the fields read back.
+            let id = p["span"] as? String == "future" ? "\(p["itemID"]!)-future"
+                : p["itemID"] as? String ?? "EV-\(counter)"
+            let allDay = p["allDay"] as? Bool ?? false
+            var item: [String: Any] = ["id": id, "version": version,
+                                       "calendarID": p["targetCalendarID"] ?? p["calendarID"]!,
+                                       "allDay": allDay, "timeZone": p["timeZone"] ?? "GMT",
+                                       "recurring": p["recurrence"] is [String: Any] || p["occurrenceStart"] != nil]
+            item["start"] = p["start"] ?? 1_791_295_200
+            item["end"] = allDay ? (p["end"] as! NSNumber).doubleValue - 1 : p["end"] ?? 1_791_298_800
+            if let occurrence = p["occurrenceStart"] { item["occurrenceStart"] = occurrence }
+            let fields = ["title": "title", "start": "start", "end": "end", "allDay": "all_day",
+                          "timeZone": "time_zone", "notes": "notes", "location": "location",
+                          "structuredLocation": "structured_location", "url": "url", "alarms": "alarms",
+                          "availability": "availability", "recurrence": "recurrence",
+                          "targetCalendarID": "calendar"]
+            item["verified"] = fields.filter { p[$0.key] != nil }.map(\.value).sorted()
+            if allDay { item["allDayVerified"] = true }
             return ["item": item]
         case .deleteEvent, .deleteReminder:
             return ["deleted": true]
@@ -118,9 +209,20 @@ final class FakeExecutor: BridgeCommandExecutor {
                 let zone = TimeZone(identifier: due["timeZone"] as? String ?? "GMT")!
                 item["due"] = ["kind": "timed", "at": at.doubleValue,
                                "local": local(at.doubleValue, zone), "timeZone": zone.identifier]
+                item["start"] = item["due"]
                 item["alarms"] = [["kind": "absolute", "at": at.doubleValue]]
                 item["alarmCount"] = 1
             }
+            if let priority = p["priority"] as? String {
+                item["priority"] = priority
+                item["priorityRaw"] = ["none": 0, "low": 9, "medium": 5, "high": 1][priority]
+            }
+            if p["notes"] is String { item["hasNotes"] = true }
+            item["notesPreview"] = nil
+            if let completed = p["completed"] as? Bool { item["completed"] = completed }
+            item["listID"] = p["targetListID"] ?? p["listID"]!
+            item["verified"] = ["title", "due", "start", "notes", "url", "location", "priority", "alarms",
+                                "recurrence", "completed"].filter { p[$0] != nil }
             return ["item": item]
         default:
             return ["error": "invalid_request"]
@@ -131,8 +233,13 @@ final class FakeExecutor: BridgeCommandExecutor {
         ["id": id, "title": title, "titleTruncated": false, "completed": false, "recurring": false,
          "version": "1791200002.000000",
          "due": ["kind": "all_day", "date": "2026-10-06", "timeZone": "America/New_York"],
+         "start": ["kind": "all_day", "date": "2026-10-06", "timeZone": "America/New_York"],
          "recurrence": ["kind": "none", "supported": true],
-         "alarms": [[String: Any]](), "alarmCount": 0, "alarmsTruncated": false]
+         "alarms": [[String: Any]](), "alarmCount": 0, "alarmsTruncated": false,
+         "notesPreview": NSNull(), "hasNotes": false, "notesTruncated": false, "url": NSNull(),
+         "location": NSNull(), "locationTruncated": false, "priority": "none", "priorityRaw": 0,
+         "completedAt": NSNull(), "created": 1_791_100_000.0, "modified": 1_791_200_002.0,
+         "externalID": "ext-\(id)"]
     }
 
     private func local(_ seconds: Double, _ zone: TimeZone) -> String {
@@ -259,6 +366,12 @@ final class Harness {
             ("ghost", [ClientGrant(resource: .calendar, targetID: "CAL-GONE", mask: 1)], .allow),
             ("cloud", [ClientGrant(resource: .calendar, targetID: work, mask: 3),
                        ClientGrant(resource: .reminderList, targetID: groceries, mask: 3)], .allow),
+            // Plan 03 moves: Edit on the source and Create on the destination.
+            ("mover", [ClientGrant(resource: .calendar, targetID: work, mask: 15),
+                       ClientGrant(resource: .calendar, targetID: "CAL-HOME", mask: 2),
+                       ClientGrant(resource: .calendar, targetID: "CAL-HOLIDAYS", mask: 1),
+                       ClientGrant(resource: .reminderList, targetID: groceries, mask: 31),
+                       ClientGrant(resource: .reminderList, targetID: "LIST-HOME", mask: 2)], .allow),
         ]
         var result = [String: Any]()
         for (name, grants, approval) in specs {

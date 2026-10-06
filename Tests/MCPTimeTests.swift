@@ -82,7 +82,9 @@ struct MCPTimeTests {
         expectDays("2026-03-29", "2026-03-29", london, 1_774_742_400, 1_774_825_200)
         expectDays("2026-10-04", nil, lordHowe, 1_791_034_200, 1_791_118_800)
         expectDays("2026-10-06", "2026-10-12", kolkata, 1_791_225_000, 1_791_829_800)
-        precondition(failure(MCPTime.allDayRange(startDate: "2026-10-06", endDate: "2026-10-13",
+        expectDays("2026-01-01", "2026-12-31", kolkata, 1_767_205_800, 1_798_741_800) // 365 days
+        expectDays("2028-01-01", "2028-12-31", kolkata, 1_830_277_800, 1_861_900_200) // 366, leap year
+        precondition(failure(MCPTime.allDayRange(startDate: "2026-01-01", endDate: "2027-01-02",
                                                  zone: kolkata)) == .allDayTooLong)
         precondition(failure(MCPTime.allDayRange(startDate: "2026-10-06", endDate: "2026-10-05",
                                                  zone: kolkata)) == .allDayEndBeforeStart)

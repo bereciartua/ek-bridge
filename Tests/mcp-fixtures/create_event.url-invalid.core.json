@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_url",
+    "message" : "url: expected a complete URL like https://example.com/page, with no spaces",
+    "text" : "Invalid link: url must be a complete link like https://example.com/page, with no spaces. Fix it and call again. (code: invalid_url)"
+  }
+}

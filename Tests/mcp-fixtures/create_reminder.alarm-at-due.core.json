@@ -1,5 +1,6 @@
 {
   "due" : {
+    "alarmAt" : 1793887200,
     "at" : 1793887200,
     "kind" : "timed",
     "timeZone" : "America/New_York"

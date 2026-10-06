@@ -1,0 +1,9 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1791275400,
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV1",
+  "start" : 1791271800,
+  "timeZone" : "Europe/Madrid"
+}

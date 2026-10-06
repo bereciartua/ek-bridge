@@ -4,12 +4,17 @@ import Foundation
 // A missing `due` leaves an existing reminder alone. Explicit `kind: none`
 // clears its due date and the one alarm this bridge can safely replace.
 enum ReminderDueChange {
+    var isKeep: Bool { if case .keep = self { return true } else { return false } }
+
     case keep
     case clear
     case set(ReminderDueSpec)
 
-    static func parse(parameters: [String: Any]) -> ReminderDueChange? {
-        guard let value = parameters["due"] else { return .keep }
+    /// `key` is "due", or "start" for a reminder's start date (same shape,
+    /// no alarm; null also clears it).
+    static func parse(parameters: [String: Any], key: String = "due") -> ReminderDueChange? {
+        guard let value = parameters[key] else { return .keep }
+        if key == "start" && value is NSNull { return .clear }
         guard let object = value as? [String: Any],
               let kind = object["kind"] as? String else { return nil }
         if kind == "none" {
@@ -18,7 +23,8 @@ enum ReminderDueChange {
         guard let zoneID = object["timeZone"] as? String,
               (TimeZone.knownTimeZoneIdentifiers.contains(zoneID) || zoneID == "UTC"),
               let zone = TimeZone(identifier: zoneID) else { return nil }
-        let allowed = Set(["kind", "timeZone", "at", "date", "alarmAt"])
+        let allowed: Set<String> = key == "due" ? ["kind", "timeZone", "at", "date", "alarmAt"]
+            : ["kind", "timeZone", "at", "date"]
         guard Set(object.keys).isSubset(of: allowed) else { return nil }
         let alarm: Date?
         if let explicit = object["alarmAt"] {
@@ -39,7 +45,7 @@ enum ReminderDueChange {
                   let seconds = ReminderDueSpec.timestamp(object["at"])
             else { return nil }
             let spec = ReminderDueSpec(kind: .timed(seconds), timeZone: zone,
-                                       alarmAt: alarm)
+                                       alarmAt: alarm, alarmExplicit: object["alarmAt"] != nil)
             // EKReminder persists wall-clock components rather than a distinct
             // UTC offset. Reject the ambiguous DST-fold occurrence that would
             // change instants when the components are reconstructed.
@@ -52,7 +58,7 @@ enum ReminderDueChange {
                   let day = ReminderDueSpec.day(date, in: zone)
             else { return nil }
             return .set(ReminderDueSpec(kind: .allDay(day), timeZone: zone,
-                                        alarmAt: alarm))
+                                        alarmAt: alarm, alarmExplicit: object["alarmAt"] != nil))
         default: return nil
         }
     }
@@ -66,7 +72,13 @@ struct ReminderDueSpec {
 
     let kind: Kind
     let timeZone: TimeZone
+    /// The 0.5 single alarm: explicit (`alarmAt`, null for none), or the
+    /// default at a timed due.
     let alarmAt: Date?
+    var alarmExplicit = false
+
+    /// The due instant (local midnight for a due day).
+    var instant: Date? { components.calendar?.date(from: components) }
 
     var roundTrips: Bool {
         guard case .timed(let seconds) = kind else { return true }

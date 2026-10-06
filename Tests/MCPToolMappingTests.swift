@@ -78,8 +78,10 @@ struct MCPToolMappingTests {
 
     static func checkPolicy(_ request: BridgeRequest, _ name: String) {
         let p = request.parameters
+        // A move's destination is in scope when the registry found Create on it.
         let scope = BridgeScope(calendarID: p["calendarID"] as? String,
-                                reminderListID: p["listID"] as? String)
+                                reminderListID: p["listID"] as? String,
+                                moveTargetID: (p["targetCalendarID"] ?? p["targetListID"]) as? String)
         let error = CommandPolicy.validate(request, scope: scope)
         check(error == nil, "\(name): CommandPolicy says \(error ?? "")")
         // The scope must be the request's own target, not just any.
@@ -91,10 +93,12 @@ struct MCPToolMappingTests {
         check(JSONSerialization.isValidJSONObject(p), "\(name): parameters are JSON")
     }
 
-    // Core timestamps and counts are integers, never doubles.
+    // Core timestamps and counts are integers, never doubles; only coordinates aren't.
     static func checkIntegers(_ value: Any, _ name: String) {
         if let object = value as? [String: Any] {
-            object.values.forEach { checkIntegers($0, name) }
+            for (key, item) in object where !["latitude", "longitude", "radius"].contains(key) {
+                checkIntegers(item, name)
+            }
         } else if let list = value as? [Any] {
             list.forEach { checkIntegers($0, name) }
         } else if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
@@ -166,6 +170,7 @@ struct MCPToolMappingTests {
                                          "end": "2026-10-07T00:00:00-04:00"])
         check(canonical(a1.parameters) == canonical(
             ["calendarID": "CAL-WORK", "start": 1_791_259_200, "end": 1_791_345_600, "limit": 50]), "A.1 core")
+        // A row from a 0.5 core (no plan 03 keys) still maps; times use the event's own zone (F3).
         let a1Result = MCPToolMapping.toolResult(tool: "read_events", request: a1, core: [
             "items": [["id": "EV1", "version": "1791200000.123456", "title": "Design review",
                        "titleTruncated": false, "start": 1_791_295_200.0, "end": 1_791_298_800.0,
@@ -173,10 +178,11 @@ struct MCPToolMappingTests {
             "truncated": false,
         ], zone: newYork, now: now)
         check(canonical(a1Result["structuredContent"]!) == canonical(json("""
-            {"calendar_id":"CAL-WORK","events":[
+            {"calendar_id":"CAL-WORK","next_cursor":null,"truncated":false,"events":[
             {"id":"EV1","version":"1791200000.123456","title":"Design review","title_truncated":false,
-             "start":"2026-10-06T10:00:00-04:00","end":"2026-10-06T11:00:00-04:00","all_day":false,
-             "recurring":false,"time_zone":"GMT","editable":true}]}
+             "start":"2026-10-06T14:00:00+00:00","end":"2026-10-06T15:00:00+00:00","all_day":false,
+             "recurring":false,"time_zone":"GMT","floating":false,"occurrence_start":null,"recurrence":null,
+             "editable":{"fields":true,"times":true,"recurrence":false,"reason":null}}]}
             """)), "A.1 structuredContent")
         // A.2
         let a2 = request("create_reminder", ["list_id": "LIST-GROC", "title": "Buy oat milk",
@@ -266,6 +272,11 @@ struct MCPToolMappingTests {
             ["code": "all_day_readback_failed_cleanup_needed", "tool": "create_event",
              "idempotency_key": fixedKey],
             ["code": "mystery_code", "tool": "read_events"],
+            ["code": "forbidden", "tool": "get_event"],
+            ["code": "recurrence_scope_required", "tool": "delete_reminder"],
+            ["code": "recurrence_scope_required", "tool": "update_reminder"],
+            ["code": "recurrence_anchor_mismatch", "tool": "create_event"],
+            ["code": "alarms_unsupported", "tool": "update_reminder"],
         ]
         let codes = ["unauthorized", "bridge_off", "target_not_writable", "conflict", "occurrence_conflict",
                      "too_many_events_narrow_range", "nonexistent_local_time", "ambiguous_local_time",
@@ -281,8 +292,27 @@ struct MCPToolMappingTests {
                      "invalid_idempotency_key", "response_too_large", "cancelled", "save_failed",
                      "fetch_failed", "all_day_readback_failed_rolled_back", "app_unavailable",
                      "client_unavailable", "activity_unavailable", "journal_unavailable", "journal_full",
-                     "unavailable"]
-        cases += codes.map { ["code": $0, "tool": $0.contains("event") ? "create_event" : "complete_reminder"] }
+                     "unavailable",
+                     // Plan 03.
+                     "nothing_to_change", "occurrence_required", "occurrence_not_found", "span_not_applicable",
+                     "recurrence_span_invalid", "invitation_read_only", "floating_time_read_only",
+                     "availability_unsupported", "url_scheme_not_allowed", "invalid_url", "invalid_notes",
+                     "notes_too_long", "invalid_location", "location_too_long", "invalid_alarms",
+                     "invalid_recurrence", "alarms_unsupported", "alarm_requires_due",
+                     "recurrence_requires_relative_alarm", "recurrence_uncomplete_unsupported",
+                     "recurrence_unsupported", "move_across_accounts_unsupported", "already_applied",
+                     "time_zone_readback_failed_rolled_back", "start_readback_failed_cleanup_needed",
+                     "alarms_readback_failed_restored", "notes_readback_failed_restore_failed",
+                     "priority_readback_failed_restored", "write_readback_failed_rolled_back"]
+        cases += codes.map { code -> [String: Any] in
+            let events = code.contains("event") || ["invitation_read_only", "floating_time_read_only",
+                                                    "availability_unsupported", "occurrence_required",
+                                                    "occurrence_not_found", "span_not_applicable",
+                                                    "recurrence_span_invalid", "already_applied"].contains(code)
+                || code.hasPrefix("time_zone_") || code.hasPrefix("start_")
+            return ["code": code, "tool": events ? "update_event" : code.hasPrefix("priority_") || code.hasPrefix("alarms_")
+                        || code.hasPrefix("notes_readback") ? "update_reminder" : "complete_reminder"]
+        }
         var table = [[String: Any]]()
         for item in cases {
             let code = item["code"] as! String
@@ -296,7 +326,7 @@ struct MCPToolMappingTests {
                 check(text.contains("idempotency_key \"\(key)\"") && text.contains("Never retry with a new key"),
                       "uncertain text names the key: \(text)")
             }
-            if code == "all_day_readback_failed_cleanup_needed" {
+            if code.hasSuffix("_cleanup_needed") || code.hasSuffix("_restore_failed") {
                 check(text.contains("don't retry") && !text.contains("idempotency_key"), "cleanup: \(text)")
             }
             check(AgentOutcomeText.isKnown(code) == (code != "mystery_code"), "isKnown \(code)")
@@ -314,12 +344,14 @@ struct MCPToolMappingTests {
         // Every code the core and pipeline can return has a specific text.
         let sources = fixtures.appendingPathComponent("../../Sources").standardized
         let patterns = [#""error": "([a-z_]+)""#, #"\.reject\("([a-z_]+)"\)"#,
-                        #"return "([a-z]+(?:_[a-z]+)+)""#, #"\? nil : "([a-z]+(?:_[a-z]+)+)""#]
+                        #"return "([a-z]+(?:_[a-z]+)+)""#, #"\? nil : "([a-z]+(?:_[a-z]+)+)""#,
+                        #"FieldError\("([a-z_]+)"\)"#]
             .map { try! NSRegularExpression(pattern: $0) }
         var emitted: Set = ["unauthorized", "forbidden", "unavailable", "bridge_off", "rate_limited",
                             "approval_denied", "approval_timed_out", "timeout", "cancelled"]
-        for file in ["CommandPolicy", "EventKitCommands", "MutationPolicy", "ReminderSchedule",
-                     "RequestPipeline", "WriteJournal"] {
+        for file in ["CommandPolicy", "EventKitCommands", "EventCommands", "ReminderCommands", "EventFields",
+                     "ReminderFields", "ItemText", "MutationPolicy", "ReminderSchedule", "RequestPipeline",
+                     "WriteJournal"] {
             let text = try! String(contentsOf: sources.appendingPathComponent("\(file).swift"), encoding: .utf8)
             for pattern in patterns {
                 for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -366,16 +398,29 @@ struct MCPToolMappingTests {
                              "end_date": "2026-10-07", "time_zone": "UTC", "notes": "N",
                              "idempotency_key": fixedKey],
             "update_event": ["calendar_id": "C", "event_id": "E", "version": "1", "title": "T",
-                             "start": "2026-10-06T09:00:00Z", "end": "2026-10-06T10:00:00Z"],
-            "delete_event": ["calendar_id": "C", "event_id": "E", "version": "1"],
-            "read_reminders": ["list_id": "L", "limit": 5, "cursor": "R"],
+                             "start": "2026-10-06T09:00:00Z", "end": "2026-10-06T10:00:00Z",
+                             "occurrence_start": "2026-10-06T09:00:00Z", "span": "future", "notes": "N",
+                             "location": "L", "url": "https://example.com", "availability": "free",
+                             "structured_location": ["title": "HQ", "latitude": 1, "longitude": 2, "radius_m": 50],
+                             "alarms": [["minutes_before": 10]],
+                             "recurrence": ["frequency": "weekly", "weekdays": ["TU"], "end": ["count": 3]],
+                             "time_zone": "UTC", "replace_unsupported_alarms": true, "target_calendar_id": "C"],
+            "delete_event": ["calendar_id": "C", "event_id": "E", "version": "1",
+                             "occurrence_start": "2026-10-06T09:00:00Z", "span": "all"],
+            "get_event": ["calendar_id": "C", "event_id": "E", "occurrence_start": "2026-10-06T09:00:00Z"],
+            "read_reminders": ["list_id": "L", "limit": 5, "cursor": "R", "status": "all",
+                               "due_after": "2026-10-06T09:00:00Z", "due_before": "2026-10-07T09:00:00Z"],
+            "get_reminder": ["list_id": "L", "reminder_id": "R"],
             "create_reminder": ["list_id": "L", "title": "T", "due": ["date": "2026-11-05", "time_zone": "UTC"],
                                 "alarm": "none", "recurrence": ["frequency": "monthly", "day_of_month": 5,
                                                                 "interval": 2, "end_count": 3]],
             "update_reminder": ["list_id": "L", "reminder_id": "R", "version": "1", "title": "T",
                                 "due": ["date_time": "2026-11-05T09:00:00Z"], "alarm": "at_due",
                                 "recurrence": ["frequency": "weekly", "weekdays": ["TH"],
-                                               "end_until": "2027-01-01T00:00:00Z"]],
+                                               "end_until": "2027-01-01T00:00:00Z"],
+                                "start": ["date": "2026-11-01"], "notes": "N", "url": "https://example.com",
+                                "location": "Home", "priority": "low", "completed": false,
+                                "replace_unsupported_alarms": true, "target_list_id": "L"],
             "complete_reminder": ["list_id": "L", "reminder_id": "R", "version": "1",
                                   "occurrence": ["occurrence_due": "2026-11-05T09:00:00Z",
                                                  "occurrence_fingerprint": String(repeating: "a", count: 64)]],
@@ -408,7 +453,8 @@ struct MCPToolMappingTests {
                     mapped += 1
                     checkPolicy(request, "\(tool) \(variant)")
                 case .failure(let failure):
-                    check(["invalid_arguments", "invalid_idempotency_key"].contains(failure.code) &&
+                    check(["invalid_arguments", "invalid_idempotency_key", "invalid_url", "url_scheme_not_allowed",
+                           "nothing_to_change"].contains(failure.code) &&
                           !failure.message.isEmpty, "\(tool): \(failure)")
                 }
             }
@@ -455,8 +501,8 @@ struct MCPToolMappingTests {
             check(types.contains(type) || (type == "integer" && types.contains("number")),
                   "\(path): \(type) isn't \(types)")
         }
-        if let options = schema["enum"] as? [String] {
-            check(options.contains(value as? String ?? ""), "\(path): \(value) not in enum")
+        if let options = schema["enum"] as? [Any] {
+            check(options.contains { canonical($0) == canonical(value) }, "\(path): \(value) not in enum")
         }
         if let constant = schema["const"] {
             check(canonical(constant) == canonical(value), "\(path): not \(constant)")

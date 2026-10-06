@@ -42,11 +42,11 @@ enum AgentOutcomeText {
         // forbidden: what the agent tried, and the grant that would allow it.
         var action: (words: String, grant: String)? {
             switch tool {
-            case "read_events": ("read events", "Read")
+            case "read_events", "get_event": ("read events", "Read")
             case "create_event": ("create events", "Create")
             case "update_event": ("edit events", "Edit")
             case "delete_event": ("delete events", "Delete")
-            case "read_reminders": ("read reminders", "Read")
+            case "read_reminders", "get_reminder": ("read reminders", "Read")
             case "create_reminder": ("add reminders", "Create")
             case "update_reminder": ("edit reminders", "Edit")
             case "complete_reminder": ("complete reminders", "Complete")
@@ -72,6 +72,7 @@ enum AgentOutcomeText {
         let unsupportedShape = ("Not supported", "the bridge doesn't change items of this shape, "
             + "to avoid damaging them. Tell the user it has to be changed in \(c.app).")
         if code.hasPrefix("completed_reminder_") { return unsupportedShape }
+        if let readback = readbackEntry(code, c) { return readback }
         switch code {
         case "forbidden":
             let grant = c.action.map { "grant \($0.grant)" } ?? "grant that access"
@@ -101,8 +102,55 @@ enum AgentOutcomeText {
             return ("Out of date", "the \(c.item) changed since you read it. "
                 + "Read it again and retry with the new version.")
         case "too_many_events_narrow_range":
-            return ("Too many events", "more events matched than limit. "
-                + "Call again with a shorter range or a higher limit (max 100).")
+            return ("Too many events", "the range holds more events than the bridge reads at once. "
+                + "Call again with a shorter range.")
+        case "nothing_to_change":
+            return ("Nothing to change", c.detail.map(sentence)
+                ?? "the update named no field to change. Send the fields that should change.")
+        case "occurrence_required":
+            return ("Needs occurrence", "this event repeats. Pass occurrence_start from read_events, "
+                + "and span (this, future or all) to say which occurrences change.")
+        case "occurrence_not_found":
+            return ("Not found", "no occurrence of this event starts at occurrence_start. "
+                + "Read the calendar again and use an occurrence_start from it.")
+        case "span_not_applicable":
+            return ("Doesn't repeat", "this event doesn't repeat, so span must be left out or \"this\". "
+                + "Call again without it.")
+        case "recurrence_span_invalid":
+            return ("Needs a wider span", "changing the repeat rule needs span \"future\" or \"all\", and "
+                + "moving a repeating event to another calendar needs span \"all\". Call again with one.")
+        case "invitation_read_only":
+            return ("Invitation", "this event has attendees, and changing it could notify them, so the bridge "
+                + "doesn't change or delete invitations. Tell the user to change it in Calendar.")
+        case "floating_time_read_only":
+            return ("Floating time", "this event has no time zone, so the bridge can't change its times "
+                + "exactly. Other fields can change; tell the user to change the times in Calendar.")
+        case "availability_unsupported":
+            return ("Not supported", "that calendar doesn't accept this availability. Use one that "
+                + "list_collections shows for it, or leave availability out.")
+        case "url_scheme_not_allowed":
+            return ("Link not allowed", "only http, https, mailto and tel links can be written. "
+                + "Fix url and call again.")
+        case "invalid_url":
+            return ("Invalid link", "url must be a complete link like https://example.com/page, with no "
+                + "spaces. Fix it and call again.")
+        case "invalid_notes", "notes_too_long", "invalid_location", "location_too_long", "invalid_alarms",
+             "invalid_recurrence":
+            return ("Rejected", "the bridge rejected a field's value (\(code)). Check the tool's "
+                + "description and fix the arguments before calling again.")
+        case "alarms_unsupported":
+            return ("Alarms can't be replaced", "this \(c.item) has alarms the bridge can't express, and "
+                + "alarms would replace them. Leave alarms out, or pass replace_unsupported_alarms true if the "
+                + "user agrees to lose them.")
+        case "alarm_requires_due":
+            return ("Needs a due date", "an alarm in minutes_before counts from the due time, so the reminder "
+                + "needs a due date. Send due as well, or use an alarm with at.")
+        case "move_across_accounts_unsupported":
+            return ("Not supported", "items can move only between calendars or lists of the same account. "
+                + "Create a copy in the other one instead if the user wants that.")
+        case "already_applied":
+            return ("Already done", "this occurrence was already deleted by an earlier request. "
+                + "Nothing to do; don't retry.")
         case "invalid_arguments":
             return ("Invalid arguments", c.detail.map(sentence)
                 ?? "the arguments don't match the tool's input schema. Fix them and call again.")
@@ -117,20 +165,32 @@ enum AgentOutcomeText {
              "invalid_event_schedule", "invalid_request":
             let hint = c.detail.map { " (\($0))" } ?? ""
             return ("Rejected", "the bridge rejected these values\(hint). Check the tool's "
-                + "description; for example, timed events can last at most 7 days and reads "
-                + "cover at most 31 days. Fix the arguments before calling again.")
+                + "description; for example, timed events can last at most 31 days, all-day events "
+                + "366 days, and reads cover at most 31 days. Fix the arguments before calling again.")
         // Recurrence codes the agent can fix; the rest of the family is a shape problem.
         case "recurrence_requires_due":
             return ("Needs a due date", "a repeating reminder needs a due date. "
                 + "Send due with the repeat rule and call again.")
         case "recurrence_anchor_mismatch":
-            return ("Repeat doesn't match", "the repeat rule doesn't fit the due date: weekdays "
-                + "or day_of_month must include the due day, and end_until must be after it. "
+            return ("Repeat doesn't match", "the repeat rule doesn't fit the first occurrence: the "
+                + "\(c.item == "event" ? "start" : "due date") must be one of the rule's own dates "
+                + "(its weekdays, month_days or months), and an end until must be after it. "
                 + "Fix the arguments and call again.")
+        case "recurrence_requires_relative_alarm":
+            return ("Needs relative alarms", "a repeating reminder can only have alarms relative to its due "
+                + "time. Use minutes_before instead of at, and call again.")
         case "recurrence_requires_alarm_reset":
             return ("Needs due and alarm", "adding a repeat rule to this reminder resets its "
                 + "alarm. Send due (and alarm, if any) along with recurrence and call again.")
         case "recurrence_scope_required":
+            if c.tool == "delete_reminder" {
+                return ("Repeats", "this reminder repeats, and deleting it removes every future "
+                    + "occurrence. If that's what the user wants, call again with scope \"series\".")
+            }
+            if c.tool == "update_reminder" {
+                return ("Repeats", "a repeating reminder is completed one occurrence at a time. Use "
+                    + "complete_reminder with its completion_candidate instead of completed.")
+            }
             return ("Needs occurrence", "this reminder repeats. Read it again and pass its "
                 + "completion_candidate as occurrence; if it has none, tell the user to "
                 + "complete it in Reminders.")
@@ -203,6 +263,34 @@ enum AgentOutcomeText {
             guard let what = failures[code] else { return nil }
             return ("Error", "\(app) couldn't complete this (\(what)). Try once more; "
                 + "if it fails again, tell the user to check \(app).")
+        }
+    }
+
+    /// `<field>_readback_failed_<outcome>` (plan 03 §14).
+    private static func readbackEntry(_ code: String, _ c: Context) -> (String, String)? {
+        guard let range = code.range(of: "_readback_failed_"), code != "all_day_readback_failed_rolled_back",
+              code != "all_day_readback_failed_cleanup_needed" else { return nil }
+        let field = code[..<range.lowerBound].replacingOccurrences(of: "_", with: " ")
+        // "the event's time zone didn't read back as requested", or the whole item.
+        let failed = field == "write" ? " couldn't be read back after saving"
+            : "'s \(field) didn't read back as requested"
+        switch code[range.upperBound...] {
+        case "rolled_back":
+            return ("Not saved", "the new \(c.item)\(failed), so it was removed and nothing changed. "
+                + "The account may not support this value; tell the user rather than retrying the same values.")
+        case "restored":
+            return ("Not saved", "the \(c.item)\(failed), so its previous values were put back and nothing "
+                + "changed. The account may not support this value; tell the user rather than retrying the "
+                + "same values.")
+        case "cleanup_needed":
+            return ("Needs review", "the new \(c.item) was saved but\(field == "write" ? " couldn't be read back" : " its \(field) didn't read back as requested"), "
+                + "and the bridge couldn't remove it. Tell the user to check the \(c.collection) in "
+                + "\(c.app); don't retry.")
+        case "restore_failed":
+            return ("Needs review", "the \(c.item)\(failed), and the bridge couldn't put the previous values "
+                + "back. Stop, and tell the user to check the \(c.item) in \(c.app); don't retry.")
+        default:
+            return nil
         }
     }
 

@@ -1,0 +1,9 @@
+{
+  "allDay" : false,
+  "calendarID" : "CAL-WORK",
+  "end" : 1791295200,
+  "expectedVersion" : "1791200000.123456",
+  "idempotencyKey" : "$generated",
+  "itemID" : "EV2",
+  "start" : 1791291600
+}

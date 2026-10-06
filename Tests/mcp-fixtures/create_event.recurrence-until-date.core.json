@@ -1,0 +1,21 @@
+{
+  "calendarID" : "CAL-WORK",
+  "end" : 1791292500,
+  "idempotencyKey" : "$generated",
+  "recurrence" : {
+    "end" : {
+      "at" : 1798779599,
+      "kind" : "until"
+    },
+    "frequency" : "weekly",
+    "interval" : 2,
+    "kind" : "rule",
+    "weekdays" : [
+      "TU",
+      "TH"
+    ]
+  },
+  "start" : 1791291600,
+  "timeZone" : "America/New_York",
+  "title" : "Standup"
+}

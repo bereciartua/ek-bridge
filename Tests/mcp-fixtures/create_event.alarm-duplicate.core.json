@@ -1,0 +1,7 @@
+{
+  "$failure" : {
+    "code" : "invalid_arguments",
+    "message" : "alarms[1]: the same alarm appears twice",
+    "text" : "Invalid arguments: alarms[1]: the same alarm appears twice. (code: invalid_arguments)"
+  }
+}
