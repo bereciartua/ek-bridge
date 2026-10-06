@@ -91,11 +91,18 @@ ln -s "$app_name.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
 # The command-line tools are signed first, then the app around them.
 sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents_dir/Info.plist")
+# A real identity gets a secure timestamp, which notarization requires (it
+# contacts Apple's timestamp server). Ad hoc signatures can't carry one.
+if [ "$sign_identity" = "-" ]; then
+    timestamp="--timestamp=none"
+else
+    timestamp="--timestamp"
+fi
 for tool in bridge-mcp bridge-client; do
-    codesign --force --sign "$sign_identity" --options runtime \
+    codesign --force --sign "$sign_identity" --options runtime "$timestamp" \
         --identifier "$bundle_id.$tool" "$contents_dir/MacOS/$tool"
 done
-codesign --force --sign "$sign_identity" --options runtime \
+codesign --force --sign "$sign_identity" --options runtime "$timestamp" \
     --entitlements "$project_dir/Entitlements.plist" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 printf '%s\n' "$app_dir"
