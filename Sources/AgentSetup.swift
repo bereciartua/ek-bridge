@@ -51,7 +51,7 @@ struct SetupSnippet {
 }
 
 enum AgentSetup {
-    static let tokenEnvironmentVariable = "EVENTKIT_BRIDGE_TOKEN"
+    static let tokenEnvironmentVariable = "EK_BRIDGE_TOKEN"
 
     static var cloudFootnote: String {
         String(localized: """
@@ -382,9 +382,9 @@ enum CloudAgentKind: String, CaseIterable, Identifiable {
 }
 
 extension AgentSetup {
-    static let remoteTokenEnvironmentVariable = "EVENTKIT_BRIDGE_REMOTE_TOKEN"
+    static let remoteTokenEnvironmentVariable = "EK_BRIDGE_REMOTE_TOKEN"
     /// Copilot only passes secrets whose names start with COPILOT_MCP_.
-    static let copilotSecretName = "COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN"
+    static let copilotSecretName = "COPILOT_MCP_EK_BRIDGE_TOKEN"
     static var remoteTokenPlaceholder: String { String(localized: "<remote token from Copy Remote Token…>") }
     /// The tools MCPToolCatalog marks readOnlyHint, for agents that take an allowlist.
     static let readOnlyToolNames = ["list_collections", "read_events", "read_reminders"]
@@ -754,7 +754,7 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let defaultRemotePort = 47616
-    static let cloudflareTunnelName = "eventkit-bridge"
+    static let cloudflareTunnelName = "ek-bridge"
 
     var displayName: String {
         switch self {
@@ -985,7 +985,7 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
 /// `curl` POSTs whose JSON body splices in the remote token from the environment, so the
 /// snippet never holds it.
 private enum SetupCurl {
-    static let tokenSentinel = "@@EVENTKIT_BRIDGE_REMOTE_TOKEN@@"
+    static let tokenSentinel = "@@EK_BRIDGE_REMOTE_TOKEN@@"
 
     static func post(_ url: String, headers: [String], body: SetupJSON) -> String {
         let quoted = SetupShell.singleQuoted(body.text).replacingOccurrences(

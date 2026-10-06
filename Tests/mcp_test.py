@@ -281,8 +281,8 @@ def run_core(h, catalog, contract):
     check("initialize version", result["protocolVersion"] == LEGACY, result)
     check("initialize no session", "Mcp-Session-Id" not in headers, headers)
     check("initialize tools capability", result["capabilities"] == {"tools": {"listChanged": False}})
-    check("initialize serverInfo", result["serverInfo"]["name"] == "eventkit-bridge" and
-          result["serverInfo"]["title"] == "EventKit Bridge", result)
+    check("initialize serverInfo", result["serverInfo"]["name"] == "ek-bridge" and
+          result["serverInfo"]["title"] == "EK Bridge", result)
     check("initialize instructions", result["instructions"] == contract["serverInstructions"])
     check("legacy has no resultType", "resultType" not in result)
     check("legacy no-store", headers.get("Cache-Control") == "no-store", headers)
@@ -439,8 +439,8 @@ def run_core(h, catalog, contract):
     result = body["result"]
     check("discover", status == 200 and result["resultType"] == "complete" and
           result["supportedVersions"] == [MODERN, "2025-11-25", "2025-06-18", "2025-03-26"], body)
-    check("discover names the client", result["_meta"]["dev.eventkitbridge/client"]["name"] == "agent", result)
-    check("modern serverInfo", result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "eventkit-bridge")
+    check("discover names the client", result["_meta"]["io.github.bereciartua.ekbridge/client"]["name"] == "agent", result)
+    check("modern serverInfo", result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "ek-bridge")
     _, _, body, _ = m.modern("tools/list")
     check("modern list ttl", body["result"]["ttlMs"] == 30000 and body["result"]["cacheScope"] == "private", body)
     status, _, body, _ = m.modern("tools/call", {"name": "list_collections", "arguments": {}},
@@ -522,7 +522,7 @@ def run_http_statuses(h):
     check("accept */*", status == 200, status)
     status, headers, body, _ = Client(h).raw(body=ping)
     check("401 missing", status == 401 and body["error"]["code"] == -32001 and body["id"] is None and
-          headers.get("WWW-Authenticate") == 'Bearer realm="EventKit Bridge"', (status, headers))
+          headers.get("WWW-Authenticate") == 'Bearer realm="EK Bridge"', (status, headers))
     status, _, body2, _ = Client(h, "ekb_mcp_v1_" + "0" * 64).raw(body=ping)
     check("401 same body", status == 401 and body2 == body, body2)
     status, _, _, _ = Client(h, "garbage").raw(body=ping)
@@ -882,7 +882,7 @@ def run_approvals(h):
     h.control(cmd="answer", decision="deny")
     thread.join(10)
     check("A.3 declined", text_of(result["body"]["result"]) ==
-          "Declined: the user declined this change in EventKit Bridge. Don't retry it unless the user asks you to. "
+          "Declined: the user declined this change in EK Bridge. Don't retry it unless the user asks you to. "
           "(code: approval_denied)", result)
     # Timeout.
     h.control(cmd="approval", mode="timeout")

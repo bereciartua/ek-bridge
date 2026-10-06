@@ -1,7 +1,7 @@
-Server name: eventkit-bridge
+Server name: ek-bridge
 Transport: Streamable HTTP
 URL: http://127.0.0.1:47615/mcp
 Header: Authorization: Bearer <token>
-Token file: /Users/you/Library/Application Support/EventKitBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token
-stdio command: /Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp
+Token file: /Users/you/Library/Application Support/EKBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token
+stdio command: /Applications/EKBridge.app/Contents/MacOS/bridge-mcp
 stdio args: --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c

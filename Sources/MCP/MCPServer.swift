@@ -143,7 +143,7 @@ final class MCPServer {
     static let metaCapabilities = "io.modelcontextprotocol/clientCapabilities"
     static let metaClientInfo = "io.modelcontextprotocol/clientInfo"
     static let metaServerInfo = "io.modelcontextprotocol/serverInfo"
-    static let metaClientName = "dev.eventkitbridge/client"
+    static let metaClientName = "io.github.bereciartua.ekbridge/client"
 
     struct Reply {
         let response: HTTPResponse

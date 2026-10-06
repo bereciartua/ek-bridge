@@ -207,7 +207,7 @@ final class ClientRegistry {
     init(directory override: URL? = nil, now: @escaping () -> Date = Date.init) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
-        directory = override ?? support.appendingPathComponent("EventKitBridge", isDirectory: true)
+        directory = override ?? AppIdentity.dataFolder(inSupport: support)
         file = directory.appendingPathComponent("client-registry.json")
         self.now = now
     }

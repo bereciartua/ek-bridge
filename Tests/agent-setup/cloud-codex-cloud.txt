@@ -6,6 +6,6 @@ snippet (values):
 
 
 steps:
-1. Codex cloud tasks have no documented way to add an MCP server, so they can't reach EventKit Bridge.
+1. Codex cloud tasks have no documented way to add an MCP server, so they can't reach EK Bridge.
 
 footnote: Codex cloud tasks can't use your own MCP servers yet. Use Codex on this Mac with the local setup, or the OpenAI Responses API.

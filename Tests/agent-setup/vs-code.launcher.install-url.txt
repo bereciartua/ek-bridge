@@ -1,1 +1,1 @@
-vscode:mcp/install?%7B%22name%22%3A%22eventkit-bridge%22%2C%22command%22%3A%22%2FApplications%2FEventKit%20Bridge.app%2FContents%2FMacOS%2Fbridge-mcp%22%2C%22args%22%3A%5B%22--client%22%2C%223f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c%22%5D%7D
+vscode:mcp/install?%7B%22name%22%3A%22ek-bridge%22%2C%22command%22%3A%22%2FApplications%2FEKBridge.app%2FContents%2FMacOS%2Fbridge-mcp%22%2C%22args%22%3A%5B%22--client%22%2C%223f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c%22%5D%7D

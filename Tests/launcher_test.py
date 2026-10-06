@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 
-PRODUCT = "EventKit Bridge"
+PRODUCT = "EK Bridge"
 NOT_RUNNING = (f"{PRODUCT} isn't running, or its MCP server is off. "
                f"Open {PRODUCT} and turn on Settings ▸ MCP Server.")
 SQUATTER = (f"Another program is using {PRODUCT}'s port. "
@@ -338,7 +338,7 @@ def main() -> int:
         # check
         code, out, err = run(["check", "--client", agent_id])
         expect("check: all good", code == 0 and out == "" and
-               f"EventKit Bridge MCP check for client {agent_id[:4]}…{agent_id[-4:]}" in err and
+               f"EK Bridge MCP check for client {agent_id[:4]}…{agent_id[-4:]}" in err and
                '  ✓ token accepted: client "agent"' in err and "(mode 600)" in err and
                "  ✓ 8 tools available: list_collections" in err and "  ✓ the bridge is on" in err,
                f"{code} {err!r}")
@@ -419,7 +419,7 @@ def main() -> int:
         expect("not running: notifications stay silent", session.recv(0.5) is None)
         finish(session)
         code, out, err = run(["check", "--client", agent_id])
-        expect("check: server stopped → 3", code == 3 and "  ✗ EventKit Bridge isn't running" in err,
+        expect("check: server stopped → 3", code == 3 and "  ✗ EK Bridge isn't running" in err,
                f"{code} {err!r}")
 
         # Startup grace: the first request waits for the server to appear.

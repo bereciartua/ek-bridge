@@ -416,7 +416,7 @@ private final class CIMDRequest: @unchecked Sendable {
         let agent = version.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == ".") }
             ? version : "0"
         let head = "GET \(target) HTTP/1.1\r\nHost: \(authority)\r\nAccept: application/json\r\n"
-            + "Accept-Encoding: identity\r\nUser-Agent: EventKitBridge/\(agent)\r\n"
+            + "Accept-Encoding: identity\r\nUser-Agent: EKBridge/\(agent)\r\n"
             + "Connection: close\r\n\r\n"
         self.clientID = url.absoluteString
         self.host = host

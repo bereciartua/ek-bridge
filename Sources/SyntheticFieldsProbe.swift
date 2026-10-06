@@ -15,7 +15,7 @@ import Foundation
 @MainActor
 final class SyntheticFieldsProbe {
     private static let idsKey = "fieldsProbeCollectionIDs"
-    private static let prefix = "EventKit Bridge Fields Probe"
+    private static let prefix = "EK Bridge Fields Probe"
 
     private let store = EKEventStore()
     private let commands: EventKitCommands
@@ -109,7 +109,7 @@ final class SyntheticFieldsProbe {
             "due": ["kind": "timed", "at": seconds(due), "timeZone": zone],
             "start": ["kind": "timed", "at": seconds(due) - 3_600, "timeZone": zone],
             "notes": "Synthetic. Check the link, the priority and both alerts.",
-            "url": "https://example.com/eventkit-bridge", "priority": "high",
+            "url": "https://example.com/ek-bridge", "priority": "high",
             "alarms": [["kind": "relative", "offset": -3_600],
                        ["kind": "location", "location": park, "proximity": "leave"]]])
         items["reminder"] = error(reminder) == "none" ? "created" : error(reminder)
@@ -181,7 +181,7 @@ final class SyntheticFieldsProbe {
             for order in ["pin then text", "text then pin", "pin only"] {
                 let event = EKEvent(eventStore: store)
                 event.calendar = calendar
-                event.title = "EventKit Bridge Synthetic Pin"
+                event.title = "EK Bridge Synthetic Pin"
                 event.startDate = start
                 event.endDate = start.addingTimeInterval(3_600)
                 event.timeZone = TimeZone(identifier: "Europe/Madrid")
@@ -212,7 +212,7 @@ final class SyntheticFieldsProbe {
             let end = local.date(byAdding: .day, value: 3, to: first)!
             let event = EKEvent(eventStore: store)
             event.calendar = calendar
-            event.title = "EventKit Bridge Synthetic All Day"
+            event.title = "EK Bridge Synthetic All Day"
             event.timeZone = nil
             event.isAllDay = true
             event.startDate = first
@@ -232,7 +232,7 @@ final class SyntheticFieldsProbe {
         for rule in [true, false] {
             let reminder = EKReminder(eventStore: store)
             reminder.calendar = list
-            reminder.title = "EventKit Bridge Synthetic Due Day"
+            reminder.title = "EK Bridge Synthetic Due Day"
             var due = local.dateComponents([.year, .month, .day], from: dueDate)
             due.calendar = local
             due.timeZone = local.timeZone
@@ -372,7 +372,7 @@ final class SyntheticFieldsProbe {
                                     "radius": 150]
         let calendarID = calendar.calendarIdentifier
         var create: [String: Any] = [
-            "calendarID": calendarID, "title": "EventKit Bridge Synthetic Weekly",
+            "calendarID": calendarID, "title": "EK Bridge Synthetic Weekly",
             "start": seconds(start), "end": seconds(start) + 3_600, "timeZone": "Europe/Madrid",
             "notes": "Synthetic notes\nSecond line", "location": "Synthetic Place",
             "structuredLocation": place, "url": "https://example.com/synthetic?x=1",
@@ -463,7 +463,7 @@ final class SyntheticFieldsProbe {
         let firstStart = occurrence(0, first)
         let all = call(.updateEvent, ["calendarID": calendarID, "itemID": id, "occurrenceStart": firstStart,
                                       "expectedVersion": version(id, firstStart), "span": "all",
-                                      "title": "EventKit Bridge Synthetic Weekly (renamed)"])
+                                      "title": "EK Bridge Synthetic Weekly (renamed)"])
         step("event: span all renames the series", error(all) == "none", ["error": error(all)])
         let noOccurrence = call(.updateEvent, ["calendarID": calendarID, "itemID": id,
                                                "expectedVersion": version(id, nil), "title": "x"])
@@ -471,7 +471,7 @@ final class SyntheticFieldsProbe {
 
         // A timed event in Kolkata: alias handling, partial updates, zone move, nulls.
         let kolkataStart = seconds(start) + 2 * 86_400
-        let timed = call(.createEvent, ["calendarID": calendarID, "title": "EventKit Bridge Synthetic Timed",
+        let timed = call(.createEvent, ["calendarID": calendarID, "title": "EK Bridge Synthetic Timed",
                                         "start": kolkataStart, "end": kolkataStart + 1_800,
                                         "timeZone": "Asia/Calcutta", "notes": "n", "location": "l",
                                         "url": "mailto:synthetic@example.com",
@@ -480,7 +480,7 @@ final class SyntheticFieldsProbe {
         observations["S1_saved_time_zone_for_Asia/Calcutta"] = item(timed)["timeZone"] ?? "missing"
         step("event: create in Asia/Calcutta", !timedID.isEmpty, ["error": error(timed)])
         let titled = call(.updateEvent, ["calendarID": calendarID, "itemID": timedID,
-                                         "expectedVersion": version(timedID, nil), "title": "EventKit Bridge Synthetic Timed 2"])
+                                         "expectedVersion": version(timedID, nil), "title": "EK Bridge Synthetic Timed 2"])
         step("event: a title-only update", (item(titled)["verified"] as? [String]) == ["title"],
              ["error": error(titled)])
         let rezoned = call(.updateEvent, ["calendarID": calendarID, "itemID": timedID,
@@ -500,7 +500,7 @@ final class SyntheticFieldsProbe {
         madridDay.timeZone = madrid
         let dayStart = madridDay.startOfDay(for: start.addingTimeInterval(3 * 86_400))
         let dayEnd = madridDay.date(byAdding: .day, value: 3, to: dayStart)!
-        let allDay = call(.createEvent, ["calendarID": calendarID, "title": "EventKit Bridge Synthetic All Day",
+        let allDay = call(.createEvent, ["calendarID": calendarID, "title": "EK Bridge Synthetic All Day",
                                          "start": seconds(dayStart), "end": seconds(dayEnd), "allDay": true,
                                          "timeZone": "Europe/Madrid"])
         let allDayID = item(allDay)["id"] as? String ?? ""
@@ -518,7 +518,7 @@ final class SyntheticFieldsProbe {
                                            "timeZone": "Europe/Madrid"])
         step("event: timed → all-day", error(toAllDay) == "none" && item(toAllDay)["allDay"] as? Bool == true,
              ["error": error(toAllDay)])
-        let long = call(.createEvent, ["calendarID": calendarID, "title": "EventKit Bridge Synthetic 31 Days",
+        let long = call(.createEvent, ["calendarID": calendarID, "title": "EK Bridge Synthetic 31 Days",
                                        "start": seconds(start), "end": seconds(start) + 31 * 86_400])
         step("event: a 31-day timed event", error(long) == "none", ["error": error(long)])
 
@@ -534,7 +534,7 @@ final class SyntheticFieldsProbe {
         // Shapes the bridge leaves alone: floating times, alarms it can't express.
         let floating = EKEvent(eventStore: store)
         floating.calendar = calendar
-        floating.title = "EventKit Bridge Synthetic Floating"
+        floating.title = "EK Bridge Synthetic Floating"
         floating.startDate = start.addingTimeInterval(5 * 86_400)
         floating.endDate = floating.startDate.addingTimeInterval(3_600)
         floating.timeZone = nil
@@ -577,7 +577,7 @@ final class SyntheticFieldsProbe {
         let due: [String: Any] = ["kind": "timed", "at": seconds(dueDate), "timeZone": zone.identifier]
         let place: [String: Any] = ["title": "Synthetic Home", "latitude": 40.7, "longitude": -74.0, "radius": 200]
         let created = call(.createReminder, [
-            "listID": listID, "title": "EventKit Bridge Synthetic Reminder", "due": due,
+            "listID": listID, "title": "EK Bridge Synthetic Reminder", "due": due,
             "start": ["kind": "all_day", "date": dayString(dueDate.addingTimeInterval(-86_400), local),
                       "timeZone": zone.identifier],
             "notes": "Synthetic reminder notes", "url": "https://example.com/reminder",
@@ -626,7 +626,7 @@ final class SyntheticFieldsProbe {
             monday = local.date(byAdding: .day, value: 1, to: monday)!
         }
         let repeating = call(.createReminder, [
-            "listID": listID, "title": "EventKit Bridge Synthetic Monthly",
+            "listID": listID, "title": "EK Bridge Synthetic Monthly",
             "due": ["kind": "all_day", "date": dayString(monday, local), "timeZone": zone.identifier],
             "recurrence": ["kind": "rule", "frequency": "monthly", "weekdays": ["1MO"]]])
         let repeatingID = item(repeating)["id"] as? String ?? ""
@@ -640,7 +640,7 @@ final class SyntheticFieldsProbe {
 
         // S6 on this Mac: the verified shape through the bridge, when this account is allowlisted.
         let daily = call(.createReminder, [
-            "listID": listID, "title": "EventKit Bridge Synthetic Daily",
+            "listID": listID, "title": "EK Bridge Synthetic Daily",
             "due": ["kind": "timed", "at": seconds(dueDate), "timeZone": zone.identifier, "alarmAt": NSNull()],
             "recurrence": ["kind": "rule", "frequency": "daily"]])
         let dailyID = item(daily)["id"] as? String ?? ""

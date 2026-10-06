@@ -21,7 +21,7 @@ final class LocalBridge {
     ) throws {
         self.handle = handle
         self.onStop = onStop
-        root = URL(fileURLWithPath: "/tmp/eventkit-bridge-\(getuid())", isDirectory: true)
+        root = URL(fileURLWithPath: AppIdentity.bridgeRoot, isDirectory: true)
         session = root.appendingPathComponent("session-\(UUID().uuidString)", isDirectory: true)
 
         try Self.ensureDirectory(root)

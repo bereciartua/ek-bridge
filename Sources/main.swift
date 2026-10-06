@@ -108,8 +108,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         model.start()
         #if !EVENTKIT_UI_REVIEW
-        // A first run opens the window so the setup checklist is the first thing seen.
-        if model.showsSetupChecklist { windowController.present() }
+        // A first run opens the window so the setup checklist is the first thing
+        // seen; so does the first run after the rename.
+        if model.showsSetupChecklist || model.renameNoticePending { windowController.present() }
         #endif
     }
 
@@ -151,8 +152,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
 
     #if !EVENTKIT_UI_REVIEW
     private static var dataFolder: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true)
+        AppIdentity.dataFolder(
+            inSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
     }
 
     private func liveServices() -> BridgeServices {
@@ -381,7 +382,7 @@ enum MainMenu {
 }
 
 @main
-struct EventKitBridgeApp {
+struct EKBridgeApp {
     static func main() {
         #if EVENTKIT_SYNTHETIC_TEST
         if CommandLine.arguments.count > 1 {
@@ -391,6 +392,10 @@ struct EventKitBridgeApp {
         }
         #endif
         let app = NSApplication.shared
+        #if !EVENTKIT_UI_REVIEW
+        // Before anything reads settings or the data folder.
+        RenameMigrationLaunch.run()
+        #endif
         let delegate = BridgeAppDelegate()
         app.delegate = delegate
         #if EVENTKIT_UI_REVIEW
@@ -403,3 +408,77 @@ struct EventKitBridgeApp {
         app.run()
     }
 }
+
+#if !EVENTKIT_UI_REVIEW
+/// Runs `RenameMigration` on the first launch under the new name. The old app
+/// uses the same data folder (through the link), so it must never run at the
+/// same time: it has to quit before the migration and before every later
+/// launch, and if it starts while this app runs (its own Start at login), the
+/// user chooses which one keeps running.
+@MainActor
+enum RenameMigrationLaunch {
+    private static var launchObserver: NSObjectProtocol?
+
+    static func run() {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let migration = RenameMigration(defaults: .standard,
+                                        legacyDefaults: UserDefaults(suiteName: LegacyIdentity.bundleID),
+                                        support: support)
+        guard quitOldApp(beforeMigration: migration.isPending) else { exit(0) }
+        if case .failed(let problem) = migration.run() {
+            _ = alert(String(localized: "\(AppIdentity.displayName) couldn't move its data folder."), problem,
+                      buttons: [String(localized: "Quit")])
+            exit(1)
+        }
+        launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { note in
+            let launched = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard launched?.bundleIdentifier == LegacyIdentity.bundleID else { return }
+            MainActor.assumeIsolated {
+                if !quitOldApp(beforeMigration: false) { NSApp.terminate(nil) }
+            }
+        }
+    }
+
+    /// Returns once no copy of the old app is running, or false when the user
+    /// chose to quit this app instead. Asks once, then offers Force Quit if the
+    /// old app doesn't quit within 10 seconds (it may be showing a question).
+    private static func quitOldApp(beforeMigration: Bool) -> Bool {
+        var asked = false
+        while let old = NSRunningApplication.runningApplications(
+            withBundleIdentifier: LegacyIdentity.bundleID).first(where: { !$0.isTerminated }) {
+            if !asked {
+                let message = beforeMigration
+                    ? String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName). Its settings, clients and Activity move over once the old app has quit.")
+                    : String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName), and the two share their data, so only one can run. Delete the old app so it doesn't start again.")
+                guard alert(String(localized: "Quit \(LegacyIdentity.displayName) to continue"), message,
+                            buttons: [String(localized: "Quit \(LegacyIdentity.displayName)"),
+                                      String(localized: "Quit \(AppIdentity.displayName)")]) else { return false }
+                asked = true
+                old.terminate()
+            } else {
+                guard alert(String(localized: "\(LegacyIdentity.displayName) didn't quit."),
+                            String(localized: "It may be waiting for an answer in its own window. Force it to quit (unsaved changes in it are lost), or quit \(AppIdentity.displayName) and try again later."),
+                            buttons: [String(localized: "Force Quit \(LegacyIdentity.displayName)"),
+                                      String(localized: "Quit \(AppIdentity.displayName)")]) else { return false }
+                old.forceTerminate()
+            }
+            let deadline = Date().addingTimeInterval(10)
+            while !old.isTerminated && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+        }
+        return true
+    }
+
+    /// True for the first button.
+    private static func alert(_ title: String, _ message: String, buttons: [String]) -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        for button in buttons { alert.addButton(withTitle: button) }
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+}
+#endif

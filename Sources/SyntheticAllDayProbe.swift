@@ -6,12 +6,12 @@ import Darwin
 @MainActor
 enum SyntheticAllDayProbe {
     private static let key = "allDayProbeCalendarID"
-    private static let name = "EventKit Bridge All Day Probe"
-    private static let title = "EventKit Bridge Synthetic All Day"
+    private static let name = "EK Bridge All Day Probe"
+    private static let title = "EK Bridge Synthetic All Day"
 
     static func run() {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess,
-              !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json"),
+              !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json"),
               UserDefaults.standard.string(forKey: key) == nil else {
             report(["outcome": "precondition_failed"]); return
         }
@@ -71,7 +71,7 @@ enum SyntheticAllDayProbe {
 
     static func cleanupOnly() {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess,
-              !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json"),
+              !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json"),
               let id = UserDefaults.standard.string(forKey: key) else {
             report(["outcome": "cleanup_precondition_failed"]); return
         }

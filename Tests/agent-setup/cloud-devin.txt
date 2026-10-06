@@ -3,7 +3,7 @@ credential: bearer
 needsLiteralToken: true
 
 snippet (values):
-Server name: eventkit-bridge
+Server name: ek-bridge
 Transport: HTTP
 Server URL: https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp
 Authentication: Auth Header

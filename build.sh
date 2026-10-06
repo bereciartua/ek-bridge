@@ -3,7 +3,9 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build"}
-app_dir="$output_dir/EventKitBridge.app"
+# The app and its executable are named after CFBundleExecutable (EKBridge.app).
+app_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$project_dir/Info.plist")
+app_dir="$output_dir/$app_name.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 . "$project_dir/scripts/sdk.sh"
@@ -49,7 +51,7 @@ for arch in $archs; do
         -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
         -framework SwiftUI -framework Network -framework IOKit \
         "$@" \
-        -o "$slice/EventKitBridge"
+        -o "$slice/$app_name"
 
     # The command-line client (Contents/MacOS/bridge-client): no AppKit or EventKit.
     xcrun swiftc -sdk "$sdk_dir" \
@@ -72,7 +74,7 @@ for arch in $archs; do
         -o "$slice/bridge-mcp"
 done
 
-for name in EventKitBridge bridge-client bridge-mcp; do
+for name in "$app_name" bridge-client bridge-mcp; do
     set --
     for arch in $archs; do set -- "$@" "$slices_dir/$arch/$name"; done
     rm -f "$contents_dir/MacOS/$name"
@@ -82,7 +84,7 @@ rm -rf "$slices_dir"
 
 # Scripts and client.py still find the client at build/bridge-client.
 rm -f "$output_dir/bridge-client"
-ln -s "EventKitBridge.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
+ln -s "$app_name.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
 
 # Default signing is ad hoc for build validation only. Use the same approved
 # identity for installed updates when testing permission-grant persistence.

@@ -1,10 +1,10 @@
-# EventKit Bridge
+# EK Bridge
 
-EventKit Bridge is a **macOS menu bar app** that gives scripts and AI agents scoped, revocable access to your Calendar and Reminders. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents (Claude Code, Codex, Claude Desktop, Cursor and others) connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for a specific calendar or reminder list, request shape, and write safeguards before using Apple's EventKit framework, and can ask you before each change.
+EK Bridge is a **macOS menu bar app** that gives scripts and AI agents scoped, revocable access to your Calendar and Reminders. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents (Claude Code, Codex, Claude Desktop, Cursor and others) connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for a specific calendar or reminder list, request shape, and write safeguards before using Apple's EventKit framework, and can ask you before each change.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-  <img alt="EventKit Bridge Overview: the bridge is on, Calendars and Reminders have Full Access, and three clients are listed with their access and last request." src="docs/images/overview-light.png" width="720">
+  <img alt="EK Bridge Overview: the bridge is on, Calendars and Reminders have Full Access, and three clients are listed with their access and last request." src="docs/images/overview-light.png" width="720">
 </picture>
 
 Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. A cloud agent can reach the bridge only through Remote Access and a tunnel you set up, only for clients you allowed; it can't reach a Mac that's asleep, offline or logged out.
@@ -13,11 +13,11 @@ This is a personal project in **public preview**, with best-effort support. It i
 
 ## Install
 
-1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/eventkit-bridge/releases/latest).
+1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/ek-bridge/releases/latest).
 2. Open it and drag the app to **Applications**.
 3. Open the app. Its window opens on a setup checklist; later, use the calendar icon in the menu bar.
 
-It needs **macOS 14 or later**, on Apple silicon or Intel. Until the first release is published, [build from source](#build-from-source).
+It needs **macOS 14 or later**, on Apple silicon or Intel. Until the first release is published, [build from source](#build-from-source). Upgrading from EventKit Bridge, its earlier name? See [Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier).
 
 For scripts, install the command-line client from **Settings ▸ Developer ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`.
 
@@ -129,7 +129,7 @@ sh test.sh
 sh build.sh
 ```
 
-The build creates `build/EventKitBridge.app`, with the MCP launcher `bridge-mcp` and the command-line client `bridge-client` inside it (`build/bridge-client` links to it). It signs the app **ad hoc by default**, which macOS treats as a new app each time; for lasting Calendar and Reminders access, sign with a stable identity as described in [Setup](docs/SETUP.md#build-from-source). `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app. `sh ui_test.sh` runs the window and behavior tests and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data. See [Contributing](CONTRIBUTING.md).
+The build creates `build/EKBridge.app`, with the MCP launcher `bridge-mcp` and the command-line client `bridge-client` inside it (`build/bridge-client` links to it). It signs the app **ad hoc by default**, which macOS treats as a new app each time; for lasting Calendar and Reminders access, sign with a stable identity as described in [Setup](docs/SETUP.md#build-from-source). `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app. `sh ui_test.sh` runs the window and behavior tests and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data. See [Contributing](CONTRIBUTING.md).
 
 ## Uninstall
 
@@ -137,14 +137,14 @@ The build creates `build/EventKitBridge.app`, with the MCP launcher `bridge-mcp`
 2. Remove its Calendar and Reminders access. The first command reads the app's bundle ID, so run these before you delete the app:
 
    ```sh
-   bundle_id=$(defaults read /Applications/EventKitBridge.app/Contents/Info CFBundleIdentifier)
+   bundle_id=$(defaults read /Applications/EKBridge.app/Contents/Info CFBundleIdentifier)
    tccutil reset Calendar "$bundle_id"
    tccutil reset Reminders "$bundle_id"
    ```
 
-3. Delete the app from Applications, and its data: `~/Library/Application Support/EventKitBridge` (clients, keys, tokens, Activity and the write journal).
+3. Delete the app from Applications, and its data: `~/Library/Application Support/EKBridge` (clients, keys, tokens, Activity and the write journal). If you upgraded from EventKit Bridge, also delete the `EventKitBridge` link next to it.
 4. If you installed the command-line tool, delete `~/.local/bin/bridge-client`.
-5. Remove the server from your agents' configs (for example `claude mcp remove eventkit-bridge`), and stop any tunnel you ran for Remote Access.
+5. Remove the server from your agents' configs (for example `claude mcp remove ek-bridge`), and stop any tunnel you ran for Remote Access.
 
 ## Project status
 
@@ -152,4 +152,4 @@ Offline tests and bounded live tests have exercised the local bridge, UI, and sy
 
 ## License
 
-EventKit Bridge is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The license doesn't grant rights to the project's name or icon. Apple, Mac and macOS are trademarks of Apple Inc. This project is not affiliated with or endorsed by Apple.
+EK Bridge is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The license doesn't grant rights to the project's name or icon. Apple, Mac and macOS are trademarks of Apple Inc. This project is not affiliated with or endorsed by Apple.

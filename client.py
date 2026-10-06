@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import sys
 
-APP_NAME = "EventKitBridge.app"
+APP_NAME = "EKBridge.app"
 BUNDLED = Path("Contents") / "MacOS" / "bridge-client"
 
 

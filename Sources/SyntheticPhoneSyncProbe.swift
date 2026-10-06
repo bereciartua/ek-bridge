@@ -11,8 +11,8 @@ enum SyntheticPhoneSyncProbe {
     private static let clientKey = "phoneProbeBridgeClientID"
     private static let clientName = "Daily Completion Probe"
     private static let resultKey = "phoneProbeLastResult"
-    private static let listName = "EventKit Bridge Phone Sync Test"
-    private static let itemTitle = "EventKit Bridge Phone Sync Test — daily"
+    private static let listName = "EK Bridge Phone Sync Test"
+    private static let itemTitle = "EK Bridge Phone Sync Test — daily"
 
     static func stage() {
         guard ready(), UserDefaults.standard.string(forKey: key) == nil else {
@@ -251,7 +251,7 @@ enum SyntheticPhoneSyncProbe {
 
     private static func ready() -> Bool {
         EKEventStore.authorizationStatus(for: .reminder) == .fullAccess &&
-            !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json")
+            !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json")
     }
 
     private static func matchingList(_ store: EKEventStore, id: String) -> EKCalendar? {

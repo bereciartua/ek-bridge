@@ -58,7 +58,7 @@ final class WriteJournal {
          now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
-        directory = override ?? support.appendingPathComponent("EventKitBridge", isDirectory: true)
+        directory = override ?? AppIdentity.dataFolder(inSupport: support)
         file = directory.appendingPathComponent("write-journal.json")
         shardDirectory = directory.appendingPathComponent(Self.shardFolderName, isDirectory: true)
         self.maxEntries = maxEntries

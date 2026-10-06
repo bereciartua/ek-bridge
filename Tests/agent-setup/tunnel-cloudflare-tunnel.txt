@@ -5,12 +5,12 @@ detectionHeader: CF-Ray
 commands:
 brew install cloudflared
 cloudflared tunnel login
-cloudflared tunnel create eventkit-bridge
-cloudflared tunnel route dns eventkit-bridge my-mac.tail1234.ts.net
-cloudflared tunnel run eventkit-bridge
+cloudflared tunnel create ek-bridge
+cloudflared tunnel route dns ek-bridge my-mac.tail1234.ts.net
+cloudflared tunnel run ek-bridge
 
 config.yml:
-tunnel: eventkit-bridge
+tunnel: ek-bridge
 credentials-file: ~/.cloudflared/<tunnel-UUID>.json
 ingress:
   - hostname: my-mac.tail1234.ts.net

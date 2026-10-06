@@ -71,10 +71,10 @@ enum LauncherPaths {
     static var supportDirectory: String {
         #if EVENTKIT_MCP_TEST
         return ProcessInfo.processInfo.environment["EVENTKIT_TEST_SUPPORT_DIR"]
-            ?? "/var/empty/eventkit-bridge-test-support"
+            ?? "/var/empty/ek-bridge-test-support"
         #else
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true).path
+        return AppIdentity.toolDataFolder(
+            inSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).path
         #endif
     }
 
@@ -331,7 +331,7 @@ enum ListenerCheck {
         case mismatch(String)
     }
 
-    /// Confirms the endpoint's pid is this user's EventKit Bridge and holds a
+    /// Confirms the endpoint's pid is this user's EK Bridge and holds a
     /// TCP listener on 127.0.0.1:port, before the token is sent there.
     static func verify(_ endpoint: Endpoint) -> Failure? {
         let pid = endpoint.pid
@@ -438,7 +438,7 @@ enum Wire {
     static let metaVersion = "io.modelcontextprotocol/protocolVersion"
     static let metaCapabilities = "io.modelcontextprotocol/clientCapabilities"
     static let metaClientInfo = "io.modelcontextprotocol/clientInfo"
-    static let metaClientName = "dev.eventkitbridge/client"
+    static let metaClientName = "io.github.bereciartua.ekbridge/client"
     static let timeout: TimeInterval = 60
 
     struct Reply {

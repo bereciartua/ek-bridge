@@ -5,7 +5,7 @@ import Foundation
 // distinguish collections this app created from an unrelated name collision.
 @MainActor
 final class TestCollections {
-    static let name = "EventKit Bridge Test"
+    static let name = "EK Bridge Test"
     private let store: EKEventStore
     private let defaults: UserDefaults
     private let calendarKey = "testCalendarIdentifier"

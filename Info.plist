@@ -5,17 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>EventKit Bridge</string>
+	<string>EK Bridge</string>
 	<key>CFBundleExecutable</key>
-	<string>EventKitBridge</string>
+	<string>EKBridge</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.martin.dot.eventkitbridge</string>
+	<string>io.github.bereciartua.ekbridge</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>EventKit Bridge</string>
+	<string>EK Bridge</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

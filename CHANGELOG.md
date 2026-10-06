@@ -6,6 +6,15 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+**EventKit Bridge is now EK Bridge.** The new name comes with a new bundle ID, `io.github.bereciartua.ekbridge`, and a new app name, `EKBridge.app`. To macOS it's a different app, so this upgrade needs a few steps once ([Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier)):
+
+- Open the new app next to the old one. It asks the old app to quit, moves `~/Library/Application Support/EventKitBridge` to `EKBridge` (leaving a link at the old path), and copies the settings. Clients, keys, tokens, grants, cloud connections and Activity move unchanged; the client registry stays at version 4.
+- macOS asks for Calendar and Reminders access again, once; the setup checklist comes back for it.
+- **Agents:** copy every agent's setup again from the client's **Connect ▸ AI agent**. The launcher is now `/Applications/EKBridge.app/Contents/MacOS/bridge-mcp`, the MCP server key and `serverInfo.name` are `ek-bridge` (tool names become `mcp__ek-bridge__…`; update allowlists), the token variables are `EK_BRIDGE_TOKEN` and `EK_BRIDGE_REMOTE_TOKEN` (Copilot: `COPILOT_MCP_EK_BRIDGE_TOKEN`), and the Cloudflare named tunnel is `ek-bridge`. Remove the old `eventkit-bridge` entries. Cloud agents keep their Remote Access address and credentials.
+- **Command line:** install the command-line tool again from **Settings ▸ Developer**. `client.py` looks for `EKBridge.app`. The request folder moved from `/tmp/eventkit-bridge-<uid>` to `/tmp/ek-bridge-<uid>`, so an old `bridge-client` can't reach the new app. Key file paths under the old folder keep working through the link.
+- Turn on **Settings ▸ General ▸ Start at login** again if you used it, then delete the old app.
+- **Rolling back** to 0.7.0: quit EK Bridge, delete the `EventKitBridge` link and rename `EKBridge` back to `EventKitBridge`. The old app keeps its own settings and access.
+
 ### Added
 
 - Apache-2.0 `LICENSE` and a `NOTICE` file, also inside the app (`Contents/Resources/`); the About panel names the license.
@@ -16,9 +25,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Changed
 
+- Renamed to EK Bridge, as above. The MCP `_meta` key that names the client is `io.github.bereciartua.ekbridge/client`, and the CIMD fetch's User-Agent is `EKBridge/<version>`. Synthetic probe collections are named "EK Bridge …". The `ekb_*` and `ekb3_` prefixes and the `EVENTKIT_*` build variables are unchanged.
 - `build.sh` and `test.sh` use the SDK `xcrun` selects, or `EVENTKIT_SDK`, instead of a fixed path. With Command Line Tools alone they use the macOS 26 SDK, because SwiftUI's macros in the macOS 27 SDK need Xcode.
 - `bridge-client` is built for macOS 14 like the app. It used to be built for the macOS version of the Mac that built it.
-- `build/bridge-client` is a link to the copy inside `build/EventKitBridge.app`.
+- `build/bridge-client` is a link to the copy inside the built app.
 - `client.py` uses `EVENTKIT_CLIENT_BINARY` when set, else `build/bridge-client`, else the installed app's copy in `/Applications` or `~/Applications`. Run directly, the client's help and errors call it `bridge-client`.
 - The README starts with installing, and has Privacy and Uninstall sections.
 

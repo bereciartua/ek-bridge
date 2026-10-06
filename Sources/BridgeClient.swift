@@ -416,19 +416,19 @@ enum LocalPaths {
     static var supportDirectory: String {
         #if EVENTKIT_CLIENT_TEST
         return ProcessInfo.processInfo.environment["EVENTKIT_TEST_SUPPORT_DIR"]
-            ?? "/var/empty/eventkit-bridge-test-support"
+            ?? "/var/empty/ek-bridge-test-support"
         #else
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("EventKitBridge", isDirectory: true).path
+        return AppIdentity.toolDataFolder(
+            inSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).path
         #endif
     }
 
     static var bridgeRoot: String {
         #if EVENTKIT_CLIENT_TEST
         return ProcessInfo.processInfo.environment["EVENTKIT_TEST_BRIDGE_ROOT"]
-            ?? "/var/empty/eventkit-bridge-test-root"
+            ?? "/var/empty/ek-bridge-test-root"
         #else
-        return "/tmp/eventkit-bridge-\(getuid())"
+        return AppIdentity.bridgeRoot
         #endif
     }
 

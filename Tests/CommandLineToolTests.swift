@@ -8,7 +8,7 @@ struct CommandLineToolTests {
             .appendingPathComponent("eventkit-cli-tool-test-\(UUID().uuidString)")
         defer { try? files.removeItem(at: root) }
         let home = root.appendingPathComponent("home")
-        let app = root.appendingPathComponent("Apps/EventKitBridge.app")
+        let app = root.appendingPathComponent("Apps/EKBridge.app")
         let other = root.appendingPathComponent("Old/EventKitBridge.app")
         try files.createDirectory(at: home, withIntermediateDirectories: true)
 
@@ -48,7 +48,7 @@ struct CommandLineToolTests {
         // A relative link that resolves to this copy counts as installed.
         try files.removeItem(at: tool.linkURL)
         try files.createSymbolicLink(atPath: tool.linkURL.path,
-                                     withDestinationPath: "../../../Apps/EventKitBridge.app/Contents/MacOS/bridge-client")
+                                     withDestinationPath: "../../../Apps/EKBridge.app/Contents/MacOS/bridge-client")
         precondition(tool.state == .installed)
 
         // A regular file is never replaced.

@@ -1,57 +1,57 @@
 [
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "read_events"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "create_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't edit events in that calendar. If it should be able to, ask the user to grant Edit for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't edit events in that calendar. If it should be able to, ask the user to grant Edit for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "update_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "delete_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "read_reminders"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't add reminders in that list. If it should be able to, ask the user to grant Create for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't add reminders in that list. If it should be able to, ask the user to grant Create for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "create_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't edit reminders in that list. If it should be able to, ask the user to grant Edit for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't edit reminders in that list. If it should be able to, ask the user to grant Edit for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "update_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't complete reminders in that list. If it should be able to, ask the user to grant Complete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't complete reminders in that list. If it should be able to, ask the user to grant Complete for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't delete reminders in that list. If it should be able to, ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't delete reminders in that list. If it should be able to, ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "delete_reminder"
   },
   {
@@ -266,18 +266,18 @@
   },
   {
     "code" : "timeout",
-    "text" : "No answer in time: EventKit Bridge didn't answer in time. Try once more; if it fails again, tell the user to check EventKit Bridge. (code: timeout)",
+    "text" : "No answer in time: EK Bridge didn't answer in time. Try once more; if it fails again, tell the user to check EK Bridge. (code: timeout)",
     "tool" : "read_reminders"
   },
   {
     "code" : "rate_limited",
     "retry_after" : 1,
-    "text" : "Too many requests: this agent is calling faster than EventKit Bridge allows. Wait 1 second before the next call, and don't loop. (code: rate_limited)",
+    "text" : "Too many requests: this agent is calling faster than EK Bridge allows. Wait 1 second before the next call, and don't loop. (code: rate_limited)",
     "tool" : "read_events"
   },
   {
     "code" : "rate_limited",
-    "text" : "Too many requests: this agent is calling faster than EventKit Bridge allows. Wait a minute before the next call, and don't loop. (code: rate_limited)",
+    "text" : "Too many requests: this agent is calling faster than EK Bridge allows. Wait a minute before the next call, and don't loop. (code: rate_limited)",
     "tool" : "read_events"
   },
   {
@@ -293,12 +293,12 @@
   },
   {
     "code" : "full_access_required",
-    "text" : "Needs Full Access: macOS isn't giving EventKit Bridge Full Access to Calendars or Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
+    "text" : "Needs Full Access: macOS isn't giving EK Bridge Full Access to Calendars or Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
     "tool" : "list_collections"
   },
   {
     "code" : "full_access_required",
-    "text" : "Needs Full Access: macOS isn't giving EventKit Bridge Full Access to Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
+    "text" : "Needs Full Access: macOS isn't giving EK Bridge Full Access to Reminders. Ask the user to allow it in System Settings ▸ Privacy & Security; don't retry until they do. (code: full_access_required)",
     "tool" : "read_reminders"
   },
   {
@@ -334,12 +334,12 @@
   },
   {
     "code" : "mystery_code",
-    "text" : "Error: EventKit Bridge returned mystery_code. Tell the user. (code: mystery_code)",
+    "text" : "Error: EK Bridge returned mystery_code. Tell the user. (code: mystery_code)",
     "tool" : "read_events"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_event"
   },
   {
@@ -364,17 +364,17 @@
   },
   {
     "code" : "unauthorized",
-    "text" : "Access removed: this agent's access was removed in EventKit Bridge. Tell the user; don't retry. (code: unauthorized)",
+    "text" : "Access removed: this agent's access was removed in EK Bridge. Tell the user; don't retry. (code: unauthorized)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "bridge_off",
-    "text" : "Bridge off: EventKit Bridge is turned off. Ask the user to turn it on from the menu bar; don't retry until they do. (code: bridge_off)",
+    "text" : "Bridge off: EK Bridge is turned off. Ask the user to turn it on from the menu bar; don't retry until they do. (code: bridge_off)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "client_paused",
-    "text" : "Paused: the user paused this agent's access in EventKit Bridge. Its access isn't removed; ask the user to resume this client if they want you to continue, and don't retry until they do. (code: client_paused)",
+    "text" : "Paused: the user paused this agent's access in EK Bridge. Its access isn't removed; ask the user to resume this client if they want you to continue, and don't retry until they do. (code: client_paused)",
     "tool" : "complete_reminder"
   },
   {
@@ -499,12 +499,12 @@
   },
   {
     "code" : "approval_denied",
-    "text" : "Declined: the user declined this change in EventKit Bridge. Don't retry it unless the user asks you to. (code: approval_denied)",
+    "text" : "Declined: the user declined this change in EK Bridge. Don't retry it unless the user asks you to. (code: approval_denied)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "approval_timed_out",
-    "text" : "Not approved in time: nobody answered the approval prompt in EventKit Bridge within 45 seconds. Ask the user whether to try again. (code: approval_timed_out)",
+    "text" : "Not approved in time: nobody answered the approval prompt in EK Bridge within 45 seconds. Ask the user whether to try again. (code: approval_timed_out)",
     "tool" : "complete_reminder"
   },
   {
@@ -549,47 +549,47 @@
   },
   {
     "code" : "save_failed",
-    "text" : "Error: EventKit Bridge couldn't complete this (saving failed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: save_failed)",
+    "text" : "Error: EK Bridge couldn't complete this (saving failed). Try once more; if it fails again, tell the user to check EK Bridge. (code: save_failed)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "fetch_failed",
-    "text" : "Error: EventKit Bridge couldn't complete this (reading failed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: fetch_failed)",
+    "text" : "Error: EK Bridge couldn't complete this (reading failed). Try once more; if it fails again, tell the user to check EK Bridge. (code: fetch_failed)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "all_day_readback_failed_rolled_back",
-    "text" : "Error: EventKit Bridge couldn't complete this (the saved event didn't match, so it was removed). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: all_day_readback_failed_rolled_back)",
+    "text" : "Error: EK Bridge couldn't complete this (the saved event didn't match, so it was removed). Try once more; if it fails again, tell the user to check EK Bridge. (code: all_day_readback_failed_rolled_back)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "app_unavailable",
-    "text" : "Error: EventKit Bridge couldn't complete this (the app is quitting or busy). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: app_unavailable)",
+    "text" : "Error: EK Bridge couldn't complete this (the app is quitting or busy). Try once more; if it fails again, tell the user to check EK Bridge. (code: app_unavailable)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "client_unavailable",
-    "text" : "Error: EventKit Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: client_unavailable)",
+    "text" : "Error: EK Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EK Bridge. (code: client_unavailable)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "activity_unavailable",
-    "text" : "Error: EventKit Bridge couldn't complete this (its activity log is unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: activity_unavailable)",
+    "text" : "Error: EK Bridge couldn't complete this (its activity log is unavailable). Try once more; if it fails again, tell the user to check EK Bridge. (code: activity_unavailable)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "journal_unavailable",
-    "text" : "Error: EventKit Bridge couldn't complete this (its write journal is unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: journal_unavailable)",
+    "text" : "Error: EK Bridge couldn't complete this (its write journal is unavailable). Try once more; if it fails again, tell the user to check EK Bridge. (code: journal_unavailable)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "journal_full",
-    "text" : "Error: EventKit Bridge couldn't complete this (its write journal is full). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: journal_full)",
+    "text" : "Error: EK Bridge couldn't complete this (its write journal is full). Try once more; if it fails again, tell the user to check EK Bridge. (code: journal_full)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "unavailable",
-    "text" : "Error: EventKit Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EventKit Bridge. (code: unavailable)",
+    "text" : "Error: EK Bridge couldn't complete this (its client settings are unavailable). Try once more; if it fails again, tell the user to check EK Bridge. (code: unavailable)",
     "tool" : "complete_reminder"
   },
   {
