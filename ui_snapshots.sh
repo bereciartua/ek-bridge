@@ -15,7 +15,7 @@ if [ "${1:-}" = "--cache" ]; then mode=cache; shift; fi
 snapshots=${1:-"$project_dir/build/snapshots"}
 EVENTKIT_UI_REVIEW=1 EVENTKIT_OUTPUT_DIR="$output_dir" sh "$project_dir/build.sh" >/dev/null
 mkdir -p "$snapshots"
-python3 - "$output_dir/EventKitBridge.app/Contents/MacOS/EventKitBridge" "$snapshots" "$mode" <<'PY'
+python3 - "$output_dir/EKBridge.app/Contents/MacOS/EKBridge" "$snapshots" "$mode" <<'PY'
 import json, os, subprocess, sys
 
 app, folder, mode = sys.argv[1:4]

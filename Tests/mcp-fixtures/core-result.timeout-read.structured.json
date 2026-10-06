@@ -1,4 +1,4 @@
 {
   "$isError" : true,
-  "text" : "No answer in time: EventKit Bridge didn't answer in time. Try once more; if it fails again, tell the user to check EventKit Bridge. (code: timeout)"
+  "text" : "No answer in time: EK Bridge didn't answer in time. Try once more; if it fails again, tell the user to check EK Bridge. (code: timeout)"
 }

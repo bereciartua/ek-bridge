@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 
-PRODUCT = "EventKit Bridge"
+PRODUCT = "EK Bridge"
 NOT_RUNNING = (f"error: {PRODUCT} isn't running, or the bridge is off. "
                "Turn it on from the menu bar.")
 SESSION_CHANGED = "error: the bridge session changed. Run the command again."
@@ -390,13 +390,13 @@ def main() -> int:
         home = f.make_dir(f.tmp / "home")
         plain_env = f.env(HOME=home)
         plain_env.pop("EVENTKIT_CLIENT_BINARY", None)
-        installed = Path("/Applications/EventKitBridge.app/Contents/MacOS/bridge-client").is_file()
+        installed = Path("/Applications/EKBridge.app/Contents/MacOS/bridge-client").is_file()
         result = f.run([str(checkout / "client.py"), "--help"], env=plain_env, binary=sys.executable)
         if not installed:
             check("client.py finds no client", result, 4,
                   "error: bridge-client wasn't found. Run: sh build.sh, "
-                  "or install EventKitBridge.app in /Applications.")
-        user_app = home / "Applications" / "EventKitBridge.app" / "Contents" / "MacOS"
+                  "or install EKBridge.app in /Applications.")
+        user_app = home / "Applications" / "EKBridge.app" / "Contents" / "MacOS"
         user_app.mkdir(parents=True)
         (user_app / "bridge-client").symlink_to(binary)
         result = f.run([str(checkout / "client.py"), "--help"], env=plain_env, binary=sys.executable)

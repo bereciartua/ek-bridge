@@ -169,7 +169,7 @@ struct MCPGateTests {
         let tunnel = object(verdict(request(["X-Forwarded-Host": "x"])).1!.body)
         precondition(tunnel["id"] == nil)
         precondition((tunnel["error"] as! [String: Any])["message"] as? String ==
-            "This port is only for agents on this Mac. Point your tunnel at the Remote Access port in EventKit Bridge.")
+            "This port is only for agents on this Mac. Point your tunnel at the Remote Access port in EK Bridge.")
         let method = verdict(request(method: "GET")).1!
         precondition(header(method, "Allow") == "POST" && method.body.isEmpty)
         precondition(verdict(request(["Content-Type": "text/plain"])).1!.body.isEmpty)
@@ -193,11 +193,11 @@ struct MCPGateTests {
     static func unauthorizedResponse() {
         let response = MCPHTTPGate.unauthorized()
         precondition(response.status == 401)
-        precondition(header(response, "WWW-Authenticate") == #"Bearer realm="EventKit Bridge""#)
+        precondition(header(response, "WWW-Authenticate") == #"Bearer realm="EK Bridge""#)
         precondition(header(response, "Content-Type") == "application/json")
         precondition(response.headers.count == 2)
         precondition(!response.headers.contains { $0.value.contains("resource_metadata") })
-        let expected = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"EventKit Bridge doesn't recognize this agent's token. Copy the setup again from the client's page in EventKit Bridge."}}"#
+        let expected = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"EK Bridge doesn't recognize this agent's token. Copy the setup again from the client's page in EK Bridge."}}"#
         precondition(NSDictionary(dictionary: object(response.body))
                      .isEqual(to: object(Data(expected.utf8))), "A.4 body")
         precondition((object(response.body)["id"] as? NSNull) != nil, "id is null, not missing")
@@ -205,7 +205,7 @@ struct MCPGateTests {
         let head = wire.components(separatedBy: "\r\n\r\n")[0].components(separatedBy: "\r\n")
         precondition(head[0] == "HTTP/1.1 401 Unauthorized")
         let lines = Set(head.dropFirst())
-        for line in [#"WWW-Authenticate: Bearer realm="EventKit Bridge""#, "Content-Type: application/json",
+        for line in [#"WWW-Authenticate: Bearer realm="EK Bridge""#, "Content-Type: application/json",
                      "Cache-Control: no-store", "X-Content-Type-Options: nosniff",
                      "Content-Length: \(response.body.count)"] {
             precondition(lines.contains(line), "missing \(line)")

@@ -10,7 +10,7 @@ You need macOS 14 or later, Xcode or the Xcode Command Line Tools, and Python 3.
 
 ```sh
 sh test.sh     # offline unit, CLI, MCP and launcher tests; no Calendar or Reminders access
-sh build.sh    # build/EventKitBridge.app, signed ad hoc
+sh build.sh    # build/EKBridge.app, signed ad hoc
 ```
 
 - `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app, as releases do. The default is this Mac's architecture.

@@ -212,11 +212,11 @@ struct MCPToolMappingTests {
         check(AgentOutcomeText.text(code: "forbidden", tool: "delete_event", detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
               == "Not allowed: this agent can't delete events in that calendar. If it should be able to, "
-              + "ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)",
+              + "ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
               "A.3 forbidden")
         check(AgentOutcomeText.text(code: "approval_denied", tool: "create_event", detail: nil,
                                     retryAfter: nil, idempotencyKey: nil)
-              == "Declined: the user declined this change in EventKit Bridge. Don't retry it unless the "
+              == "Declined: the user declined this change in EK Bridge. Don't retry it unless the "
               + "user asks you to. (code: approval_denied)", "A.3 declined")
         check(AgentOutcomeText.text(code: "write_committed_journal_pending_review", tool: "create_reminder",
                                     detail: nil, retryAfter: nil, idempotencyKey: a3Key)
@@ -335,14 +335,14 @@ struct MCPToolMappingTests {
         golden("agent-outcome-texts.json", table)
         check(AgentOutcomeText.text(code: "mystery_code", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
-              == "Error: EventKit Bridge returned mystery_code. Tell the user. (code: mystery_code)", "fallback")
+              == "Error: EK Bridge returned mystery_code. Tell the user. (code: mystery_code)", "fallback")
         check(AgentOutcomeText.text(code: "bridge_off", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
-              == "Bridge off: EventKit Bridge is turned off. Ask the user to turn it on from the menu bar; "
+              == "Bridge off: EK Bridge is turned off. Ask the user to turn it on from the menu bar; "
               + "don't retry until they do. (code: bridge_off)", "bridge_off")
         check(AgentOutcomeText.text(code: "client_paused", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
-              == "Paused: the user paused this agent's access in EventKit Bridge. Its access isn't removed; "
+              == "Paused: the user paused this agent's access in EK Bridge. Its access isn't removed; "
               + "ask the user to resume this client if they want you to continue, and don't retry until "
               + "they do. (code: client_paused)", "client_paused")
 

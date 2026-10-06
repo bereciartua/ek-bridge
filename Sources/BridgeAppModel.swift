@@ -225,6 +225,8 @@ final class BridgeAppModel {
     private(set) var setupHidden = false
     private(set) var setupCompleted = false
     private(set) var setupSkipped = Set<SetupChecklist.Step>()
+    /// Set once by `RenameMigration`; Overview explains the new name until dismissed.
+    private(set) var renameNoticePending = false
     /// Set briefly when the checklist finishes, to show the success message.
     private(set) var setupJustCompletedName: String?
     private(set) var developerOutput: String?
@@ -303,6 +305,7 @@ final class BridgeAppModel {
         setupCompleted = defaults.bool(forKey: Keys.setupCompleted)
         setupSkipped = Set((defaults.array(forKey: Keys.setupSkipped) as? [Int] ?? [])
             .compactMap(SetupChecklist.Step.init(rawValue:)))
+        renameNoticePending = defaults.bool(forKey: RenameMigration.noticeKey)
         let viewed = defaults.double(forKey: Keys.activityLastViewed)
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
@@ -337,8 +340,9 @@ final class BridgeAppModel {
             defaults.set(latest.timeIntervalSinceReferenceDate, forKey: Keys.activityLastViewed)
         }
         // Installs that already served a request never see the checklist,
-        // even if the bridge is off right now.
-        if !setupCompleted, SetupChecklist.isDone(.testRequest, checklistInput) {
+        // even if the bridge is off right now. Right after the rename they do:
+        // macOS asks for access again under the new bundle ID.
+        if !setupCompleted, !renameNoticePending, SetupChecklist.isDone(.testRequest, checklistInput) {
             setupCompleted = true
             defaults.set(true, forKey: Keys.setupCompleted)
         }
@@ -1105,6 +1109,11 @@ final class BridgeAppModel {
     /// Settings and Help can bring the checklist back while steps are left.
     var canShowSetupAgain: Bool {
         !showsSetupChecklist && policyStoreAvailable && !SetupChecklist.isComplete(checklistInput)
+    }
+
+    func dismissRenameNotice() {
+        renameNoticePending = false
+        services.defaults.set(false, forKey: RenameMigration.noticeKey)
     }
 
     func hideSetup() {

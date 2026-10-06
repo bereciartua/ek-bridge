@@ -1,1 +1,1 @@
-codex mcp add eventkit-bridge -- "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
+codex mcp add ek-bridge -- "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c

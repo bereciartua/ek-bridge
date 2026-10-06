@@ -3,7 +3,7 @@ credential: bearer
 needsLiteralToken: true
 
 snippet (values):
-Name: eventkit-bridge
+Name: ek-bridge
 Type: HTTP
 URL: https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp
 Header: Authorization: Bearer <remote token from Copy Remote Token…>

@@ -6,7 +6,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 output_dir="$project_dir/build/window-lifecycle-review"
 EVENTKIT_UI_REVIEW=1 EVENTKIT_OUTPUT_DIR="$output_dir" sh "$project_dir/build.sh" >/dev/null
-app="$output_dir/EventKitBridge.app/Contents/MacOS/EventKitBridge"
+app="$output_dir/EKBridge.app/Contents/MacOS/EKBridge"
 
 # The main window and its sheets survive eight close and reopen cycles.
 result=$("$app" --ui-window-lifecycle-test)

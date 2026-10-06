@@ -8,14 +8,14 @@ import Darwin
 @MainActor
 enum SyntheticRecurrenceProbe {
     private static let listKey = "recurrenceProbeReminderListID"
-    private static let name = "EventKit Bridge Recurrence Probe"
-    private static let marker = "EventKit Bridge Recurrence Probe: "
+    private static let name = "EK Bridge Recurrence Probe"
+    private static let marker = "EK Bridge Recurrence Probe: "
 
     static func run(keepForRestart: Bool = false) {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
             report("full_reminders_access_required"); return
         }
-        guard !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json") else {
+        guard !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json") else {
             report("stop_bridge_first"); return
         }
         guard UserDefaults.standard.string(forKey: listKey) == nil else {
@@ -122,7 +122,7 @@ enum SyntheticRecurrenceProbe {
     // list. This checks persisted local provider state, not remote-device sync.
     static func verifyAfterRestart() {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess,
-              !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json"),
+              !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json"),
               let id = UserDefaults.standard.string(forKey: listKey),
               let staged = UserDefaults.standard.dictionary(forKey: "recurrenceProbeLastResult"),
               staged["outcome"] as? String == "restart_stage_complete" else {
@@ -160,7 +160,7 @@ enum SyntheticRecurrenceProbe {
 
     static func cleanupOnly() {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess,
-              !FileManager.default.fileExists(atPath: "/tmp/eventkit-bridge-\(getuid())/current.json"),
+              !FileManager.default.fileExists(atPath: AppIdentity.bridgeRoot + "/current.json"),
               let id = UserDefaults.standard.string(forKey: listKey) else {
             report("cleanup_precondition_failed"); return
         }

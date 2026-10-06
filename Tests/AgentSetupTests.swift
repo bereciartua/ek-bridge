@@ -5,12 +5,12 @@ struct AgentSetupTests {
     static let clientID = "3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"
     static let url = "http://127.0.0.1:47615/mcp"
     static let tokenPath =
-        "/Users/you/Library/Application Support/EventKitBridge/client-credentials/\(clientID).mcp-token"
+        "/Users/you/Library/Application Support/EKBridge/client-credentials/\(clientID).mcp-token"
     static let placeholders = SetupContext(
-        url: url, launcherPath: "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp",
+        url: url, launcherPath: "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp",
         clientID: clientID, tokenPath: tokenPath)
     static let apostrophe = SetupContext(
-        url: url, launcherPath: "/Users/o'brien/Apps/EventKit Bridge.app/Contents/MacOS/bridge-mcp",
+        url: url, launcherPath: "/Users/o'brien/Apps/EK Bridge.app/Contents/MacOS/bridge-mcp",
         clientID: clientID, tokenPath: tokenPath)
 
     static func main() throws {
@@ -194,7 +194,7 @@ struct AgentSetupTests {
                             precondition(entry["args"] as? [String] == ["--client", context.clientID])
                         } else {
                             precondition(entry["url"] as? String == context.url)
-                            precondition(entry["bearer_token_env_var"] as? String == "EVENTKIT_BRIDGE_TOKEN")
+                            precondition(entry["bearer_token_env_var"] as? String == "EK_BRIDGE_TOKEN")
                         }
                         counts.toml += 1
                     case .shellCommand, .values:
@@ -204,7 +204,7 @@ struct AgentSetupTests {
             }
         }
         let devin = parseJSON(AgentKind.devinDesktop.snippet(.directHTTP, tricky).text, "devin")
-        let entry = (devin["mcpServers"] as! [String: Any])["eventkit-bridge"] as! [String: Any]
+        let entry = (devin["mcpServers"] as! [String: Any])["ek-bridge"] as! [String: Any]
         let headers = entry["headers"] as! [String: String]
         precondition(headers["Authorization"] == "Bearer ${file:\(tricky.tokenPath)}")
         precondition(counts.json > 30 && counts.toml == 6)
@@ -225,7 +225,7 @@ struct AgentSetupTests {
         let encoded = String(link.dropFirst("vscode:mcp/install?".count))
         precondition(!encoded.contains(" ") && !encoded.contains("'") && !encoded.contains("\""))
         let json = parseJSON(encoded.removingPercentEncoding!, "install link")
-        precondition(json["name"] as? String == "eventkit-bridge")
+        precondition(json["name"] as? String == "ek-bridge")
         precondition(json["command"] as? String == apostrophe.launcherPath)
         precondition(json["args"] as? [String] == ["--client", clientID])
     }
@@ -243,7 +243,7 @@ struct AgentSetupTests {
         for name in ["claude", "codex", "code"] {
             try install(stub, at: bin.appendingPathComponent(name))
         }
-        let folders = ["o'brien/Apps/EventKit Bridge.app/Contents/MacOS",
+        let folders = ["o'brien/Apps/EK Bridge.app/Contents/MacOS",
                        #"we "quote" $HOME `x` back\slash!/o'brien"#]
         for folder in folders {
             let launcher = root.appendingPathComponent(folder).appendingPathComponent("bridge-mcp")
@@ -403,13 +403,13 @@ struct AgentSetupTests {
             precondition(copilotEntry["url"] as? String == context.mcpURL)
             precondition(copilotEntry["tools"] as? [String] == AgentSetup.readOnlyToolNames)
             precondition((copilotEntry["headers"] as? [String: String])?["Authorization"]
-                         == "Bearer $COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN")
+                         == "Bearer $COPILOT_MCP_EK_BRIDGE_TOKEN")
 
             let claudeCode = CloudAgentKind.claudeCodeCloud.snippet(context)
             let entry = (parseJSON(claudeCode.text, "claude code")["mcpServers"] as! [String: Any])[key]
                 as! [String: Any]
             precondition((entry["headers"] as? [String: String])?["Authorization"]
-                         == "Bearer ${EVENTKIT_BRIDGE_TOKEN}")
+                         == "Bearer ${EK_BRIDGE_TOKEN}")
             let bare = (parseJSON(claudeCode.extraSnippets[0].text, "claude code")["mcpServers"]
                         as! [String: Any])[key] as! [String: Any]
             precondition(bare.keys.sorted() == ["type", "url"] && bare["url"] as? String == context.mcpURL)
@@ -427,7 +427,7 @@ struct AgentSetupTests {
         try install("#!/bin/sh\nprintf '%s\\0' \"$0\" \"$@\"\n", at: root.appendingPathComponent("curl"))
         let token = "fake-token-with-'quote-and-$dollar"
         let environment = [
-            "EVENTKIT_BRIDGE_REMOTE_TOKEN": token, "ANTHROPIC_API_KEY": "fake-anthropic",
+            "EK_BRIDGE_REMOTE_TOKEN": token, "ANTHROPIC_API_KEY": "fake-anthropic",
             "OPENAI_API_KEY": "fake-openai", "VAULT_ID": "vlt_test",
         ]
         for context in [cloud, cloudTricky] {

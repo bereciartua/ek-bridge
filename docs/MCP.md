@@ -1,6 +1,6 @@
 # Connecting AI agents (MCP)
 
-EventKit Bridge 0.7.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
+EK Bridge 0.7.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
 
 The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines can't reach it. Remote Access is a separate listener on `127.0.0.1:47616`, also off by default, with its own credentials; a tunnel such as Tailscale Funnel gives it a public HTTPS address.
 
@@ -29,7 +29,7 @@ The **Status** line on that tab changes from **Waiting for the agent…** to **C
 
 Use **one client per agent**, and grant only what that agent needs. Grant **Read** only on calendars and lists the agent actually has to see: what the agent reads is sent to its AI provider, and text in events or reminders (including invitations from other people) can try to steer the agent. Ask before changes limits what it can change, not what it can read.
 
-Each client's MCP access is a 256-bit token in a private file, `~/Library/Application Support/EventKitBridge/client-credentials/<client ID>.mcp-token` (mode 600). The app never shows it. The recommended setups never put it in the agent's config either: the launcher or the agent reads it from the file.
+Each client's MCP access is a 256-bit token in a private file, `~/Library/Application Support/EKBridge/client-credentials/<client ID>.mcp-token` (mode 600). The app never shows it. The recommended setups never put it in the agent's config either: the launcher or the agent reads it from the file.
 
 - **Copy Token…** appears only for methods that need the token itself (direct HTTP with an environment variable or a password prompt, and Other agent). It asks first, puts the token on the clipboard as concealed, transient data, and clears the clipboard after 90 seconds if it still holds the token.
 - **Reset…** (or **Reset MCP Token…** in the **⋯** menu) issues a new token. Launcher and token-file setups keep working; agents you gave the token to directly stop until you copy the new one.
@@ -42,35 +42,35 @@ Each change takes effect on the next request.
 
 ### Set up your agent
 
-The Connect ▸ AI agent tab generates these for the client and your installed app; copy them from there rather than from this page. The examples below use the app at `/Applications/EventKit Bridge.app`, client ID `3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c`, port 47615 and home folder `/Users/you`. They're the test goldens in `Tests/agent-setup/`.
+The Connect ▸ AI agent tab generates these for the client and your installed app; copy them from there rather than from this page. The examples below use the app at `/Applications/EKBridge.app`, client ID `3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c`, port 47615 and home folder `/Users/you`. They're the test goldens in `Tests/agent-setup/`.
 
 There are two methods:
 
-- **Launcher** runs `bridge-mcp`, a small helper inside the app bundle (`Contents/MacOS/bridge-mcp`). It relays the agent's stdio messages to the server, reads the token from the file, and checks that the program listening on the port is this user's EventKit Bridge before sending it. Move the app to `/Applications` or `~/Applications` **before** you copy a launcher setup: the setup contains the launcher's path, and the app warns when it isn't in Applications.
+- **Launcher** runs `bridge-mcp`, a small helper inside the app bundle (`Contents/MacOS/bridge-mcp`). It relays the agent's stdio messages to the server, reads the token from the file, and checks that the program listening on the port is this user's EK Bridge before sending it. Move the app to `/Applications` or `~/Applications` **before** you copy a launcher setup: the setup contains the launcher's path, and the app warns when it isn't in Applications.
 - **Direct HTTP** has the agent connect to the URL itself. Only Claude Code's recommended setup keeps the token out of the config (its `headersHelper` runs the launcher's `headers` command). The other direct methods send the token without the launcher's listener check, and the Connect tab says so.
 
-The server key is `eventkit-bridge`, so agents name the tools `mcp__eventkit-bridge__read_events` and so on.
+The server key is `ek-bridge`, so agents name the tools `mcp__ek-bridge__read_events` and so on.
 
 #### Claude Code
 
 Recommended: direct HTTP, token read through `headersHelper`. Run it in Terminal. Claude Code connects the next time it starts (or run `/mcp` to reconnect). It's saved in `~/.claude.json` (`--scope user`, so never in a project's shared `.mcp.json`).
 
 ```sh
-claude mcp add-json --scope user eventkit-bridge '{"type":"http","url":"http://127.0.0.1:47615/mcp","headersHelper":"\"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp\" headers --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c --url http://127.0.0.1:47615/mcp"}'
+claude mcp add-json --scope user ek-bridge '{"type":"http","url":"http://127.0.0.1:47615/mcp","headersHelper":"\"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp\" headers --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c --url http://127.0.0.1:47615/mcp"}'
 ```
 
 Launcher:
 
 ```sh
-claude mcp add --scope user eventkit-bridge -- "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
+claude mcp add --scope user ek-bridge -- "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
 ```
 
 #### Claude Desktop
 
-Launcher only. Open `~/Library/Application Support/Claude/claude_desktop_config.json`, add the `eventkit-bridge` entry under `mcpServers`, then restart Claude Desktop. Claude Desktop's *custom connectors* run from Anthropic's cloud and reach this Mac only through [Remote Access](#use-from-cloud-agents); on this Mac, this local setup is simpler.
+Launcher only. Open `~/Library/Application Support/Claude/claude_desktop_config.json`, add the `ek-bridge` entry under `mcpServers`, then restart Claude Desktop. Claude Desktop's *custom connectors* run from Anthropic's cloud and reach this Mac only through [Remote Access](#use-from-cloud-agents); on this Mac, this local setup is simpler.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
+{"mcpServers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
 ```
 
 #### Codex
@@ -78,99 +78,99 @@ Launcher only. Open `~/Library/Application Support/Claude/claude_desktop_config.
 Recommended: launcher. Run it in Terminal, or add the lines below to `~/.codex/config.toml`. Codex connects the next time it starts.
 
 ```sh
-codex mcp add eventkit-bridge -- "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
+codex mcp add ek-bridge -- "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp" --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
 ```
 
 ```toml
-[mcp_servers.eventkit-bridge]
-command = "/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp"
+[mcp_servers.ek-bridge]
+command = "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp"
 args = ["--client", "3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]
 ```
 
-Direct HTTP: add this to `~/.codex/config.toml`, set `EVENTKIT_BRIDGE_TOKEN` to the token (**Copy Token…**) in the environment Codex starts from, and restart Codex. Codex started from an app doesn't see your shell's environment variables, so the launcher is more reliable.
+Direct HTTP: add this to `~/.codex/config.toml`, set `EK_BRIDGE_TOKEN` to the token (**Copy Token…**) in the environment Codex starts from, and restart Codex. Codex started from an app doesn't see your shell's environment variables, so the launcher is more reliable.
 
 ```toml
-[mcp_servers.eventkit-bridge]
+[mcp_servers.ek-bridge]
 url = "http://127.0.0.1:47615/mcp"
-bearer_token_env_var = "EVENTKIT_BRIDGE_TOKEN"
+bearer_token_env_var = "EK_BRIDGE_TOKEN"
 ```
 
 #### Cursor
 
-Recommended: launcher. Open `~/.cursor/mcp.json`, add the `eventkit-bridge` entry under `mcpServers`, and restart Cursor. Use your own `~/.cursor/mcp.json`, never a project's `.cursor/mcp.json`, which often gets committed.
+Recommended: launcher. Open `~/.cursor/mcp.json`, add the `ek-bridge` entry under `mcpServers`, and restart Cursor. Use your own `~/.cursor/mcp.json`, never a project's `.cursor/mcp.json`, which often gets committed.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"type":"stdio","command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
+{"mcpServers":{"ek-bridge":{"type":"stdio","command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
 ```
 
-Direct HTTP, with `EVENTKIT_BRIDGE_TOKEN` set to the token in the environment Cursor starts from:
+Direct HTTP, with `EK_BRIDGE_TOKEN` set to the token in the environment Cursor starts from:
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"url":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${env:EVENTKIT_BRIDGE_TOKEN}"}}}}
+{"mcpServers":{"ek-bridge":{"url":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${env:EK_BRIDGE_TOKEN}"}}}}
 ```
 
 #### VS Code (Copilot)
 
-Recommended: launcher. Click **Install in VS Code** on the Connect tab, or run the command in Terminal, then start `eventkit-bridge` when VS Code asks.
+Recommended: launcher. Click **Install in VS Code** on the Connect tab, or run the command in Terminal, then start `ek-bridge` when VS Code asks.
 
 ```sh
-code --add-mcp '{"name":"eventkit-bridge","command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}'
+code --add-mcp '{"name":"ek-bridge","command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}'
 ```
 
 The install button opens this link (it contains no secret):
 
 ```text
-vscode:mcp/install?%7B%22name%22%3A%22eventkit-bridge%22%2C%22command%22%3A%22%2FApplications%2FEventKit%20Bridge.app%2FContents%2FMacOS%2Fbridge-mcp%22%2C%22args%22%3A%5B%22--client%22%2C%223f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c%22%5D%7D
+vscode:mcp/install?%7B%22name%22%3A%22ek-bridge%22%2C%22command%22%3A%22%2FApplications%2FEKBridge.app%2FContents%2FMacOS%2Fbridge-mcp%22%2C%22args%22%3A%5B%22--client%22%2C%223f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c%22%5D%7D
 ```
 
 Direct HTTP: in VS Code, run **MCP: Open User Configuration** (`~/Library/Application Support/Code/User/mcp.json`), add the `inputs` and `servers` entries, and paste the token from **Copy Token…** when VS Code asks. Servers that prompt for input aren't sent to VS Code's Agent Host, so the launcher works in more places.
 
 ```json
-{"inputs":[{"type":"promptString","id":"eventkit-bridge-token","description":"EventKit Bridge MCP token","password":true}],"servers":{"eventkit-bridge":{"type":"http","url":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${input:eventkit-bridge-token}"}}}}
+{"inputs":[{"type":"promptString","id":"ek-bridge-token","description":"EK Bridge MCP token","password":true}],"servers":{"ek-bridge":{"type":"http","url":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${input:ek-bridge-token}"}}}}
 ```
 
 #### Gemini CLI
 
-Recommended: launcher. Open `~/.gemini/settings.json`, add the `eventkit-bridge` entry under `mcpServers`, and restart Gemini CLI.
+Recommended: launcher. Open `~/.gemini/settings.json`, add the `ek-bridge` entry under `mcpServers`, and restart Gemini CLI.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"timeout":60000}}}
+{"mcpServers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"timeout":60000}}}
 ```
 
-Direct HTTP, with `EVENTKIT_BRIDGE_TOKEN` set in the environment Gemini CLI starts from:
+Direct HTTP, with `EK_BRIDGE_TOKEN` set in the environment Gemini CLI starts from:
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"httpUrl":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer $EVENTKIT_BRIDGE_TOKEN"},"timeout":60000}}}
+{"mcpServers":{"ek-bridge":{"httpUrl":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer $EK_BRIDGE_TOKEN"},"timeout":60000}}}
 ```
 
 #### Devin Desktop
 
-Recommended: launcher. Open `~/.config/devin/mcp_config.json`, add the `eventkit-bridge` entry under `mcpServers`, and restart Devin Desktop.
+Recommended: launcher. Open `~/.config/devin/mcp_config.json`, add the `ek-bridge` entry under `mcpServers`, and restart Devin Desktop.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
+{"mcpServers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
 ```
 
 Direct HTTP, token read from the file. No token in the config, but no listener check either:
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"serverUrl":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${file:/Users/you/Library/Application Support/EventKitBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token}"}}}}
+{"mcpServers":{"ek-bridge":{"serverUrl":"http://127.0.0.1:47615/mcp","headers":{"Authorization":"Bearer ${file:/Users/you/Library/Application Support/EKBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token}"}}}}
 ```
 
 #### Zed
 
-Launcher only (Zed starts a sign-in when a remote server has no `Authorization` header). In Zed, run **zed: open settings** (`~/.config/zed/settings.json`) and add the `eventkit-bridge` entry under `context_servers`.
+Launcher only (Zed starts a sign-in when a remote server has no `Authorization` header). In Zed, run **zed: open settings** (`~/.config/zed/settings.json`) and add the `ek-bridge` entry under `context_servers`.
 
 ```json
-{"context_servers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"env":{}}}}
+{"context_servers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"env":{}}}}
 ```
 
 #### Cline
 
-Launcher only (Cline treats a remote server without a type as legacy SSE). In Cline, open **MCP Servers**, click **Configure MCP Servers**, and add the `eventkit-bridge` entry under `mcpServers`.
+Launcher only (Cline treats a remote server without a type as legacy SSE). In Cline, open **MCP Servers**, click **Configure MCP Servers**, and add the `ek-bridge` entry under `mcpServers`.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"disabled":false,"autoApprove":[]}}}
+{"mcpServers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"],"disabled":false,"autoApprove":[]}}}
 ```
 
 #### JetBrains AI Assistant
@@ -178,7 +178,7 @@ Launcher only (Cline treats a remote server without a type as legacy SSE). In Cl
 Launcher only (AI Assistant has known problems with local HTTP servers). Open **Settings ▸ Tools ▸ AI Assistant ▸ Model Context Protocol (MCP)**, add a server, choose **As JSON**, and paste this.
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"command":"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
+{"mcpServers":{"ek-bridge":{"command":"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp","args":["--client","3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c"]}}}
 ```
 
 #### Other agents
@@ -186,12 +186,12 @@ Launcher only (AI Assistant has known problems with local HTTP servers). Open **
 Use the HTTP values if the agent supports Streamable HTTP with a custom header; otherwise run the launcher over stdio. For HTTP, paste the token from **Copy Token…** or have the agent read it from the token file.
 
 ```text
-Server name: eventkit-bridge
+Server name: ek-bridge
 Transport: Streamable HTTP
 URL: http://127.0.0.1:47615/mcp
 Header: Authorization: Bearer <token>
-Token file: /Users/you/Library/Application Support/EventKitBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token
-stdio command: /Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp
+Token file: /Users/you/Library/Application Support/EKBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token
+stdio command: /Applications/EKBridge.app/Contents/MacOS/bridge-mcp
 stdio args: --client 3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c
 ```
 
@@ -201,7 +201,7 @@ claude.ai, ChatGPT and cloud coding agents run on their vendor's servers, so the
 
 ### Use from cloud agents
 
-Cloud agents reach EventKit Bridge through **Remote Access**: a second listener on `127.0.0.1:47616` that a tunnel you run, such as Tailscale Funnel, makes reachable at a public HTTPS address. Behind it, nothing changes: the client's grants, Ask before changes, the journal and Activity work as for local agents. The Mac must be awake, logged in and running the app, and the bridge must be on.
+Cloud agents reach EK Bridge through **Remote Access**: a second listener on `127.0.0.1:47616` that a tunnel you run, such as Tailscale Funnel, makes reachable at a public HTTPS address. Behind it, nothing changes: the client's grants, Ask before changes, the journal and Activity work as for local agents. The Mac must be awake, logged in and running the app, and the bridge must be on.
 
 1. Turn on Remote Access.
 2. Start a tunnel to its port and add the tunnel's address.
@@ -233,13 +233,13 @@ The tunnel must point at `http://127.0.0.1:47616`, the Remote Access port. Never
 | Tunnel | Commands | Notes |
 | --- | --- | --- |
 | **Tailscale Funnel** (recommended) | `tailscale funnel --bg 47616`; to turn it off, `tailscale funnel --bg 47616 off` | Install Tailscale, sign in, and in the admin console turn on MagicDNS and HTTPS certificates and add the `funnel` node attribute to the tailnet policy. Funnel prints the address, such as `https://my-mac.tail1234.ts.net`. TLS ends on this Mac, so the relays can't read the traffic. Funnel keeps the public host name in `Host`, so it must match **Address**. Public DNS can take about 10 minutes the first time. Funnel keeps running, even after a restart, until you turn it off. Tailscale Serve isn't enough: cloud agents aren't on your tailnet. |
-| **Cloudflare Tunnel** (your own domain) | `brew install cloudflared`, `cloudflared tunnel login`, `cloudflared tunnel create eventkit-bridge`, `cloudflared tunnel route dns eventkit-bridge <host name>`, `cloudflared tunnel run eventkit-bridge` | Needs a domain on Cloudflare. Before `run`, save the configuration Settings shows (also below) as `~/.cloudflared/config.yml`, with the tunnel ID that `create` printed. It rewrites `Host` to this Mac's address. TLS ends at Cloudflare's edge, so Cloudflare can read the traffic, calendar data included. Optionally put Cloudflare Access service tokens in front, for agents that can send two extra headers (Cursor, Copilot, Devin). |
+| **Cloudflare Tunnel** (your own domain) | `brew install cloudflared`, `cloudflared tunnel login`, `cloudflared tunnel create ek-bridge`, `cloudflared tunnel route dns ek-bridge <host name>`, `cloudflared tunnel run ek-bridge` | Needs a domain on Cloudflare. Before `run`, save the configuration Settings shows (also below) as `~/.cloudflared/config.yml`, with the tunnel ID that `create` printed. It rewrites `Host` to this Mac's address. TLS ends at Cloudflare's edge, so Cloudflare can read the traffic, calendar data included. Optionally put Cloudflare Access service tokens in front, for agents that can send two extra headers (Cursor, Copilot, Devin). |
 | **ngrok** | `ngrok config add-authtoken <your ngrok authtoken>`, `ngrok http 47616 --url https://<your-dev-domain> --host-header=rewrite` | Use the free dev domain from the ngrok dashboard. TLS ends at ngrok's edge. The free plan allows 20,000 requests a month. Don't turn on ngrok's basic auth: it takes over the `Authorization` header. Optionally allow only your agent's addresses with a Traffic Policy IP restriction, for example Anthropic's `160.79.104.0/21`. |
 | **Cloudflare quick tunnel** (testing only) | `cloudflared tunnel --url http://127.0.0.1:47616 --http-host-header 127.0.0.1:47616` | Prints a random `https://….trycloudflare.com` address that changes every time it starts, which breaks every cloud agent you set up. TLS ends at Cloudflare's edge. |
 | **Other** | none | Point it at `http://127.0.0.1` and the Remote Access port. Have it rewrite `Host` to `127.0.0.1:<port>`, or add its public host name under **Address**. It must pass the `Authorization` header through unchanged. If TLS ends at the provider's edge, the provider can read the traffic. |
 
 ```yaml
-tunnel: eventkit-bridge
+tunnel: ek-bridge
 credentials-file: ~/.cloudflared/<tunnel-UUID>.json
 ingress:
   - hostname: mcp.example.com
@@ -268,14 +268,14 @@ Turning **Allow cloud access** off asks first when the client has a remote token
 
 #### Agents that send a token
 
-Most cloud coding agents and the vendor APIs send a fixed header. They use the client's **remote token**: `ekb_mcpr_v1_` and 64 hex digits, one per client, kept in `~/Library/Application Support/EventKitBridge/client-credentials/<client ID>.mcp-remote-token` (mode 600). It's separate from the local token: a remote token never works on this Mac's port, and a local token never works through the tunnel, so a token that leaks from either place is useless in the other.
+Most cloud coding agents and the vendor APIs send a fixed header. They use the client's **remote token**: `ekb_mcpr_v1_` and 64 hex digits, one per client, kept in `~/Library/Application Support/EKBridge/client-credentials/<client ID>.mcp-remote-token` (mode 600). It's separate from the local token: a remote token never works on this Mac's port, and a local token never works through the tunnel, so a token that leaks from either place is useless in the other.
 
 No launcher can read the file for a cloud agent, so you paste the token into the vendor's settings:
 
 - **Copy Remote Token…** creates the token the first time, asks first, puts it on the clipboard as concealed, transient data, and clears the clipboard after 90 seconds if it still holds it. The app never shows it.
 - **Reset Remote Token…** replaces it. Agents with the old token stop until you paste the new one; connected cloud apps aren't affected.
 
-The setups never contain the token. They refer to it as `$EVENTKIT_BRIDGE_REMOTE_TOKEN`, `${EVENTKIT_BRIDGE_TOKEN}`, `$COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN` or `<remote token from Copy Remote Token…>`. For example, the Anthropic API (set both variables in Terminal first):
+The setups never contain the token. They refer to it as `$EK_BRIDGE_REMOTE_TOKEN`, `${EK_BRIDGE_TOKEN}`, `$COPILOT_MCP_EK_BRIDGE_TOKEN` or `<remote token from Copy Remote Token…>`. For example, the Anthropic API (set both variables in Terminal first):
 
 ```sh
 curl "https://api.anthropic.com/v1/messages" \
@@ -283,19 +283,19 @@ curl "https://api.anthropic.com/v1/messages" \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "anthropic-beta: mcp-client-2025-11-20" \
-  -d '{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":"What is on my calendar today?"}],"mcp_servers":[{"type":"url","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","name":"eventkit-bridge","authorization_token":"'"$EVENTKIT_BRIDGE_REMOTE_TOKEN"'"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"eventkit-bridge"}]}'
+  -d '{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":"What is on my calendar today?"}],"mcp_servers":[{"type":"url","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","name":"ek-bridge","authorization_token":"'"$EK_BRIDGE_REMOTE_TOKEN"'"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"ek-bridge"}]}'
 ```
 
 Claude Code on the web, in the repository's `.mcp.json` (it holds no token; the token goes in the cloud environment's variables):
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer ${EVENTKIT_BRIDGE_TOKEN}"}}}}
+{"mcpServers":{"ek-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer ${EK_BRIDGE_TOKEN}"}}}}
 ```
 
 GitHub Copilot coding agent, in the repository's Settings ▸ Copilot ▸ MCP servers, limited to the read tools:
 
 ```json
-{"mcpServers":{"eventkit-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer $COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN"},"tools":["list_collections","read_events","read_reminders"]}}}
+{"mcpServers":{"ek-bridge":{"type":"http","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","headers":{"Authorization":"Bearer $COPILOT_MCP_EK_BRIDGE_TOKEN"},"tools":["list_collections","read_events","read_reminders"]}}}
 ```
 
 #### Apps that sign in with OAuth
@@ -304,7 +304,7 @@ claude.ai (and with it Claude Desktop and the Claude mobile app), ChatGPT and Ge
 
 1. On the client's page, choose **Connect a Cloud App…**. Pairing is open for 10 minutes, for that client only.
 2. Add the connector in the cloud app with the MCP URL. In claude.ai: Customize ▸ Connectors ▸ **Add custom connector**, paste the URL and leave the OAuth settings as they are (on Team and Enterprise plans an Owner adds it in Organization settings ▸ Connectors). In ChatGPT: Plugins ▸ **+** ▸ **Create custom MCP server**, paste the URL under Connection and choose OAuth.
-3. Your browser opens EventKit Bridge's sign-in page, which shows a six-digit code such as **482 913**.
+3. Your browser opens EK Bridge's sign-in page, which shows a six-digit code such as **482 913**.
 4. The Mac shows a sheet, such as *Claude wants to connect*, with the client whose access it will use, the address of the app's metadata (for apps that publish one), where the browser goes next (*Returns to claude.ai*), and the same code. **Allow** works one second after the sheet appears. Allow only if the codes match.
 5. **Allow** sends the browser back to the app, signed in, and closes pairing: one connection per pairing. **Deny** sends the app a refusal.
 
@@ -333,9 +333,9 @@ In the Google Cloud console, open Gemini Enterprise ▸ Data stores ▸ **Create
 | --- | --- | --- |
 | Anthropic API (MCP connector) | Remote token | `authorization_token` in the request's `mcp_servers` entry, with the `anthropic-beta: mcp-client-2025-11-20` header. The API calls tools without asking you. |
 | Claude Managed Agents | Remote token | A vault credential (`static_bearer`) for the MCP URL, the agent's `mcp_servers` and `tools` entries, and the vault in `vault_ids` when you create a session. The vault matches by URL: after **Reset Path…**, add the credential again. |
-| Claude Code on the web | Remote token | `.mcp.json` committed at the repository root; `EVENTKIT_BRIDGE_TOKEN` in the cloud environment's variables; Network access set to Custom with the tunnel's host under Allowed domains. Everyone who uses that environment can read its variables; on Pro and Max plans, use an API credential for the host instead. |
+| Claude Code on the web | Remote token | `.mcp.json` committed at the repository root; `EK_BRIDGE_TOKEN` in the cloud environment's variables; Network access set to Custom with the tunnel's host under Allowed domains. Everyone who uses that environment can read its variables; on Pro and Max plans, use an API credential for the host instead. |
 | Cursor cloud agents | Remote token | cursor.com/agents ▸ MCP ▸ add an HTTP server with an `Authorization: Bearer` header. Cursor keeps the header on its servers. |
-| GitHub Copilot coding agent | Remote token | Repository Settings ▸ Copilot ▸ MCP servers, and an Agents secret named `COPILOT_MCP_EVENTKIT_BRIDGE_TOKEN`. Copilot runs tools without approval: give the client Read-only grants and keep the tools list to the read tools. |
+| GitHub Copilot coding agent | Remote token | Repository Settings ▸ Copilot ▸ MCP servers, and an Agents secret named `COPILOT_MCP_EK_BRIDGE_TOKEN`. Copilot runs tools without approval: give the client Read-only grants and keep the tools list to the read tools. |
 | Devin | Remote token | Customize ▸ MCPs ▸ Add custom MCP, HTTP, Auth Header `Authorization`. |
 | OpenAI Responses API | Remote token | `authorization` in the `mcp` tool entry, without `Bearer`. The example allows only the read tools, with `require_approval: never`. |
 | claude.ai · Claude Desktop · mobile | OAuth | Add a custom connector, then pair. |
@@ -381,12 +381,12 @@ Activity's details pane shows the answer for each change: *You approved*, *You d
 Start with the launcher's check. It reads the token file, finds the server, and reports what it sees on stderr without ever printing the token. Use the launcher path from Settings ▸ MCP Server and the client ID from the client's page:
 
 ```sh
-"/Applications/EventKit Bridge.app/Contents/MacOS/bridge-mcp" check --client <client ID>
+"/Applications/EKBridge.app/Contents/MacOS/bridge-mcp" check --client <client ID>
 ```
 
 ```text
-EventKit Bridge MCP check for client 3f1c…9a1c
-  ✓ token file  ~/Library/Application Support/EventKitBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token (mode 600)
+EK Bridge MCP check for client 3f1c…9a1c
+  ✓ token file  ~/Library/Application Support/EKBridge/client-credentials/3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c.mcp-token (mode 600)
   ✓ app running, MCP server listening on http://127.0.0.1:47615/mcp
   ✓ token accepted: client "Claude Code"
   ✓ 6 tools available: list_collections, read_events, create_event, read_reminders, create_reminder, complete_reminder
@@ -397,9 +397,9 @@ The check calls `list_collections` to see whether the bridge is on, so it adds a
 
 | Symptom or message | What to do |
 | --- | --- |
-| "EventKit Bridge isn't running, or its MCP server is off." | Open the app and turn on Settings ▸ MCP Server. The launcher waits up to 5 seconds for the first connection, so an agent started at login with the app usually connects. |
+| "EK Bridge isn't running, or its MCP server is off." | Open the app and turn on Settings ▸ MCP Server. The launcher waits up to 5 seconds for the first connection, so an agent started at login with the app usually connects. |
 | "doesn't recognize this agent's token" / "this client's token" (HTTP 401) | The token was reset or MCP access was removed. Launcher and `headersHelper` setups re-read the file; for a pasted token, **Copy Token…** again. If the client page says the token file is missing, **Reset…** it. |
-| "Another program is using EventKit Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ MCP Server and choose another port if needed. |
+| "Another program is using EK Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ MCP Server and choose another port if needed. |
 | Settings says the port is in use | Quit the other app or **Choose Another Port…**. Launcher setups pick up the new port automatically; direct HTTP setups need the new URL. |
 | Bridge off (`bridge_off`) | Turn on the bridge from the menu bar. The agent doesn't need to reconnect. |
 | Paused (`client_paused`) | The client is paused. **Resume** it on its page. The agent doesn't need to reconnect. |
@@ -418,14 +418,14 @@ For cloud agents, start with **Test** in Settings ▸ Remote Access. It shows wh
 | "The tunnel sent a different host name" (HTTP 421) | The tunnel's `Host` matches neither **Address** nor `127.0.0.1:<port>`. Tailscale Funnel keeps the public host name, so **Address** must be exactly the address Funnel printed. For other tunnels, set them to rewrite `Host` (the commands in Settings do), or add their public host name under **Address**. |
 | "The address doesn't resolve yet" | A new Tailscale Funnel address can take about 10 minutes to appear in public DNS. Test again later. |
 | "No answer within 10 seconds", "The tunnel refused the connection" | The tunnel isn't running, or the Mac's side of it is down. Start it again with the commands in Settings. |
-| "Something answered at that address, but not EventKit Bridge" | The tunnel points at another port, or another service answers at that address. Point it at the Remote Access port (47616 unless you changed it). |
+| "Something answered at that address, but not EK Bridge" | The tunnel points at another port, or another service answers at that address. Point it at the Remote Access port (47616 unless you changed it). |
 | "The tunnel's HTTPS certificate wasn't accepted" | Check the address. For Tailscale Funnel, HTTPS certificates must be turned on in the admin console. |
 | Not reachable after a restart or wake | The Mac must be awake, logged in and running the app, with the tunnel running. Funnel restarts on its own; the others need their command again. **Keep this Mac awake while on power** prevents idle sleep. |
 | "doesn't recognize this credential" (HTTP 401) from the remote URL | After **Reset Path…** or an address change, give each agent the new URL; connected cloud apps have to connect again. Otherwise check that the client still has **Allow cloud access** on and that the agent has its *remote* token: a local `ekb_mcp_v1_` token never works remotely. After **Reset Remote Token…**, copy the new one. |
 | "This port is only for agents on this Mac" (HTTP 403) | The tunnel points at the MCP server's port. Point it at the Remote Access port. |
 | HTTP 429 from the remote URL | More than 30 failed sign-ins a minute came from that address, so requests from it without a valid credential are refused for 5 minutes. Agents with a valid token or sign-in aren't affected. |
 | "Pairing isn't open" in the browser | Choose **Connect a Cloud App…** on the client's page, then connect again from the cloud app within 10 minutes. |
-| The cloud app says the connection was declined, or no sheet appeared | The sheet appears only while pairing is open for that client, once your browser opens EventKit Bridge's sign-in page. If a sheet was already open, the new request waits behind it. Answer within 5 minutes. |
+| The cloud app says the connection was declined, or no sheet appeared | The sheet appears only while pairing is open for that client, once your browser opens EK Bridge's sign-in page. If a sheet was already open, the new request waits behind it. Answer within 5 minutes. |
 | "Couldn't read the app's details" in the browser | The app fetched the cloud app's metadata document and couldn't use it; the page says why. The document must be public HTTPS, at most 16 KB, without redirects, answer within 5 seconds, and allow a public client (see [OAuth](#oauth)). Connect again; if it keeps failing, the cloud app's server or document is the problem. |
 | A cloud agent's changes are always declined | The client is set to **Ask me first** and nobody was at the Mac within 45 seconds. See [Cloud agents and Ask before changes](#cloud-agents-and-ask-before-changes). |
 
@@ -583,7 +583,7 @@ Checks run in this order, and the first failure answers: path, `Host`, `Origin`,
 | Current protocol: `MCP-Protocol-Version`, `Mcp-Method` or `Mcp-Name` doesn't match | 400 | `-32020` |
 | Unsupported protocol version | 400 | `-32022` with `data.supported` |
 | Current-protocol `_meta` missing | 400 | `-32602` |
-| No token, or one the app didn't issue | 401 | `-32001`, `WWW-Authenticate: Bearer realm="EventKit Bridge"` |
+| No token, or one the app didn't issue | 401 | `-32001`, `WWW-Authenticate: Bearer realm="EK Bridge"` |
 | `Origin` present (web pages) | 403 | `-32600`, no `id` |
 | Tunnel forwarding headers (`Tailscale-Funnel-Request`, `CF-Connecting-IP`, `CF-Ray`, `X-Forwarded-Host`) | 403 | `-32600`, no `id` |
 | Path isn't `/mcp` | 404 | text |
@@ -626,7 +626,7 @@ The discovery documents put the resource or issuer path after the well-known nam
 | `Host` isn't the **Address** host (also with `:443`, or with the address's port if it has one), `127.0.0.1:<port>` or `localhost:<port>` | 421 | none, connection closed |
 | `Origin` present on `/mcp` | 403 | `-32600`, no `id` |
 | Wrong method on `/mcp` or an OAuth route | 405 | none, `Allow` |
-| No credential; a local token; a token the app didn't issue or that expired; an OAuth token for another URL; a client without cloud access | 401 | `-32001`, `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/r/<secret>/mcp", scope="calendar"` (before **Address** is set: `Bearer realm="EventKit Bridge"`) |
+| No credential; a local token; a token the app didn't issue or that expired; an OAuth token for another URL; a client without cloud access | 401 | `-32001`, `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/r/<secret>/mcp", scope="calendar"` (before **Address** is set: `Bearer realm="EK Bridge"`) |
 | More than 30 failed authentications a minute from one forwarded address | 429 | none, `Retry-After`, connection closed; only for requests without a valid credential |
 
 Other statuses on `/mcp` are as on the local port. Tunnel forwarding headers are accepted here. They're never used for authorization, because anything on the Mac can send them: the caller's address, for the lockout and Activity, is the last `X-Forwarded-For` entry (the one the tunnel appended), else `CF-Connecting-IP`, else "unknown". The tunnel shown in Activity is guessed from `Tailscale-Funnel-Request`, `CF-Ray`, or an ngrok domain in `X-Forwarded-Host`. No route answers CORS.

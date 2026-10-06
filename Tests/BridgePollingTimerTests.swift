@@ -4,7 +4,7 @@ import Foundation
 @main
 struct BridgePollingTimerTests {
     static func main() {
-        let modeName = "EventKitBridgeTestTracking"
+        let modeName = "EKBridgeTestTracking"
         let cfModeName = CFStringCreateWithCString(
             nil, modeName, CFStringBuiltInEncodings.UTF8.rawValue)!
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(rawValue: cfModeName))

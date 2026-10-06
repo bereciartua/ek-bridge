@@ -270,7 +270,7 @@ struct CommandLineConnect: View {
                             .fixedSize(horizontal: false, vertical: true)
                         Text(model.commandLineTool == .installed
                              ? String(localized: "Run it in Terminal.")
-                             : String(localized: "Run it in Terminal, in the eventkit-bridge folder, or install the command-line tool from Settings ▸ Developer."))
+                             : String(localized: "Run it in Terminal, in the ek-bridge folder, or install the command-line tool from Settings ▸ Developer."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -114,7 +114,7 @@ enum SyntheticTestMode {
               !clients.contains(where: { !$0.revoked && $0.name == clientName }),
               UserDefaults.standard.string(forKey: clientIDKey) == nil,
               !FileManager.default.fileExists(atPath:
-                "/tmp/eventkit-bridge-\(getuid())/current.json") else {
+                AppIdentity.bridgeRoot + "/current.json") else {
             report("setup_requires_stopped_bridge_and_no_test_client"); return
         }
         let collections = TestCollections(store: EKEventStore())
@@ -161,7 +161,7 @@ enum SyntheticTestMode {
     private static func cleanup() {
         let collections = TestCollections(store: EKEventStore())
         guard !FileManager.default.fileExists(atPath:
-            "/tmp/eventkit-bridge-\(getuid())/current.json") else {
+            AppIdentity.bridgeRoot + "/current.json") else {
             report("stop_bridge_before_cleanup"); return
         }
         guard let id = UserDefaults.standard.string(forKey: clientIDKey),

@@ -14,7 +14,7 @@ Brackets denote an optional argument; omit them when invoking it. Choose the key
 - `--client NAME|ID` uses the app-managed key file for that client. An ID maps straight to `client-credentials/<id>.json`. A name is looked up, ignoring case and surrounding spaces, among active clients in `client-registry.json`; the client reads only IDs, names and revoked flags from it. Clients can be renamed, so scripts meant to last should use the ID or `--credentials-file`.
 - `--credentials-file PATH` uses that key file.
 
-`--params-file` must contain a JSON object under 30 KB. `--params-file -` reads it from stdin, which avoids a temporary file without putting parameters in argv. Key, parameter and registry files must be regular files owned by the current user with no group/other permissions; the client refuses unsafe files and symbolic links. The app must be running with its bridge enabled, the client must be enrolled, and macOS Full Access must be available for item operations. `--help` lists every command with the access it needs; `COMMAND --help` also lists its required and optional parameter keys. `client.py` runs `EVENTKIT_CLIENT_BINARY` when it's set, else `build/bridge-client`, else the copy inside `EventKitBridge.app` in `/Applications` or `~/Applications`; it exits with code 4 if there's none.
+`--params-file` must contain a JSON object under 30 KB. `--params-file -` reads it from stdin, which avoids a temporary file without putting parameters in argv. Key, parameter and registry files must be regular files owned by the current user with no group/other permissions; the client refuses unsafe files and symbolic links. The app must be running with its bridge enabled, the client must be enrolled, and macOS Full Access must be available for item operations. `--help` lists every command with the access it needs; `COMMAND --help` also lists its required and optional parameter keys. `client.py` runs `EVENTKIT_CLIENT_BINARY` when it's set, else `build/bridge-client`, else the copy inside `EKBridge.app` in `/Applications` or `~/Applications`; it exits with code 4 if there's none.
 
 The response envelope is `{"version":2,"id":"…","ok":true,"result":{…}}` or `{"version":2,"id":"…","ok":false,"error":"code"}`. The client prints potentially private item titles and IDs; handle stdout accordingly. Reads wait up to 10 seconds and writes up to 60 seconds. A timeout is **not** proof that a write failed: read current state and reconcile before trying anything new.
 
@@ -25,7 +25,7 @@ Only the response JSON goes to stdout. Errors go to stderr as `error: …`, some
 | 0 | ok | none |
 | 1 | request denied or failed; JSON on stdout | `hint: Grant it in the client's Access, only if the tool should be able to do this.` |
 | 2 | usage error | `error: unknown command "read_reminder". Did you mean read_reminders?`, `error: params must be a JSON object under 30 KB.`, `error: no active client named "…". Clients: …` |
-| 3 | bridge unavailable | `error: EventKit Bridge isn't running, or the bridge is off. Turn it on from the menu bar.`, `error: the bridge session changed. Run the command again.` |
+| 3 | bridge unavailable | `error: EK Bridge isn't running, or the bridge is off. Turn it on from the menu bar.`, `error: the bridge session changed. Run the command again.` |
 | 4 | missing or unsafe local file | `error: key file not found: …`, `error: … can be read by other users (mode 644).` |
 | 5 | no response in time | `error: no response after 60 s. The write may still have happened.` |
 
@@ -207,7 +207,7 @@ Use an **empty temporary reminder list you created**, grant a disposable client 
 
 ```sh
 export EKB_TEST_LIST_ID='<ID of your empty temporary reminder list>'
-export EKB_CREDENTIAL_FILE="$HOME/Library/Application Support/EventKitBridge/client-credentials/<lowercase client UUID>.json"
+export EKB_CREDENTIAL_FILE="$HOME/Library/Application Support/EKBridge/client-credentials/<lowercase client UUID>.json"
 umask 077
 EKB_PARAMS_FILE=$(mktemp /tmp/eventkit-create.XXXXXX)
 export EKB_PARAMS_FILE
@@ -216,7 +216,7 @@ import json, os, time, uuid
 with open(os.environ['EKB_PARAMS_FILE'], 'w') as output:
     json.dump({
         'listID': os.environ['EKB_TEST_LIST_ID'],
-        'title': 'EventKit Bridge synthetic test',
+        'title': 'EK Bridge synthetic test',
         'idempotencyKey': f'ekb3_{int(time.time())}_{uuid.uuid4()}',
     }, output)
 PY

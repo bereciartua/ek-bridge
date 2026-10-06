@@ -1,4 +1,4 @@
 {
   "$isError" : true,
-  "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EventKit Bridge. Don't retry. (code: forbidden)"
+  "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)"
 }

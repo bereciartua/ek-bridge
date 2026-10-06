@@ -49,7 +49,7 @@ final class ClientCredentialFiles {
     init(parent override: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
-        parent = override ?? support.appendingPathComponent("EventKitBridge", isDirectory: true)
+        parent = override ?? AppIdentity.dataFolder(inSupport: support)
         directory = parent.appendingPathComponent("client-credentials", isDirectory: true)
     }
 

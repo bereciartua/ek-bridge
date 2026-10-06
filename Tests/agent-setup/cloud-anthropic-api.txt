@@ -8,10 +8,10 @@ curl "https://api.anthropic.com/v1/messages" \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "anthropic-beta: mcp-client-2025-11-20" \
-  -d '{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":"What is on my calendar today?"}],"mcp_servers":[{"type":"url","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","name":"eventkit-bridge","authorization_token":"'"$EVENTKIT_BRIDGE_REMOTE_TOKEN"'"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"eventkit-bridge"}]}'
+  -d '{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":"What is on my calendar today?"}],"mcp_servers":[{"type":"url","url":"https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp","name":"ek-bridge","authorization_token":"'"$EK_BRIDGE_REMOTE_TOKEN"'"}],"tools":[{"type":"mcp_toolset","mcp_server_name":"ek-bridge"}]}'
 
 steps:
-1. In Terminal, set EVENTKIT_BRIDGE_REMOTE_TOKEN to the remote token (Copy Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
+1. In Terminal, set EK_BRIDGE_REMOTE_TOKEN to the remote token (Copy Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
 2. In your own code, send the same mcp_servers entry with each request and keep the anthropic-beta header.
 
 warnings:

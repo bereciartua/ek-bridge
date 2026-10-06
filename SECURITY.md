@@ -8,7 +8,7 @@ Only the latest release gets security fixes. Fixes ship as a new release and are
 
 ## Report a vulnerability
 
-Use GitHub's private vulnerability reporting: **Security ▸ Report a vulnerability** in this repository, or [open a draft advisory](https://github.com/bereciartua/eventkit-bridge/security/advisories/new) directly. Please don't open a public issue, discussion or pull request for a vulnerability.
+Use GitHub's private vulnerability reporting: **Security ▸ Report a vulnerability** in this repository, or [open a draft advisory](https://github.com/bereciartua/ek-bridge/security/advisories/new) directly. Please don't open a public issue, discussion or pull request for a vulnerability.
 
 Include the app version (Settings ▸ About), your macOS version, whether the Mac has Apple silicon or Intel, how the client connects (command line, local MCP agent, or Remote Access), and the steps to reproduce.
 

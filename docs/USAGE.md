@@ -1,6 +1,6 @@
 # Using the menu bar app
 
-The app runs in the current macOS user's graphical session. Its menu bar icon shows the bridge state: a calendar with a check mark when the bridge is on, a dimmed calendar when it's off, and an exclamation badge when something needs attention (macOS access missing for a type a client uses, client settings unreadable, the bridge failed to start, or the MCP server or Remote Access is on but couldn't start). A small globe next to it means Remote Access is on. The menu has a switch for the bridge, an **MCP server** line (port, off, or couldn't start; it opens Settings), while Remote Access is on a **Remote Access on · N cloud clients** line (it opens Settings) and **Turn Off Remote Access**, **N changes waiting for approval** while an agent waits for you, any problems with their fix, the three most recent requests, and **Open EventKit Bridge…** (⌘O) and **Settings…** (⌘,). With the bridge off, the menu says **Off · requests are refused**.
+The app runs in the current macOS user's graphical session. Its menu bar icon shows the bridge state: a calendar with a check mark when the bridge is on, a dimmed calendar when it's off, and an exclamation badge when something needs attention (macOS access missing for a type a client uses, client settings unreadable, the bridge failed to start, or the MCP server or Remote Access is on but couldn't start). A small globe next to it means Remote Access is on. The menu has a switch for the bridge, an **MCP server** line (port, off, or couldn't start; it opens Settings), while Remote Access is on a **Remote Access on · N cloud clients** line (it opens Settings) and **Turn Off Remote Access**, **N changes waiting for approval** while an agent waits for you, any problems with their fix, the three most recent requests, and **Open EK Bridge…** (⌘O) and **Settings…** (⌘,). With the bridge off, the menu says **Off · requests are refused**.
 
 Everything else is in one window with a sidebar: **Overview**, **Activity**, each **client**, and **Settings**. Overview's status card also shows the MCP server's state and, while it's on, Remote Access (*Remote Access · Reachable · my-mac.tail1234.ts.net*), and each client row has an **MCP**, **CLI** or **MCP + CLI** badge. The CLI runs locally on the same Mac; see [API and CLI](API.md). AI agents connect over MCP, and cloud agents through Remote Access; see [MCP](MCP.md). The app calls a grant **access** and a collection a **calendar** or **list**.
 
@@ -91,9 +91,9 @@ Activity stores the time, client ID, command, result, the target calendar or lis
 The app writes each client's key file, MCP token file and, for a client with cloud access, remote token file to the following paths, using the lower-case client UUID shown on its page:
 
 ```text
-~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json
-~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.mcp-token
-~/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.mcp-remote-token
+~/Library/Application Support/EKBridge/client-credentials/<client UUID>.json
+~/Library/Application Support/EKBridge/client-credentials/<client UUID>.mcp-token
+~/Library/Application Support/EKBridge/client-credentials/<client UUID>.mcp-remote-token
 ```
 
 The directory is mode 0700 and the files are mode 0600. The key file contains the client UUID and an `ekb_v1_` signing seed; the token file contains only the `ekb_mcp_v1_` token, and the remote token file only the `ekb_mcpr_v1_` token. Connected cloud apps are kept in `remote-connections.json` in the same data folder, as hashes only. The app stores only the matching public verifier and token hash, client names, access, revision, Ask before changes setting, and bounded activity history in `client-registry.json`. Agents use the token file through the launcher or their own config; don't paste the token anywhere else. Pass the client's name or ID (`--client`) or the **file path** (`--credentials-file`) to `client.py`; never paste the seed into a command, chat, issue, screenshot, or repository. Anyone with the file and access to this macOS user account can sign requests within its current access.
@@ -119,7 +119,7 @@ python3 client.py scope_status --client "<client name>"
 
 ```sh
 python3 client.py scope_status \
-  --credentials-file "$HOME/Library/Application Support/EventKitBridge/client-credentials/<client UUID>.json"
+  --credentials-file "$HOME/Library/Application Support/EKBridge/client-credentials/<client UUID>.json"
 ```
 
 `scope_status` returns the client's saved grants. `authorization_status` returns macOS Calendar and Reminders access. To read at most one reminder from a granted test list, pass the parameters on stdin so they need no temporary file:
