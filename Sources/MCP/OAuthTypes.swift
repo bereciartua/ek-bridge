@@ -22,6 +22,20 @@ enum CIMDError: Error, Equatable {
     case httpStatus(Int)
     case invalidDocument(String)
     case network(String)
+
+    /// One sentence for the browser page. Network details stay out of it.
+    var reason: String {
+        switch self {
+        case .invalidURL: return "Its client ID isn’t an https URL with a host name and a path."
+        case .blockedAddress: return "Its host name doesn’t resolve to a public internet address."
+        case .timedOut: return "Its server didn’t answer within 5 seconds."
+        case .tooLarge: return "The document is larger than 16 KB."
+        case .redirected: return "Its server answered with a redirect, which isn’t followed."
+        case .httpStatus(let status): return "Its server answered with HTTP status \(status)."
+        case .invalidDocument(let why): return "The document isn’t valid: \(why)."
+        case .network: return "Its server couldn’t be reached."
+        }
+    }
 }
 
 /// Fetches client metadata documents. The app's fetcher is the first

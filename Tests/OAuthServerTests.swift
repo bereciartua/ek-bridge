@@ -305,6 +305,7 @@ struct OAuthServerTests {
         let failed = h.authorize(clientID: "https://unreachable.example/client.json",
                                  redirect: "https://unreachable.example/cb")
         precondition(failed.status == 502 && header(failed, "location") == nil)
+        precondition(text(failed).contains("Its server answered with HTTP status 404."), text(failed))
         let unknownClient = h.authorize(clientID: "dcr_unknown")
         precondition(unknownClient.status == 400 && header(unknownClient, "location") == nil)
         let missing = h.authorize(omit: ["redirect_uri"])
