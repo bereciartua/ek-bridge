@@ -325,10 +325,10 @@ final class OAuthServer {
                     reply(OAuthPages.error(400, title: "Unknown app",
                                            message: "The app’s metadata document names a different "
                                                + "client_id than the URL it was fetched from."))
-                case .failure:
+                case .failure(let error):
                     reply(OAuthPages.error(502, title: "Couldn’t read the app’s details",
-                                           message: "\(AppIdentity.displayName) couldn’t fetch the app’s "
-                                               + "metadata document. Try connecting again."))
+                                           message: "\(AppIdentity.displayName) couldn’t use the app’s "
+                                               + "metadata document. \(error.reason) Try connecting again."))
                 }
             }
             return

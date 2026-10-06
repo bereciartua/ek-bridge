@@ -305,8 +305,10 @@ final class CIMDFetcher: CIMDFetching {
 
     // MARK: - Document
 
-    /// Validates per the CIMD draft. We only support public clients, so the only accepted
-    /// `token_endpoint_auth_method` is `none` (or none given).
+    /// Validates per the CIMD draft. We only support public clients, so the client must allow `none`:
+    /// as its `token_endpoint_auth_method`, in `token_endpoint_auth_methods_supported`, or by giving
+    /// neither. ChatGPT's document prefers `private_key_jwt` but lists `none` as supported, and picks
+    /// a method our metadata advertises (`["none"]`).
     nonisolated static func parseDocument(_ body: Data,
                                           expectedClientID: String) -> Result<ClientMetadata, CIMDError> {
         func invalid(_ why: String) -> Result<ClientMetadata, CIMDError> { .failure(.invalidDocument(why)) }
@@ -321,7 +323,10 @@ final class CIMDFetcher: CIMDFetching {
         for key in ["client_secret", "client_secret_expires_at"] where doc[key] != nil {
             return invalid("\(key) isn't allowed")
         }
-        if let method = doc["token_endpoint_auth_method"], (method as? String) != "none" {
+        let method = doc["token_endpoint_auth_method"], methods = doc["token_endpoint_auth_methods_supported"]
+        let allowsNone = (method as? String) == "none"
+            || (methods as? [Any])?.contains(where: { ($0 as? String) == "none" }) == true
+        if (method != nil || methods != nil) && !allowsNone {
             return invalid("only public clients are supported")
         }
         if let keys = (doc["jwks"] as? [String: Any])?["keys"] as? [[String: Any]],

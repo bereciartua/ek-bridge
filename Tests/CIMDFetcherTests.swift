@@ -250,6 +250,30 @@ struct CIMDFetcherTests {
             with(["client_name": "  ", "client_uri": "javascript:alert(1)"]), expectedClientID: docID)
         precondition(blankName == minimal, "\(blankName)")
 
+        // A client that prefers another method but supports `none` is public to us. ChatGPT's
+        // document as served in October 2026:
+        let chatGPTID = "https://chatgpt.com/oauth/client.json"
+        let chatGPT = CIMDFetcher.parseDocument(Data(#"""
+            {"client_id":"https://chatgpt.com/oauth/client.json","client_uri":"https://chatgpt.com/",\#
+            "redirect_uris":["https://chatgpt.com/connector_platform_oauth_redirect"],\#
+            "token_endpoint_auth_method":"private_key_jwt",\#
+            "token_endpoint_auth_methods_supported":["none","private_key_jwt"],\#
+            "grant_types":["authorization_code","refresh_token"],"response_types":["code"],\#
+            "client_name":"ChatGPT","logo_uri":"https://persistent.oaistatic.com/sonic/misc/openai-logo.png",\#
+            "token_endpoint_auth_signing_alg":"RS256","jwks_uri":"https://chatgpt.com/oauth/jwks.json"}
+            """#.utf8), expectedClientID: chatGPTID)
+        precondition(chatGPT == .success(ClientMetadata(
+            clientID: chatGPTID, clientName: "ChatGPT",
+            redirectURIs: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+            clientURI: "https://chatgpt.com/")), "\(chatGPT)")
+        for fields: [String: Any?] in [
+            ["token_endpoint_auth_methods_supported": ["private_key_jwt", "none"]],
+            ["token_endpoint_auth_method": "none", "token_endpoint_auth_methods_supported": ["private_key_jwt"]],
+        ] {
+            let parsed = CIMDFetcher.parseDocument(with(fields), expectedClientID: docID)
+            precondition(parsed == minimal, "\(fields): \(parsed)")
+        }
+
         let nfd = "https://app.example/cafe\u{301}"
         let bad: [(Data, String)] = [
             (Data("nope".utf8), "not JSON"), (Data("[]".utf8), "array"), (Data("\"x\"".utf8), "string"),
@@ -274,6 +298,14 @@ struct CIMDFetcherTests {
             (with(["token_endpoint_auth_method": "private_key_jwt"]), "private key jwt"),
             (with(["token_endpoint_auth_method": NSNull()]), "null method"),
             (with(["token_endpoint_auth_method": 1]), "numeric method"),
+            (with(["token_endpoint_auth_method": "private_key_jwt",
+                   "token_endpoint_auth_methods_supported": ["private_key_jwt"]]), "no none supported"),
+            (with(["token_endpoint_auth_methods_supported": ["private_key_jwt"]]), "only jwt supported"),
+            (with(["token_endpoint_auth_methods_supported": []]), "empty supported list"),
+            (with(["token_endpoint_auth_methods_supported": "none"]), "string supported list"),
+            (with(["token_endpoint_auth_method": "private_key_jwt",
+                   "token_endpoint_auth_methods_supported": "none"]), "jwt with string supported list"),
+            (with(["token_endpoint_auth_methods_supported": NSNull()]), "null supported list"),
             (with(["jwks": ["keys": [["kty": "EC", "d": "secret"]]]]), "private key"),
             (with(["client_name": 5]), "numeric name"), (with(["client_name": NSNull()]), "null name"),
             (with(["client_name": ["App"]]), "array name"),
@@ -289,7 +321,7 @@ struct CIMDFetcherTests {
             document(["client_id": nfd, "redirect_uris": ["https://a/cb"]]),
             expectedClientID: "https://app.example/caf\u{e9}")
         guard case .failure(.invalidDocument) = composed else { preconditionFailure("NFD matched NFC") }
-        return bad.count + 4
+        return bad.count + 7
     }
 
     // MARK: - Live fixture
