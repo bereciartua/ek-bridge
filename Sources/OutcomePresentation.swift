@@ -95,6 +95,10 @@ struct OutcomePresentation: Equatable {
                 label: String(localized: "Bridge was off"), tone: .neutral,
                 why: String(localized: "The bridge was off, so the request was refused."),
                 fix: String(localized: "Turn on the bridge if you want this tool to work."))),
+            ("client_paused", Entry(
+                label: String(localized: "Client was paused"), tone: .neutral,
+                why: String(localized: "This client is paused, so the request was refused. Its keys and access are kept."),
+                fix: String(localized: "Resume the client on its page if you want this tool to work again."))),
             ("rate_limited", Entry(
                 label: String(localized: "Too many requests"), tone: .warn,
                 why: String(localized: "This client sent requests faster than the bridge allows."),

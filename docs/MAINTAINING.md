@@ -69,6 +69,10 @@ git diff Tests/agent-setup Tests/mcp-fixtures
 
 Then update the snippets in [MCP](MCP.md#set-up-your-agent) and [Use from cloud agents](MCP.md#use-from-cloud-agents) to match the agent setup, cloud and tunnel goldens. `tools.json` is never rewritten by a test: edit it by hand, since agents see it.
 
+## Upgrading to 0.7.0
+
+App 0.7.0 adds **Pause Client** and **Resume Client**: a paused client keeps every credential, grant and setting, and every request from it is refused with the new outcome code `client_paused` (in `OutcomePresentation` and `AgentOutcomeText`; Activity shows **Client was paused**). The client registry stays at **version 4**: clients gain the optional `paused` and `pausedAt` fields, and no backup is written. **Rolling back to 0.6.0** keeps working but ignores the fields: paused clients are active again, and the old build's next write drops the fields for good. Resume or revoke paused clients before rolling back if that matters. Callers see `client_paused` only while a client is paused; scripts that treat any `ok:false` as a failure need no change.
+
 ## Upgrading to 0.6.0
 
 App 0.6.0 adds every EventKit field on events and reminders (plan 03). The client registry stays at **version 4** and no grant actions were added; `get_event` and `get_reminder` need Read, and a move needs Edit on the source and Create on the destination. What changes for callers:

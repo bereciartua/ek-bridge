@@ -1037,6 +1037,8 @@ enum SetupCheck {
                 if result["isError"] as? Bool == true {
                     if text.contains("(code: bridge_off)") {
                         warn("the bridge is off: tool calls will be refused until it's turned on")
+                    } else if text.contains("(code: client_paused)") {
+                        warn("this client is paused: tool calls will be refused until it's resumed in \(app)")
                     } else {
                         warn("list_collections failed: \(text)")
                     }

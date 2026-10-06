@@ -108,7 +108,7 @@ final class ApprovalCenter: ApprovalGate {
         resolve(id, .denied)
     }
 
-    /// Revoke, a grant change, or the client's approval mode changing.
+    /// Revoke, pause, a grant change, or the client's approval mode changing.
     func withdraw(clientID: String) {
         windows[clientID] = nil
         for item in pending where item.clientID == clientID { resolve(item.id, .withdrawn) }

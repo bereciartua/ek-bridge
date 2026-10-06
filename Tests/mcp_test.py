@@ -746,6 +746,20 @@ def run_writes(h):
     h.control(cmd="bridge", on=True)
     _, body = c.call("list_collections", {})
     check("recovers without reconnect", body["result"]["isError"] is False, body)
+    # Paused client: its token still authenticates and lists tools, but every
+    # call is refused and recorded; resuming needs no reconnect or new token.
+    check("pause", h.control(cmd="pause", client="full", on=True)["ok"] is True)
+    _, body = c.call("list_collections", {})
+    check("client_paused text", body["result"]["isError"] is True and
+          text_of(body["result"]).endswith("(code: client_paused)") and
+          "paused" in text_of(body["result"]), body)
+    _, _, body, _ = c.legacy("tools/list")
+    check("list while paused", "result" in body and body["result"]["tools"], body)
+    row = h.activity()[0]
+    check("client_paused recorded", row["outcome"] == "error:client_paused" and row["via"] == "mcp", row)
+    check("resume", h.control(cmd="pause", client="full", on=False)["ok"] is True)
+    _, body = c.call("list_collections", {})
+    check("resumes without reconnect", body["result"]["isError"] is False, body)
     # A grant change applies to the next call; revoke → unauthorized at HTTP level.
     reader = Client(h, h.token("reader"))
     reader.call("list_collections", {})
@@ -1008,6 +1022,15 @@ def run_remote(h, catalog):
     check("remote read", status == 200 and body["result"]["isError"] is False, body)
     row = h.activity()[0]
     check("activity via remote", row["via"] == "remote" and row["outcome"] == "success", row)
+    # Pausing refuses remote calls too, without touching the remote token.
+    h.control(cmd="pause", client="cloud", on=True)
+    status, body = remote.call("list_collections", {})
+    check("remote paused", status == 200 and "client_paused" in text_of(body["result"]), body)
+    check("remote paused row", h.activity()[0]["via"] == "remote" and
+          h.activity()[0]["outcome"] == "error:client_paused", h.activity()[0])
+    h.control(cmd="pause", client="cloud", on=False)
+    status, body = remote.call("list_collections", {})
+    check("remote resumed", status == 200 and body["result"]["isError"] is False, body)
 
     # Cloud access off: the remote token stops working at once.
     h.control(cmd="set_cloud", client="cloud", on=False)

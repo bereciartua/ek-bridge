@@ -15,6 +15,9 @@ struct ClientDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 26) {
                         ClientHeader(model: model, client: client)
+                        if client.paused {
+                            PausedNotice(model: model, client: client)
+                        }
                         ConnectSection(model: model, client: client)
                         if model.remoteEnabled || client.cloudAccess {
                             CloudSection(model: model, client: client)
@@ -60,7 +63,12 @@ struct ClientHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                PaneTitle(title: client.name)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    PaneTitle(title: client.name)
+                    if client.paused {
+                        Pill(label: String(localized: "Paused"), tone: .neutral)
+                    }
+                }
                 Text(subtitle).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
@@ -86,6 +94,40 @@ struct ClientHeader: View {
             .map { String(localized: "Last request \(RelativeTime.ago($0, now: model.now).lowercased())") }
             ?? String(localized: "No requests yet")
         return "\(last) · \(AccessSummary.counts(client.grants))"
+    }
+}
+
+/// Shown at the top of a paused client's page: what pausing means, and the
+/// way back.
+struct PausedNotice: View {
+    let model: BridgeAppModel
+    let client: ClientView
+
+    var body: some View {
+        Card {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "pause.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.body.weight(.semibold))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).bold()
+                    Text(String(localized: "Every request from it is refused and shows in Activity as Client was paused. Its keys, tokens, access and cloud connections are kept, so it works again as soon as you resume it."))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Button(String(localized: "Resume")) { model.setPaused(client.id, false) }
+                    .help(String(localized: "Let this client's requests through again"))
+            }
+            .padding(16)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var title: String {
+        guard let pausedAt = client.pausedAt else { return String(localized: "This client is paused.") }
+        return String(localized: "Paused since \(pausedAt.formatted(date: .abbreviated, time: .shortened)).")
     }
 }
 
@@ -128,6 +170,11 @@ enum ClientMenu {
         }
         items += [
             .separator,
+            client.paused
+                ? .init(title: String(localized: "Resume Client"), systemImage: "play.circle",
+                        action: { model.setPaused(client.id, false) })
+                : .init(title: String(localized: "Pause Client"), systemImage: "pause.circle",
+                        action: { model.setPaused(client.id, true) }),
             .init(title: String(localized: "Revoke Client…"), destructive: true,
                   action: { model.revokeClient(client.id) }),
         ]

@@ -328,6 +328,10 @@ final class UIReview {
                 _ = credentialFiles.saveNew(clientID: id, token: value)
             }
             if let approval { record["approval"] = approval }
+            if id == Self.obsidianID {
+                record["paused"] = true
+                record["pausedAt"] = now.addingTimeInterval(-600).timeIntervalSinceReferenceDate
+            }
             clients.append(record)
         }
         if CommandLine.arguments.contains("--ui-max-clients") {
@@ -377,6 +381,7 @@ final class UIReview {
             (-200, Self.briefingID, "read_reminders", "success", "list-reminders"),
             (-150, Self.claudeID, "create_reminder", "success", "list-errands"),
             (-120, Self.claudeID, "read_events", "success", "cal-work"),
+            (-90, Self.obsidianID, "read_events", "error:client_paused", "cal-work"),
         ]
         var activity = [[String: Any]]()
         for (offset, client, command, outcome, target) in script {
@@ -394,7 +399,8 @@ final class UIReview {
             }
             if outcome == "error:approval_denied" { row["approval"] = "denied" }
             if (outcome == "success" || outcome.hasPrefix("error:")) &&
-                outcome != "error:bridge_off" && outcome != "error:rate_limited" {
+                outcome != "error:bridge_off" && outcome != "error:rate_limited" &&
+                outcome != "error:client_paused" {
                 var accepted = row
                 accepted["approval"] = nil
                 accepted["at"] = at - 0.2
@@ -745,6 +751,21 @@ final class BehaviorReview {
                 self.model.keyFileStatus(created.id) == .missing && created.approval == .ask &&
                 self.model.createClient(name: "shortcuts") == .duplicate("Shortcuts")
         }
+        step("pause and resume keep everything") {
+            guard let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }
+            self.model.setPaused(created.id, true)
+            guard let paused = self.model.client(created.id), paused.paused, paused.pausedAt != nil,
+                  self.window.attachedSheet == nil, self.model.banner?.kind == .success,
+                  self.model.activeClients.contains(where: { $0.id == created.id }),
+                  self.model.tokenFileStatus(created.id) == .present,
+                  ClientMenu.items(model: self.model, client: paused).contains(where: { $0.title == "Resume Client" })
+            else { return false }
+            self.model.setPaused(created.id, false)
+            guard let resumed = self.model.client(created.id) else { return false }
+            return !resumed.paused && resumed.pausedAt == nil && resumed.approval == created.approval &&
+                self.model.tokenFileStatus(created.id) == .present &&
+                ClientMenu.items(model: self.model, client: resumed).contains(where: { $0.title == "Pause Client" })
+        }
         step("revoke asks first") {
             guard let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }
             self.model.revokeClient(created.id)
@@ -1049,6 +1070,10 @@ final class SnapshotReview {
             step("client-readonly-warning") {
                 self.model.accessTab[UIReview.claudeID] = .calendar
                 self.model.navigate(to: .client(UIReview.briefingID))
+                return main
+            }
+            step("client-paused") {
+                self.model.navigate(to: .client(UIReview.obsidianID))
                 return main
             }
             step("activity") {

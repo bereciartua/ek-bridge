@@ -85,6 +85,10 @@ enum AgentOutcomeText {
         case "bridge_off":
             return ("Bridge off", "\(app) is turned off. Ask the user to turn it on from the "
                 + "menu bar; don't retry until they do.")
+        case "client_paused":
+            return ("Paused", "the user paused this agent's access in \(app). Its access isn't "
+                + "removed; ask the user to resume this client if they want you to continue, and "
+                + "don't retry until they do.")
         case "full_access_required":
             return ("Needs Full Access", "macOS isn't giving \(app) Full Access to \(c.access). "
                 + "Ask the user to allow it in System Settings ▸ Privacy & Security; "

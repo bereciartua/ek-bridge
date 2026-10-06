@@ -121,10 +121,15 @@ struct BridgeStatusCard: View {
     private var subtitle: String {
         switch model.bridge {
         case .on:
-            let count = model.activeClients.count
-            return count == 1
+            let count = model.activeClients.count - model.pausedCount
+            let text = count == 1
                 ? String(localized: "1 client can use the access you've granted. Requests stay on this Mac.")
                 : String(localized: "\(count) clients can use the access you've granted. Requests stay on this Mac.")
+            switch model.pausedCount {
+            case 0: return text
+            case 1: return text + " " + String(localized: "1 is paused.")
+            default: return text + " " + String(localized: "\(model.pausedCount) are paused.")
+            }
         case .off:
             return String(localized: "Requests are refused. Clients keep their access.")
         case .failed(let reason):
@@ -208,6 +213,7 @@ struct OverviewClientRow: View {
     var body: some View {
         HStack(spacing: 12) {
             AvatarView(name: client.name, id: client.id, size: 34)
+                .opacity(client.paused ? 0.5 : 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.name).font(.body.weight(.medium)).lineLimit(1)
                 HStack(spacing: 6) {
@@ -224,6 +230,9 @@ struct OverviewClientRow: View {
                 }
             }
             Spacer(minLength: 12)
+            if client.paused {
+                Pill(label: String(localized: "Paused"), tone: .neutral)
+            }
             Text(model.lastRequest(for: client.id).map { RelativeTime.ago($0, now: model.now) }
                  ?? String(localized: "No requests yet"))
                 .foregroundStyle(.secondary)
