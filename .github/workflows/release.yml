@@ -60,6 +60,7 @@ jobs:
           keychain="$RUNNER_TEMP/release.keychain-db"
           keychain_password=$(openssl rand -base64 24)
           security create-keychain -p "$keychain_password" "$keychain"
+          echo "RELEASE_KEYCHAIN=$keychain" >> "$GITHUB_ENV" # so the last step deletes it even after a failure below
           security set-keychain-settings -lut 5400 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
@@ -73,7 +74,6 @@ jobs:
             | grep -o '"Developer ID Application: [^"]*"' | tr -d '"' | head -n 1)
           [ -n "$identity" ] || { echo "No Developer ID Application identity in the certificate" >&2; exit 1; }
           echo "EVENTKIT_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-          echo "RELEASE_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
 
       - name: Write the notary and Sparkle keys
         env:
