@@ -1212,6 +1212,12 @@ final class BridgeAppModel {
         if !on { developerOutput = nil }
     }
 
+    /// Only the install location gates Start at login. A copy that has never
+    /// been registered (every first install, and the first launch under a new
+    /// bundle ID) reports `.notFound`, not `.notRegistered`, and `register()`
+    /// works from there; a real failure shows as the row's error.
+    var canChangeStartAtLogin: Bool { isInstalledInApplications }
+
     func setStartAtLogin(_ on: Bool) {
         loginItemError = nil
         do {

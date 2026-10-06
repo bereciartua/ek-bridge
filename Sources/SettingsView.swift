@@ -47,7 +47,7 @@ struct SettingsView: View {
                                          set: { model.setStartAtLogin($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()
-                        .disabled(!model.isInstalledInApplications || model.loginItem == .notFound)
+                        .disabled(!model.canChangeStartAtLogin)
                 }
                 if !model.isInstalledInApplications {
                     RowDivider()

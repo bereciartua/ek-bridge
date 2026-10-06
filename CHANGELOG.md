@@ -32,6 +32,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - `client.py` uses `EVENTKIT_CLIENT_BINARY` when set, else `build/bridge-client`, else the installed app's copy in `/Applications` or `~/Applications`. Run directly, the client's help and errors call it `bridge-client`.
 - The README starts with installing, and has Privacy and Uninstall sections.
 
+### Fixed
+
+- **Start at login** could not be turned on in a copy that had never been registered as a login item, such as every first install and the first launch after the rename: macOS reports that state as "not found", which disabled the switch. Only the install location disables it now.
+
 ### Removed
 
 - `Candidate/`, the signed XPC design that was never used, and its test. It stays in the git history. The OpenAI tunnel spike note moved to `docs/history/`.
