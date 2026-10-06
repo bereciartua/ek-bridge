@@ -408,6 +408,7 @@ PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/cli
     "$project_dir/build/bridge-client-test"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/check_version_test.py"
+PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/release_test.py"
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \

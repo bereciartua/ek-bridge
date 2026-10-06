@@ -10,6 +10,8 @@ Most people install a release. Building from source is for contributors, or for 
 
 The app needs macOS 14 or later, on Apple silicon or Intel. Releases are signed with a Developer ID and notarized by Apple. Replacing the app with a newer release at the same path keeps its Calendar and Reminders access, clients and agent setups.
 
+To verify a download, compare its SHA-256 with the release's `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS` in the folder with the download), and, for releases built by the release workflow, check its provenance with the GitHub CLI: `gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`.
+
 ### Upgrading from EventKit Bridge (0.7.0 or earlier)
 
 The app used to be called EventKit Bridge (`EventKitBridge.app`). The renamed app has a new bundle ID, so macOS treats it as a different app. Once:

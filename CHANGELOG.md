@@ -22,12 +22,14 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - The command-line client ships inside the app at `Contents/MacOS/bridge-client`, signed with it. **Settings ▸ Developer ▸ Install Command-Line Tool** links it into `~/.local/bin` (no administrator password), and the app's copied commands then start with `bridge-client` instead of `python3 client.py`.
 - Universal builds: `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds the app, `bridge-mcp` and `bridge-client` for Apple silicon and Intel.
 - Continuous integration on pull requests and `main` (`sh test.sh` and a universal `sh build.sh`), and `scripts/check_bundle.sh` and `scripts/check_version.sh` for releases.
+- The release pipeline ([Maintaining](docs/MAINTAINING.md#releasing)): `release.sh` runs the tests, builds the universal app signed with a Developer ID and a secure timestamp, notarizes and staples the app and a DMG, builds the zip Sparkle will install from, writes `SHA256SUMS` and, given a Sparkle key, `appcast.xml`, and creates a draft GitHub release with notes from this changelog. `.github/workflows/release.yml` runs it on a `v*` tag in the protected `release` environment with build attestations. `scripts/check_notarized.sh` checks Gatekeeper's verdict and the staple; `Tests/release_test.py` covers the tools and the script's refusals.
 
 ### Changed
 
 - Renamed to EK Bridge, as above. The MCP `_meta` key that names the client is `io.github.bereciartua.ekbridge/client`, and the CIMD fetch's User-Agent is `EKBridge/<version>`. Synthetic probe collections are named "EK Bridge …". The `ekb_*` and `ekb3_` prefixes and the `EVENTKIT_*` build variables are unchanged.
 - `build.sh` and `test.sh` use the SDK `xcrun` selects, or `EVENTKIT_SDK`, instead of a fixed path. With Command Line Tools alone they use the macOS 26 SDK, because SwiftUI's macros in the macOS 27 SDK need Xcode.
 - `bridge-client` is built for macOS 14 like the app. It used to be built for the macOS version of the Mac that built it.
+- `build.sh` requests a secure timestamp when signing with a real identity (notarization requires one); ad hoc builds are unchanged.
 - `build/bridge-client` is a link to the copy inside the built app.
 - `client.py` uses `EVENTKIT_CLIENT_BINARY` when set, else `build/bridge-client`, else the installed app's copy in `/Applications` or `~/Applications`. Run directly, the client's help and errors call it `bridge-client`.
 - The README starts with installing, and has Privacy and Uninstall sections.

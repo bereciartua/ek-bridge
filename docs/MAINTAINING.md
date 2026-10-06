@@ -30,14 +30,15 @@ This guide is for maintainers: where the code lives, how a change is made and re
 | `Sources/WriteJournal.swift`, `Sources/WriteIdempotencyKey.swift` | Pending write reservation, replay, expiry, reconciliation signals |
 | `Sources/Synthetic*.swift`, `Sources/TestCollections.swift` | Supervised synthetic test controls; most command routes compile only with `EVENTKIT_SYNTHETIC_TEST=1` |
 | `Sources/CommandLineTool.swift` | Settings ▸ Developer ▸ Install Command-Line Tool: links the bundled `bridge-client` into `~/.local/bin` |
-| `build.sh`, `scripts/sdk.sh`, `scripts/check_bundle.sh`, `scripts/check_version.sh` | The build (native or universal with `EVENTKIT_ARCHS`, signed inside out); the SDK choice shared with `test.sh`; the bundle layout check used by CI and releases; the release version check |
+| `build.sh`, `scripts/sdk.sh`, `scripts/check_bundle.sh`, `scripts/check_version.sh` | The build (native or universal with `EVENTKIT_ARCHS`, signed inside out, with a secure timestamp for a real identity); the SDK choice shared with `test.sh`; the bundle layout check used by CI and releases; the release version check |
+| `release.sh`, `scripts/check_notarized.sh`, `scripts/release_notes.py`, `scripts/appcast.py` | The release: tests, universal Developer ID build, notarization and stapling, DMG and zip, checksums, the Sparkle appcast and a draft GitHub release ([Releasing](#releasing)); Gatekeeper and staple checks; the CHANGELOG section as Markdown or HTML; the appcast writer |
 | `Tests/`, `test.sh`, `ui_test.sh`, `ui_snapshots.sh` | Offline policy/shape/CLI tests, the isolated GUI window and behavior tests, and PNG snapshots of every screen |
 | `Tests/mcp-fixtures/` | `tools.json` (the tool catalog contract, compared exactly), mapping goldens (`<tool>.<case>.args.json` → `.core.json`, `core-result.<case>.json` → `.structured.json`), agent error texts |
 | `Tests/agent-setup/` | One golden per agent × method, the source of the setups in [MCP](MCP.md#set-up-your-agent), plus `cloud-*.txt` per cloud agent and `tunnel-*.txt` per tunnel, the source of [Use from cloud agents](MCP.md#use-from-cloud-agents) |
 | `Tests/MCPServerHarness.swift`, `Tests/mcp_test.py`, `Tests/launcher_test.py` | The `-D EVENTKIT_MCP_TEST` server harness with fake EventKit and approvals (and the Remote Access listener and OAuth server, with control hooks for cloud access, pairing and nonces), and the Python suites that drive it over loopback and through `bridge-mcp` |
 | `Tests/OAuthServerTests.swift`, `Tests/CIMDFetcherTests.swift` | The OAuth server and store with a fake fetcher and clock; the CIMD fetcher's URL, address, response and document rules and a live HTTPS fixture on localhost (built with `-D EVENTKIT_MCP_TEST`, the only build where its test hooks exist) |
 | `Resources/` | App icon and the script that draws it |
-| `.github/` | CI (`workflows/ci.yml`: `sh test.sh` and a universal `sh build.sh` on macOS), Dependabot for actions, issue and pull request templates |
+| `.github/` | CI (`workflows/ci.yml`: `sh test.sh` and a universal `sh build.sh` with Xcode 27.0 and 26.6), the release workflow (`workflows/release.yml`: `release.sh` on a `v*` tag in the `release` environment), Dependabot for actions, issue and pull request templates |
 | `docs/history/` | Research notes kept for context, such as why the OpenAI tunnel wasn't adopted |
 
 ## Working on a change
@@ -58,13 +59,63 @@ The scripts are deliberately simple: plain `swiftc` calls, no Xcode project or p
 - [ ] No personal data in the tree or the new commits: no keys, tokens, Remote Access URLs, tunnel host names, collection IDs, calendar or reminder contents, journal files or raw logs. `gitleaks git` over the new commits is clean.
 - [ ] For UI changes: `sh ui_test.sh` passes and the screenshots in `docs/images/` are current.
 - [ ] Live checks the release needs ran on synthetic data with the owner's approval: the fields probe for EventKit writes, the [live MCP matrix](TESTING.md#live-mcp-matrix) for MCP changes, the [live cloud matrix](TESTING.md#live-cloud-matrix) for Remote Access changes (Remote Access stays labeled Experimental until it has run).
-- [ ] The release build installs over the previous one at the same path and keeps Calendar and Reminders access, clients, tokens and agent setups.
+- [ ] The release build installs over the previous one at the same path and keeps Calendar and Reminders access, clients, tokens and agent setups ([release install test](TESTING.md#release-install-test)).
+- [ ] A rehearsal, `sh release.sh --untagged --no-release`, has produced a notarized DMG and zip from the release commit, so the workflow run is a formality.
 
 The runtime write journal (`write-journal.json` and `write-journal/<client>.json`) can contain reminder titles, item IDs and due summaries in its completed receipts. Never attach Application Support files or raw logs to an issue or a release.
 
 ## Releasing
 
-`Info.plist` is the one source of the version. A release is a tag `v<CFBundleShortVersionString>` on `main`; `sh scripts/check_version.sh v<version>` checks that the tag matches, that `CFBundleVersion` is higher than in the previous `v*` tag, and that CHANGELOG has the version's section. Signed, notarized releases (Developer ID, `notarytool`, a DMG and a zip, built by a release workflow in a protected environment) and in-app updates aren't set up yet; until then, builds are ad hoc or locally signed and there are no downloads.
+`Info.plist` is the one source of the version. A release is a tag `v<CFBundleShortVersionString>` on `main`, built by `release.sh`: in GitHub Actions when the tag is pushed (`.github/workflows/release.yml`, in the protected `release` environment), or by hand on a Mac that has the Developer ID identity and the notary credentials. Both produce a **draft** GitHub release for you to review and publish. In-app updates (Sparkle) aren't wired into the app yet; the pipeline already writes the appcast once a Sparkle key is set.
+
+### What `release.sh` does
+
+1. Refuses a tree with uncommitted changes or a `HEAD` that isn't tagged `v<version>` (`--untagged` for a rehearsal), and runs `scripts/check_version.sh` (tag, a higher `CFBundleVersion` than the previous `v*` tag, a `## [x.y.z]` section in the changelog).
+2. Runs `sh test.sh` (`--skip-tests` only for repeated rehearsals).
+3. Builds the universal app (`EVENTKIT_ARCHS="arm64 x86_64"`) in `build/release/`, signed inside out (`bridge-mcp`, `bridge-client`, then the app) with the Developer ID identity, the hardened runtime and a secure timestamp, and runs `scripts/check_bundle.sh`.
+4. Notarizes the app (`notarytool submit --wait`; on anything but Accepted it prints Apple's log) and staples the ticket.
+5. Builds `EKBridge-<version>.dmg` (LZFSE, HFS+, with an Applications link), signs, notarizes and staples it. `scripts/check_notarized.sh` confirms Gatekeeper's verdict (`source=Notarized Developer ID`) and the staple on the app and on the image.
+6. Builds `EKBridge-<version>.zip` from the stapled app (Sparkle installs from the zip; people download the DMG) and writes `SHA256SUMS`.
+7. With `EVENTKIT_SPARKLE_KEY_FILE`, signs the zip with Sparkle's `sign_update` and writes `appcast.xml` (`scripts/appcast.py`) with the version, build number, minimum macOS, URL, length, signature and the release notes as HTML.
+8. Creates the draft release `v<version>` with the DMG, the zip, `SHA256SUMS`, `appcast.xml` and notes: the changelog section (`scripts/release_notes.py`, relative links made absolute) followed by Install and Checksums sections.
+
+Everything goes to `dist/` (ignored). `sh release.sh --help` lists the options and environment variables.
+
+### Cutting a release
+
+1. On a branch: raise `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`, turn `## [Unreleased]` into `## [x.y.z] - YYYY-MM-DD` in the changelog (keep an empty Unreleased above it), work through [Before every release](#before-every-release), and merge with CI green.
+2. Rehearse on `main`: `sh release.sh --untagged --no-release` with the notary credentials (`--no-notarize` without them). It builds, notarizes and checks the DMG and the zip without touching GitHub.
+3. `git tag v<x.y.z> && git push origin v<x.y.z>`, then approve the run in Actions. It takes about 10 minutes plus Apple's notarization time.
+4. Open the draft under Releases: check the notes and the five assets, download the DMG and run `shasum -a 256 -c SHA256SUMS`, and before the first release or after a change to the bundle layout or the updater, run the [release install test](TESTING.md#release-install-test).
+5. Publish. `https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml` then resolves to this version's feed.
+
+### Release notes
+
+The changelog section **is** the release notes, so write it for someone upgrading:
+
+- A lead paragraph with the highlights, the client registry version, and whether a rollback to the previous version works (a registry upgrade that older versions can't read has no rollback: say so).
+- What changes for agents and the command line: tool names and arguments, outcome codes, snippets to copy again, paths and variables.
+- Known issues, if any.
+
+`release.sh` appends the install steps, the SHA-256 sums and how the build was verified; don't repeat those.
+
+### The `release` environment
+
+Create it under Settings ▸ Environments with yourself as a required reviewer, and add these secrets. On GitHub Free, required reviewers and tag rulesets work only in a public repository, so do this right after the repository goes public and before the first tag.
+
+| Secret | Value |
+| --- | --- |
+| `DEVELOPER_ID_P12` | The Developer ID Application certificate with its private key, exported from Keychain Access as a `.p12`, base64 encoded (`base64 -i certificate.p12 \| pbcopy`) |
+| `DEVELOPER_ID_P12_PASSWORD` | The `.p12` password |
+| `NOTARY_KEY` | An App Store Connect API key (`.p8`, Users and Access ▸ Integrations ▸ App Store Connect API, Developer role), base64 encoded |
+| `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` | The key's ID and the issuer ID shown next to it |
+| `SPARKLE_PRIVATE_KEY` | Later, with Sparkle: the EdDSA private key from `generate_keys -x`. Unset, the release has no `appcast.xml` |
+
+The workflow imports the certificate into a temporary keychain, writes the keys to files under `RUNNER_TEMP`, runs `release.sh` with `GH_TOKEN` for the draft, attaches build attestations to the DMG and the zip (`gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`; public repositories only), and deletes the keychain and the keys. Add a tag ruleset that lets only you create `v*` tags. Keep the exported `.p12` and the Sparkle key in a password manager too: losing the Developer ID key ends Calendar and Reminders access continuity for every user, and losing the Sparkle key leaves existing installs unable to verify updates.
+
+### By hand
+
+`release.sh` finds the one `Developer ID Application` identity in the keychain (or takes `EVENTKIT_SIGN_IDENTITY`). For notarization, store the API key once with `xcrun notarytool store-credentials ek-bridge --key AuthKey_XXXX.p8 --key-id XXXX --issuer <issuer>` and run `EVENTKIT_NOTARY_PROFILE=ek-bridge sh release.sh`, or pass `EVENTKIT_NOTARY_KEY`, `EVENTKIT_NOTARY_KEY_ID` and `EVENTKIT_NOTARY_ISSUER`. The draft needs `gh` signed in. A full run from a tagged commit behaves exactly like the workflow, minus the attestations.
 
 ## Regenerating goldens
 
@@ -97,7 +148,7 @@ What changed for callers and agents in each version, and how to roll back a clie
 | Area | Owner decision or next investigation |
 | --- | --- |
 | Public rights and support | Decided: Apache-2.0 with a `NOTICE` ([LICENSE](../LICENSE)); private vulnerability reporting ([SECURITY](../SECURITY.md)); Issues with templates and best-effort support ([CONTRIBUTING](../CONTRIBUTING.md)). Contributions are under the same license, without a separate agreement. |
-| Distribution | Decided: bundle ID `io.github.bereciartua.ekbridge`, Developer ID signing and notarization, a DMG and a zip built by a release workflow, universal builds, the CLI inside the app, and in-app updates with Sparkle 2. Done so far: portable SDK choice, universal builds, the CLI in the bundle, CI, the new name and bundle ID with their [one-time migration](#the-rename-migration). Still to do: signed and notarized releases, Sparkle. |
+| Distribution | Decided: bundle ID `io.github.bereciartua.ekbridge`, Developer ID signing and notarization, a DMG and a zip built by a release workflow, universal builds, the CLI inside the app, and in-app updates with Sparkle 2. Done so far: portable SDK choice, universal builds, the CLI in the bundle, CI, the new name and bundle ID with their [one-time migration](#the-rename-migration), and the [release pipeline](#releasing) (`release.sh`, the release workflow, the appcast writer). Still to do: the notary credentials and the `release` environment (owner), the [release install test](TESTING.md#release-install-test), and Sparkle in the app. |
 | Security boundary | Decide whether same-user file exposure is acceptable. Consider Keychain-backed credentials, an OS-enforced peer boundary, and task-runner authorization only after a threat review. A signed peer check alone (an XPC design explored early on, removed from the tree but in the git history) would not stop a same-user process from invoking a signed CLI. The local MCP server's threat review is in [Architecture](ARCHITECTURE.md#mcp-threat-review-040), and Remote Access's in [Architecture](ARCHITECTURE.md#remote-access-threat-review-050). |
 | Remote access for cloud agents | Implemented in 0.5.0 (Phase 5 of the MCP plan), with its own [threat review](ARCHITECTURE.md#remote-access-threat-review-050). Labeled Experimental in Settings and the README until the [live cloud matrix](TESTING.md#live-cloud-matrix) has run; none of it has been run. Deviations from the plan: the registry stays v4; the OAuth discovery documents are served only behind the secret, with the path inserted after the well-known name (nothing at the bare `/.well-known` paths); dynamic registration needs an open pairing window; Gemini Enterprise uses confidential `cfg_` clients set up in the app; the Cloudflare quick tunnel command adds `--http-host-header 127.0.0.1:<port>`; ngrok is recognized by an ngrok domain in `X-Forwarded-Host`. The OpenAI Secure MCP Tunnel was not adopted ([spike note](history/OPENAI-TUNNEL-SPIKE.md)). Not implemented: approving changes from a phone, a **Start for me** button that runs `tailscale funnel`, IP allowlists per agent. |
 | MCP follow-ups | Not implemented: tool-list change notifications (SSE), OAuth for local agents, IPv6 loopback, a Unix-socket launcher mode, Keychain tokens, a Claude Desktop extension, "Add to…" buttons that write agent configs. Run the [live MCP matrix](TESTING.md#live-mcp-matrix) before a release. |
