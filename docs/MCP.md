@@ -251,7 +251,7 @@ ingress:
 
 Except for Funnel, the tunnels stop with Control-C in the Terminal window running them. Once the tunnel runs, paste its address under **Address** and click **Test**. The app sends one HTTPS request to `<address>/r/<secret>/health?nonce=…` through the tunnel; the listener answers only a nonce the app issued in the last 30 seconds, once, so **Reachable** means the request reached this app.
 
-OpenAI's Secure MCP Tunnel, which needs no public address, was evaluated and not adopted for 0.5.0; see the [spike note](OPENAI-TUNNEL-SPIKE.md).
+OpenAI's Secure MCP Tunnel, which needs no public address, was evaluated and not adopted for 0.5.0; see the [spike note](history/OPENAI-TUNNEL-SPIKE.md).
 
 #### Allow cloud access for a client
 

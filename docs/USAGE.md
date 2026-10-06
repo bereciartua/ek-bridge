@@ -13,7 +13,7 @@ On first launch the window opens on a setup checklist. The steps can be done in 
 - **Choose what the client can use.** Opens the client's Access table.
 - **Turn on the bridge.** The choice is kept across launches.
 - **Turn on the MCP server.** Shown only when the client connects as an AI agent.
-- **Connect your tool.** For a command-line client, **Copy Command** copies `python3 client.py scope_status --client "<name>"`; run it in Terminal in the repository folder. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
+- **Connect your tool.** For a command-line client, **Copy Command** copies `bridge-client scope_status --client "<name>"` once the command-line tool is installed (Settings ▸ Developer), or `python3 client.py …` to run in Terminal in a source checkout. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
 
 **Hide Setup** hides the checklist; **Help ▸ Show Setup Checklist** or Settings ▸ About brings it back.
 
@@ -22,7 +22,7 @@ On first launch the window opens on a setup checklist. The steps can be done in 
 Choose **New Client…** (⌘N, the **+** in the sidebar, or Overview). The name must be unique among active clients; it's shown in Activity and the menu bar. Under **Connects from**, choose:
 
 - **AI agent (MCP)** (the default): the app writes an MCP token file. What the agent reads is sent to its AI provider.
-- **Command line**: the app writes a key file for `client.py`.
+- **Command line**: the app writes a key file for `bridge-client` (or `client.py`).
 - **Both**: both credentials.
 
 **Ask me before each change** is preset from Settings for the chosen kind (on for agents, off for the command line). The app selects the new client. **A new client has no access.**
@@ -84,7 +84,7 @@ Activity stores the time, client ID, command, result, the target calendar or lis
 - **MCP Server:** the **MCP server** switch (off by default), its status and URL, the **Port** (**Change…**), the **Launcher** path agents run (**Copy Path**, **Show in Finder**, and a warning if the app isn't in Applications), and how many agent requests arrived today. If the port is in use, **Try Again** and **Choose Another Port…** appear. Turning the server off when an agent used it in the last 10 minutes asks first.
 - **Remote Access:** the **Remote Access** switch (off by default; turning it on asks first), **Status** with **Test**, the **Tunnel** guide with commands to copy, the tunnel's **Address**, the **MCP URL** with **Reset Path…**, the **Port** (47616 by default, **Change…**), **Turn off automatically** (Never, after 1 hour, 8 hours or 1 day) and **Keep this Mac awake while on power**. See [Use from cloud agents](MCP.md#use-from-cloud-agents).
 - **Ask before changes:** the default for **New AI agent clients** (*Ask me first*) and **New command-line clients** (*Allow without asking*), and **Apply to All Clients…**, which sets every client to one mode after a confirmation.
-- **Developer:** off by default. Shows the app's test calendar and list tools, every calendar and list ID EventKit can see, MCP traffic counts since launch, both ports together (requests, errors by status, failed authentications; never contents), and the data folder.
+- **Developer:** **Install Command-Line Tool** links the app's `bridge-client` into `~/.local/bin` (no administrator password; add that folder to your `PATH` if your shell can't find it), and once installed the app's copied commands use `bridge-client`. **Show developer tools** (off by default) shows the app's test calendar and list tools, every calendar and list ID EventKit can see, MCP traffic counts since launch, both ports together (requests, errors by status, failed authentications; never contents), and the data folder.
 
 ## Local key and token files
 
@@ -109,7 +109,7 @@ An agent or script using a saved grant still needs authorization for the **parti
 
 ## A safe first CLI check
 
-After enrollment and bridge enablement, start with metadata and a bounded read from an empty temporary collection you own. Use the client name shown in the app, and the collection ID shown in the UI; do not inspect the credential contents:
+After enrollment and bridge enablement, start with metadata and a bounded read from an empty temporary collection you own. Use the client name shown in the app, and the collection ID shown in the UI; do not inspect the credential contents. The examples use `python3 client.py` from a source checkout; with the command-line tool installed, write `bridge-client` instead:
 
 ```sh
 python3 client.py scope_status --client "<client name>"

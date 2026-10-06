@@ -164,6 +164,7 @@ struct BridgeServices {
     var loginItemStatus: () -> SMAppService.Status
     var setLoginItem: (Bool) throws -> Void
     var isInstalledInApplications: () -> Bool
+    var commandLineTool: CommandLineTool
     var testCollections: TestCollections?
     var mcp: MCPControls
     var approvals: ApprovalCenter?
@@ -187,6 +188,7 @@ final class BridgeAppModel {
     private(set) var loginItem: SMAppService.Status = .notRegistered
     private(set) var loginItemError: String?
     private(set) var isInstalledInApplications = false
+    private(set) var commandLineTool: CommandLineTool.State = .unavailable
     private(set) var now = Date()
     private(set) var accessRequestInFlight = Set<ClientResource>()
     private(set) var accessRequestDeclined = Set<ClientResource>()
@@ -419,6 +421,7 @@ final class BridgeAppModel {
             if listed != collections { collections = listed }
             loginItem = services.loginItemStatus()
             isInstalledInApplications = services.isInstalledInApplications()
+            commandLineTool = services.commandLineTool.state
         }
         reconcileDraft()
         reconcileRoute()
@@ -1122,9 +1125,40 @@ final class BridgeAppModel {
         services.defaults.set(setupSkipped.map(\.rawValue), forKey: Keys.setupSkipped)
     }
 
+    /// The program copied commands start with: `bridge-client` once it's
+    /// installed from this copy of the app, else the source checkout's launcher.
+    var cliProgram: String {
+        commandLineTool == .installed ? CommandLineTool.name : ConnectCommand.sourceProgram
+    }
+
+    func installCommandLineTool() {
+        let tool = services.commandLineTool
+        switch tool.install() {
+        case .success:
+            showBanner(Banner(kind: .success,
+                              title: String(localized: "Installed \(CommandLineTool.name) in \(tool.displayPath)."),
+                              message: isInstalledInApplications
+                                ? String(localized: "If your shell can't find it, add ~/.local/bin to your PATH.")
+                                : String(localized: "If your shell can't find it, add ~/.local/bin to your PATH. Moving the app breaks the link; install it again from the new place.")))
+        case .failure(.notALink):
+            showBanner(Banner(kind: .error,
+                              title: String(localized: "\(tool.displayPath) already exists and isn't a link."),
+                              message: String(localized: "Remove it, then try again.")))
+        case .failure(.unavailable):
+            showBanner(Banner(kind: .error,
+                              title: String(localized: "This copy of the app has no \(CommandLineTool.name)."),
+                              message: String(localized: "Build it with sh build.sh, or download the app again.")))
+        case .failure(.failed(let reason)):
+            showBanner(Banner(kind: .error,
+                              title: String(localized: "Couldn't install \(CommandLineTool.name)."),
+                              message: reason))
+        }
+        commandLineTool = tool.state
+    }
+
     func copyTestCommand() {
         guard let client = SetupChecklist.focusClient(checklistInput) else { return }
-        Pasteboard.copy(ConnectCommand.scopeStatus(for: client, among: clients))
+        Pasteboard.copy(ConnectCommand.scopeStatus(for: client, among: clients, program: cliProgram))
         waitingForTestRequest = true
     }
 

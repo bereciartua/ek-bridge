@@ -43,7 +43,7 @@ struct OAuthServerTests {
             server = OAuthServer(directory: directory, fetcher: fetcher,
                                  now: { [unowned self] in self.clock },
                                  clientAllowed: { [unowned self] in self.allowed.contains($0) },
-                                 clientName: { $0 == clientA ? "claude.ai (Martin)" : "Other client" },
+                                 clientName: { $0 == clientA ? "claude.ai (Alex)" : "Other client" },
                                  schedule: { _, _ in })
             server.pairingRequested = { [unowned self] in self.requested.append($0) }
             server.pairingChanged = { [unowned self] in self.pairingChanges += 1 }
@@ -283,7 +283,7 @@ struct OAuthServerTests {
         let digits = pairing.code.split(separator: " ")
         precondition(digits.count == 2 && digits.allSatisfy { $0.count == 3 && $0.allSatisfy(\.isNumber) })
         let html = text(page)
-        precondition(html.contains(pairing.code) && html.contains("claude.ai (Martin)"))
+        precondition(html.contains(pairing.code) && html.contains("claude.ai (Alex)"))
         precondition(html.contains("data-request=\"\(pairing.id.uuidString.lowercased())\""))
         precondition(html.contains("authorize/status?request="))
         let status = json(h.get(prefix + "/oauth/authorize/status", [("request", pairing.id.uuidString)]))

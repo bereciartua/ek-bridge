@@ -94,9 +94,12 @@ class Fixture:
         env.update({k: str(v) for k, v in overrides.items()})
         return env
 
-    def run(self, args, stdin=None, env=None, binary=None):
+    def run(self, args, stdin=None, env=None, binary=None, argv0="client.py"):
+        # client.py runs the client with argv[0] "client.py"; the default
+        # matches it. Another binary (python3 for client.py) keeps its own.
+        argv = [str(binary), *args] if binary else [argv0, *args]
         process = subprocess.run(
-            [str(binary or self.binary), *args], input=(stdin or "").encode(),
+            argv, executable=str(binary or self.binary), input=(stdin or "").encode(),
             capture_output=True, env=env or self.env(), timeout=30)
         return process.returncode, process.stdout.decode(), process.stderr.decode()
 
@@ -365,15 +368,46 @@ def main() -> int:
         result, _ = exchange("vanish-root", ["scope_status", *cred], lambda r: None)
         check("session removed while waiting", result, 3, SESSION_CHANGED)
 
+        # Run directly, or as ~/.local/bin/bridge-client, it names itself.
+        check("bridge-client names itself", f.run(["--help"], argv0="/x/bridge-client"), 0, None,
+              stdout=has("Usage: bridge-client COMMAND"))
+        check("bridge-client usage error", f.run([], argv0="bridge-client"), 2,
+              "error: missing command. Run bridge-client --help.")
+
         # client.py launcher.
         launcher_env = f.env(EVENTKIT_CLIENT_BINARY=f.tmp / "not-built")
         result = f.run([str(client_py), "--help"], env=launcher_env, binary=sys.executable)
-        check("client.py before build", result, 4,
-              "error: bridge-client isn't built. Run: sh build.sh")
+        check("client.py with a missing EVENTKIT_CLIENT_BINARY", result, 4,
+              f"error: EVENTKIT_CLIENT_BINARY isn't a file: {f.tmp / 'not-built'}")
         result = f.run([str(client_py), "scope_status", "--help"],
                        env=f.env(EVENTKIT_CLIENT_BINARY=binary), binary=sys.executable)
         check("client.py passes arguments through", result, 0, None,
               stdout=has("Usage: client.py scope_status", "Takes no parameters."))
+        # Without the variable: build/bridge-client next to client.py, then the
+        # installed app in /Applications, then in ~/Applications.
+        checkout = f.make_dir(f.tmp / "checkout")
+        shutil.copy(client_py, checkout / "client.py")
+        home = f.make_dir(f.tmp / "home")
+        plain_env = f.env(HOME=home)
+        plain_env.pop("EVENTKIT_CLIENT_BINARY", None)
+        installed = Path("/Applications/EventKitBridge.app/Contents/MacOS/bridge-client").is_file()
+        result = f.run([str(checkout / "client.py"), "--help"], env=plain_env, binary=sys.executable)
+        if not installed:
+            check("client.py finds no client", result, 4,
+                  "error: bridge-client wasn't found. Run: sh build.sh, "
+                  "or install EventKitBridge.app in /Applications.")
+        user_app = home / "Applications" / "EventKitBridge.app" / "Contents" / "MacOS"
+        user_app.mkdir(parents=True)
+        (user_app / "bridge-client").symlink_to(binary)
+        result = f.run([str(checkout / "client.py"), "--help"], env=plain_env, binary=sys.executable)
+        check("client.py finds an installed app", result, 0, None,
+              stdout=has("Usage: client.py COMMAND"))
+        f.make_dir(checkout / "build")
+        (checkout / "build" / "bridge-client").symlink_to(binary)
+        (user_app / "bridge-client").unlink()
+        result = f.run([str(checkout / "client.py"), "--help"], env=plain_env, binary=sys.executable)
+        check("client.py prefers build/bridge-client", result, 0, None,
+              stdout=has("Usage: client.py COMMAND"))
     finally:
         f.cleanup()
 

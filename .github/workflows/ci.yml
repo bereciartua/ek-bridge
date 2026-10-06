@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and build
+    # No secrets: runs the offline tests and an ad hoc signed universal build.
+    # ui_test.sh and ui_snapshots.sh stay local; they need a logged-in GUI
+    # session and Screen Recording permission.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          xcrun --sdk macosx --show-sdk-path
+          xcrun swiftc --version
+      - name: Offline tests
+        run: sh test.sh
+      - name: Universal build
+        run: EVENTKIT_ARCHS="arm64 x86_64" sh build.sh
+      - name: Check the bundle
+        run: |
+          sh scripts/check_bundle.sh build/EventKitBridge.app arm64 x86_64
+          build/bridge-client --help > /dev/null

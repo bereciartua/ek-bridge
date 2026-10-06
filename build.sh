@@ -6,7 +6,12 @@ output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build"}
 app_dir="$output_dir/EventKitBridge.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
-sdk_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+. "$project_dir/scripts/sdk.sh"
+# This Mac's architecture by default, for fast development builds. Releases set
+# EVENTKIT_ARCHS="arm64 x86_64" for a universal app.
+archs=${EVENTKIT_ARCHS:-$(uname -m)}
+minimum_macos=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$project_dir/Info.plist")
+slices_dir="$output_dir/slices"
 test_flag=""
 if [ "${EVENTKIT_SYNTHETIC_TEST:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_SYNTHETIC_TEST"
@@ -18,111 +23,76 @@ fi
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
-xcrun swiftc -parse-as-library \
-    $test_flag \
-    -sdk "$sdk_dir" \
-    -module-cache-path "$cache_dir" \
-    -Xcc "-fmodules-cache-path=$cache_dir" \
-    -target arm64-apple-macosx14.0 \
-    -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
-    -framework SwiftUI -framework Network -framework IOKit \
-    "$project_dir/Sources/main.swift" \
-    "$project_dir/Sources/AppIdentity.swift" \
-    "$project_dir/Sources/AppPresentation.swift" \
-    "$project_dir/Sources/OutcomePresentation.swift" \
-    "$project_dir/Sources/BridgeAppModel.swift" \
-    "$project_dir/Sources/MainWindowController.swift" \
-    "$project_dir/Sources/StatusMenuController.swift" \
-    "$project_dir/Sources/UIComponents.swift" \
-    "$project_dir/Sources/MainView.swift" \
-    "$project_dir/Sources/OverviewView.swift" \
-    "$project_dir/Sources/ClientDetailView.swift" \
-    "$project_dir/Sources/ActivityView.swift" \
-    "$project_dir/Sources/SettingsView.swift" \
-    "$project_dir/Sources/UIReview.swift" \
-    "$project_dir/Sources/BridgeProtocol.swift" \
-    "$project_dir/Sources/BridgeEnablement.swift" \
-    "$project_dir/Sources/ClientBridgeProtocol.swift" \
-    "$project_dir/Sources/ClientRegistry.swift" \
-    "$project_dir/Sources/ClientGrantEditing.swift" \
-    "$project_dir/Sources/ClientCredentialFiles.swift" \
-    "$project_dir/Sources/CommandPolicy.swift" \
-    "$project_dir/Sources/ItemText.swift" \
-    "$project_dir/Sources/ItemAlarms.swift" \
-    "$project_dir/Sources/Recurrence.swift" \
-    "$project_dir/Sources/RecurrenceText.swift" \
-    "$project_dir/Sources/EventFields.swift" \
-    "$project_dir/Sources/ReminderFields.swift" \
-    "$project_dir/Sources/MutationPolicy.swift" \
-    "$project_dir/Sources/ReminderDue.swift" \
-    "$project_dir/Sources/ReminderSchedule.swift" \
-    "$project_dir/Sources/RecurringReminderCompletion.swift" \
-    "$project_dir/Sources/TestCollections.swift" \
-    "$project_dir/Sources/EventKitCommands.swift" \
-    "$project_dir/Sources/EventCommands.swift" \
-    "$project_dir/Sources/ReminderCommands.swift" \
-    "$project_dir/Sources/WriteJournal.swift" \
-    "$project_dir/Sources/WriteIdempotencyKey.swift" \
-    "$project_dir/Sources/BridgePollingTimer.swift" \
-    "$project_dir/Sources/LocalBridge.swift" \
-    "$project_dir/Sources/SafePath.swift" \
-    "$project_dir/Sources/RequestPipeline.swift" \
-    "$project_dir/Sources/ApprovalCenter.swift" \
-    "$project_dir/Sources/ApprovalPanel.swift" \
-    "$project_dir/Sources/ApprovalSummaries.swift" \
-    "$project_dir/Sources/AgentSetup.swift" \
-    "$project_dir/Sources/ConnectAgentView.swift" \
-    "$project_dir/Sources/MCP/AgentOutcomeText.swift" \
-    "$project_dir/Sources/MCP/HTTPMessage.swift" \
-    "$project_dir/Sources/MCP/JSONRPC.swift" \
-    "$project_dir/Sources/MCP/LoopbackHTTPServer.swift" \
-    "$project_dir/Sources/MCP/MCPEndpointFile.swift" \
-    "$project_dir/Sources/MCP/MCPServer.swift" \
-    "$project_dir/Sources/MCP/MCPService.swift" \
-    "$project_dir/Sources/MCP/MCPTime.swift" \
-    "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
-    "$project_dir/Sources/MCP/MCPToolMapping.swift" \
-    "$project_dir/Sources/MCP/RateLimiter.swift" \
-    "$project_dir/Sources/MCP/RemoteMCPService.swift" \
-    "$project_dir/Sources/MCP/OAuthTypes.swift" \
-    "$project_dir/Sources/MCP/OAuthServer.swift" \
-    "$project_dir/Sources/MCP/OAuthStore.swift" \
-    "$project_dir/Sources/MCP/OAuthPages.swift" \
-    "$project_dir/Sources/MCP/CIMDFetcher.swift" \
-    "$project_dir/Sources/RemoteAccessView.swift" \
-    "$project_dir/Sources/RemoteAccessSupport.swift" \
-    "$project_dir/Sources/SyntheticTestMode.swift" \
-    "$project_dir/Sources/SyntheticRecurrenceProbe.swift" \
-    "$project_dir/Sources/SyntheticPhoneSyncProbe.swift" \
-    "$project_dir/Sources/SyntheticAllDayProbe.swift" \
-    "$project_dir/Sources/SyntheticFieldsProbe.swift" \
-    -o "$contents_dir/MacOS/EventKitBridge"
+cp "$project_dir/LICENSE" "$project_dir/NOTICE" "$contents_dir/Resources/"
 
-xcrun swiftc -sdk "$sdk_dir" \
-    -module-cache-path "$cache_dir" \
-    "$project_dir/Sources/BridgeProtocol.swift" \
-    "$project_dir/Sources/AppIdentity.swift" \
-    "$project_dir/Sources/OutcomePresentation.swift" \
-    "$project_dir/Sources/SafePath.swift" \
-    "$project_dir/Sources/BridgeClient.swift" \
-    -o "$output_dir/bridge-client"
+# The app is every Swift file in Sources/ except the two command-line tools.
+# Test-only routes (UIReview, Synthetic*) compile to nothing without their -D flag.
+set --
+for file in "$project_dir"/Sources/*.swift "$project_dir"/Sources/MCP/*.swift; do
+    case "$file" in
+        */BridgeClient.swift|*/MCPLauncher.swift) ;;
+        *) set -- "$@" "$file" ;;
+    esac
+done
 
-# The MCP launcher agents run (Contents/MacOS/bridge-mcp): no AppKit or EventKit.
-xcrun swiftc -parse-as-library -sdk "$sdk_dir" \
-    -module-cache-path "$cache_dir" \
-    -target arm64-apple-macosx14.0 \
-    "$project_dir/Sources/MCPLauncher.swift" \
-    "$project_dir/Sources/SafePath.swift" \
-    "$project_dir/Sources/AppIdentity.swift" \
-    -o "$contents_dir/MacOS/bridge-mcp"
+rm -rf "$slices_dir"
+for arch in $archs; do
+    slice="$slices_dir/$arch"
+    target="$arch-apple-macosx$minimum_macos"
+    mkdir -p "$slice"
+    xcrun swiftc -parse-as-library \
+        $test_flag \
+        -sdk "$sdk_dir" \
+        -module-cache-path "$cache_dir" \
+        -Xcc "-fmodules-cache-path=$cache_dir" \
+        -target "$target" \
+        -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
+        -framework SwiftUI -framework Network -framework IOKit \
+        "$@" \
+        -o "$slice/EventKitBridge"
+
+    # The command-line client (Contents/MacOS/bridge-client): no AppKit or EventKit.
+    xcrun swiftc -sdk "$sdk_dir" \
+        -module-cache-path "$cache_dir" \
+        -target "$target" \
+        "$project_dir/Sources/BridgeProtocol.swift" \
+        "$project_dir/Sources/AppIdentity.swift" \
+        "$project_dir/Sources/OutcomePresentation.swift" \
+        "$project_dir/Sources/SafePath.swift" \
+        "$project_dir/Sources/BridgeClient.swift" \
+        -o "$slice/bridge-client"
+
+    # The MCP launcher agents run (Contents/MacOS/bridge-mcp): no AppKit or EventKit.
+    xcrun swiftc -parse-as-library -sdk "$sdk_dir" \
+        -module-cache-path "$cache_dir" \
+        -target "$target" \
+        "$project_dir/Sources/MCPLauncher.swift" \
+        "$project_dir/Sources/SafePath.swift" \
+        "$project_dir/Sources/AppIdentity.swift" \
+        -o "$slice/bridge-mcp"
+done
+
+for name in EventKitBridge bridge-client bridge-mcp; do
+    set --
+    for arch in $archs; do set -- "$@" "$slices_dir/$arch/$name"; done
+    rm -f "$contents_dir/MacOS/$name"
+    lipo -create "$@" -output "$contents_dir/MacOS/$name"
+done
+rm -rf "$slices_dir"
+
+# Scripts and client.py still find the client at build/bridge-client.
+rm -f "$output_dir/bridge-client"
+ln -s "EventKitBridge.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
 
 # Default signing is ad hoc for build validation only. Use the same approved
 # identity for installed updates when testing permission-grant persistence.
-# The launcher is signed first, then the app around it.
+# The command-line tools are signed first, then the app around them.
 sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents_dir/Info.plist")
-codesign --force --sign "$sign_identity" --options runtime \
-    --identifier "$bundle_id.bridge-mcp" "$contents_dir/MacOS/bridge-mcp"
+for tool in bridge-mcp bridge-client; do
+    codesign --force --sign "$sign_identity" --options runtime \
+        --identifier "$bundle_id.$tool" "$contents_dir/MacOS/$tool"
+done
 codesign --force --sign "$sign_identity" --options runtime \
     --entitlements "$project_dir/Entitlements.plist" "$app_dir"
 codesign --verify --deep --strict "$app_dir"

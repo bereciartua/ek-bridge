@@ -185,6 +185,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
+            commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL,
+                                             home: FileManager.default.homeDirectoryForCurrentUser),
             testCollections: testCollections,
             mcp: MCPControls(
                 start: { [weak self] port in self?.mcpService.start(port: port) },
@@ -292,7 +294,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppIdentity.displayName,
-            .credits: NSAttributedString(string: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.")),
+            .credits: NSAttributedString(string: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.\nLicensed under the Apache License 2.0. Not affiliated with Apple.")),
         ])
     }
 

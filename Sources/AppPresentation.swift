@@ -480,17 +480,21 @@ enum ClientTransport: Equatable {
 
 /// The ready-to-run first request shown on the client page and in setup.
 enum ConnectCommand {
-    static func scopeStatus(clientName: String) -> String {
-        "python3 client.py scope_status --client \(shellQuoted(clientName))"
+    /// Run from the source checkout. An installed command-line tool is `bridge-client`.
+    static let sourceProgram = "python3 client.py"
+
+    static func scopeStatus(clientName: String, program: String = sourceProgram) -> String {
+        "\(program) scope_status --client \(shellQuoted(clientName))"
     }
 
     /// Uses the name when it picks exactly one active client, else the ID.
-    static func scopeStatus(for client: ClientView, among clients: [ClientView]) -> String {
+    static func scopeStatus(for client: ClientView, among clients: [ClientView],
+                            program: String = sourceProgram) -> String {
         let key = ClientNames.key(client.name)
         let sameName = clients.filter { !$0.revoked && ClientNames.key($0.name) == key }
         return sameName.count == 1
-            ? scopeStatus(clientName: client.name)
-            : "python3 client.py scope_status --client \(client.id)"
+            ? scopeStatus(clientName: client.name, program: program)
+            : "\(program) scope_status --client \(client.id)"
     }
 
     /// Double quotes for ordinary names, single quotes when the text contains

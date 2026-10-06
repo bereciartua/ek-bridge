@@ -190,7 +190,7 @@ Remote Access makes the bridge reachable from the internet, through a tunnel the
 
 The secret path and the public address live in user defaults: they aren't credentials. The listener and the OAuth server run only while Remote Access is on, but OAuth connections persist across restarts until revoked or expired. Approving changes from a phone, a **Start for me** button for Tailscale, and IP allowlists per agent are not implemented.
 
-The [XPC design note](../Candidate/ARCHITECTURE.md) is historical source-only exploration. Its signed-peer idea is not the current transport; it does not by itself solve the same-user credential or signed-client deputy problem. Any switch to XPC, a persistent agent, another listener, Keychain storage, or per-process isolation needs a new threat review and separate implementation.
+An early signed XPC design (never deployed; removed from the tree, still in the git history) is not the current transport. A signed peer check does not by itself solve the same-user credential or signed-client deputy problem. Any switch to XPC, a persistent agent, another listener, Keychain storage, or per-process isolation needs a new threat review and separate implementation.
 
 ## Client registry versions
 
