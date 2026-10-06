@@ -373,6 +373,11 @@
     "tool" : "complete_reminder"
   },
   {
+    "code" : "client_paused",
+    "text" : "Paused: the user paused this agent's access in EventKit Bridge. Its access isn't removed; ask the user to resume this client if they want you to continue, and don't retry until they do. (code: client_paused)",
+    "tool" : "complete_reminder"
+  },
+  {
     "code" : "target_not_writable",
     "text" : "Read only: that list is read-only. Choose another one from list_collections. (code: target_not_writable)",
     "tool" : "complete_reminder"

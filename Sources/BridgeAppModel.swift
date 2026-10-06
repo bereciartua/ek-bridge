@@ -462,6 +462,8 @@ final class BridgeAppModel {
 
     var activeClients: [ClientView] { clients.filter { !$0.revoked } }
     var revokedClients: [ClientView] { clients.filter(\.revoked) }
+    /// Active clients that are paused: they keep their access but are refused.
+    var pausedCount: Int { activeClients.filter(\.paused).count }
 
     func client(_ id: String?) -> ClientView? {
         guard let id else { return nil }
@@ -533,9 +535,10 @@ final class BridgeAppModel {
                 }
             }
             if let first = failing.first { return String(localized: "On · \(first)") }
-            let count = activeClients.count
+            let count = activeClients.count - pausedCount
             var parts = [String(localized: "On"),
                          count == 1 ? String(localized: "1 client") : String(localized: "\(count) clients")]
+            if pausedCount > 0 { parts.append(String(localized: "\(pausedCount) paused")) }
             if let last = activity.first?.at {
                 parts.append(String(localized: "last request \(RelativeTime.ago(last, now: now).lowercased())"))
             }
@@ -882,6 +885,28 @@ final class BridgeAppModel {
                 self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't rotate the key."),
                                        message: String(localized: "Nothing was changed."), code: error.rawValue))
             }
+        }
+    }
+
+    /// Saved at once, outside the staged grant draft. Pausing is undone by
+    /// Resume, so it doesn't ask first. Changes waiting for approval are
+    /// withdrawn and an Allow for 15 minutes window ends.
+    func setPaused(_ clientID: String, _ paused: Bool) {
+        guard let client = client(clientID), !client.revoked, client.paused != paused else { return }
+        switch services.registry.setPaused(clientID: clientID, paused) {
+        case .success:
+            services.approvals?.withdraw(clientID: clientID)
+            refresh()
+            showBanner(paused
+                ? Banner(kind: .success, title: String(localized: "“\(client.name)” is paused."),
+                         message: String(localized: "Its requests are refused until you resume it. Its keys, tokens and access are kept."))
+                : Banner(kind: .success, title: String(localized: "“\(client.name)” is resumed."),
+                         message: String(localized: "Its next request is handled as before.")))
+        case .failure(let error):
+            showBanner(Banner(kind: .error,
+                              title: paused ? String(localized: "Couldn't pause the client.")
+                                            : String(localized: "Couldn't resume the client."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
         }
     }
 

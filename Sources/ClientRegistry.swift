@@ -59,6 +59,10 @@ struct ClientView: Equatable {
     var cloudAccess = false
     var hasRemoteToken = false
     var remoteIssuedAt: Date? = nil
+    /// Paused: every request is refused with `client_paused`, but the client
+    /// keeps its credentials, access and settings until it's resumed.
+    var paused = false
+    var pausedAt: Date? = nil
 }
 
 /// How a request reached the bridge. The agent name is what the agent reported
@@ -131,6 +135,7 @@ enum ClientRegistryError: String, Error {
     case duplicateName
     case unauthorized
     case forbidden
+    case paused = "client_paused"
 }
 
 enum ClientNameIssue: Equatable {
@@ -165,6 +170,9 @@ final class ClientRegistry {
         var remoteEnabled: Bool?
         var remoteVerifier: String?
         var remoteIssuedAt: Date?
+        // Pause. Absent decodes as not paused; older builds ignore both.
+        var paused: Bool?
+        var pausedAt: Date?
     }
     private struct State: Codable {
         var version = ClientRegistry.currentVersion
@@ -212,7 +220,8 @@ final class ClientRegistry {
                        hasSigningKey: !$0.verifier.isEmpty, hasMCPToken: $0.mcpVerifier != nil,
                        mcpIssuedAt: $0.mcpIssuedAt, approval: $0.approval ?? .allow,
                        cloudAccess: $0.remoteEnabled ?? false, hasRemoteToken: $0.remoteVerifier != nil,
-                       remoteIssuedAt: $0.remoteIssuedAt)
+                       remoteIssuedAt: $0.remoteIssuedAt, paused: $0.paused == true,
+                       pausedAt: $0.paused == true ? $0.pausedAt : nil)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -352,6 +361,25 @@ final class ClientRegistry {
         }
     }
 
+    /// Pausing refuses every request from the client, on every transport,
+    /// without touching its keys, tokens, access or cloud connections, so
+    /// resuming picks up exactly where it left off. Bumps the revision so work
+    /// already in flight is refused at its next recheck.
+    func setPaused(clientID: String, _ paused: Bool) -> Result<Void, ClientRegistryError> {
+        updateActive(clientID) { record in
+            guard (record.paused ?? false) != paused else { return }
+            record.paused = paused ? true : nil
+            record.pausedAt = paused ? now() : nil
+            record.revision += 1
+        }
+    }
+
+    /// Whether requests from this client are refused as `client_paused`.
+    func isPaused(clientID: String) -> Bool {
+        if case .success(let record) = activeRecord(clientID) { return record.paused == true }
+        return false
+    }
+
     func revoke(clientID: String) -> Result<Void, ClientRegistryError> {
         guard load() else { return .failure(.unavailable) }
         guard let index = state!.clients.firstIndex(where: { $0.id == clientID }) else {
@@ -366,6 +394,8 @@ final class ClientRegistry {
         next.clients[index].remoteEnabled = nil
         next.clients[index].remoteVerifier = nil
         next.clients[index].remoteIssuedAt = nil
+        next.clients[index].paused = nil
+        next.clients[index].pausedAt = nil
         next.clients[index].revision += 1
         Self.pruneRevoked(&next)
         guard persist(next) else { return .failure(.unavailable) }
@@ -521,6 +551,13 @@ final class ClientRegistry {
             return .failure(.unauthorized)
         }
         let targetID = Self.targetID(request)
+        // The pipeline refuses paused clients before this; kept here so no
+        // caller of `authorize` can skip it.
+        if candidate.paused == true {
+            _ = record(clientID: clientID, command: request.command.rawValue,
+                       outcome: "error:client_paused", targetID: targetID, origin: origin)
+            return .failure(.paused)
+        }
         if !request.command.isClientLevel && targetID == nil {
             _ = record(clientID: clientID, command: request.command.rawValue, outcome: "forbidden",
                        origin: origin)
@@ -558,7 +595,8 @@ final class ClientRegistry {
     func stillAuthorized(_ call: AuthorizedClientCall) -> Bool {
         checkThread()
         guard load(), let current = state!.clients.first(where: { $0.id == call.clientID }),
-              !current.revoked, current.revision == call.revision else { return false }
+              !current.revoked, current.paused != true,
+              current.revision == call.revision else { return false }
         guard let targetID = call.targetID else { return true }
         guard let grant = current.grants.first(where: { $0.targetID == targetID && $0.allows(call.command) })
         else { return false }
@@ -791,7 +829,8 @@ final class ClientRegistry {
               record.revision > 0, record.grants.count <= 100,
               record.grants.allSatisfy(\.isValid) else { return false }
         if record.revoked {
-            return record.verifier.isEmpty && record.mcpVerifier == nil && record.remoteVerifier == nil
+            return record.verifier.isEmpty && record.mcpVerifier == nil && record.remoteVerifier == nil &&
+                record.paused != true
         }
         // A remote token exists only while cloud access is on.
         if record.remoteVerifier != nil && record.remoteEnabled != true { return false }

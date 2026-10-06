@@ -19,9 +19,104 @@ struct ClientRegistryV4Tests {
         try activityRows()
         try roundTrip()
         try remoteAccess()
+        try pause()
         print("Client registry v4: v2/v3 upgrade and one-time backups, tokens, revision bumps, "
               + "MCP-only clients, load validation, agent names, failed-auth coalescing, "
-              + "CLI/MCP rows, round trip, remote access passed")
+              + "CLI/MCP rows, round trip, remote access, pause and resume passed")
+    }
+
+    /// Pausing refuses every request but keeps every credential, grant and
+    /// setting, survives a reload, and is undone exactly by resuming.
+    @MainActor
+    static func pause() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var clock = Date(timeIntervalSince1970: 2_000_000_000)
+        let registry = ClientRegistry(directory: directory, now: { clock })
+        let issued = value(registry.createClient(name: "Paused agent", credentials: [.signingKey, .mcpToken],
+                                                 approval: .ask))
+        let id = issued.id
+        let other = value(registry.createClient(name: "Other", credentials: [.mcpToken]))
+        let grants = [ClientGrant(resource: .calendar, targetID: "CAL-A", mask: 15)]
+        success(registry.replaceGrants(clientID: id, grants: grants))
+        success(registry.setCloudAccess(clientID: id, true))
+        let remote = value(registry.issueRemoteToken(clientID: id))
+        let read = request(.readEvents, ["calendarID": "CAL-A"])
+        let inFlight = value(registry.authorize(clientID: id, request: read, origin: .mcp(agent: nil)))
+        let file = directory.appendingPathComponent("client-registry.json")
+        let before = try json(file)["clients"] as! [[String: Any]]
+        let revision = before.first { $0["id"] as? String == id }!["revision"] as! Int
+
+        precondition(!registry.isPaused(clientID: id))
+        precondition(registry.clients()!.allSatisfy { !$0.paused && $0.pausedAt == nil })
+        clock = clock.addingTimeInterval(60)
+        success(registry.setPaused(clientID: id, true))
+        precondition(registry.isPaused(clientID: id) && !registry.isPaused(clientID: other.id))
+        let view = registry.clients()!.first { $0.id == id }!
+        precondition(view.paused && view.pausedAt == clock && !view.revoked)
+        // Everything is kept: credentials, grants, approval, cloud access.
+        precondition(view.hasSigningKey && view.hasMCPToken && view.hasRemoteToken && view.cloudAccess)
+        precondition(view.grants == grants && view.approval == .ask)
+        precondition(value(registry.authenticateMCPToken(issued.mcpToken!)) == id)
+        precondition(value(registry.authenticateRemoteToken(remote)) == id)
+        precondition(registry.cloudAccessAllowed(clientID: id))
+        // Work in flight is refused at its next recheck, and so is anything new.
+        precondition(!registry.stillAuthorized(inFlight), "pausing bumps the revision")
+        failure(registry.authorize(clientID: id, request: read, origin: .cli), .paused)
+        precondition(ClientRegistryError.paused.rawValue == "client_paused")
+        let row = registry.activity()!.first!
+        precondition(row.clientID == id && row.outcome == "error:client_paused" &&
+                      row.targetID == "CAL-A" && row.via == "cli")
+        // Pausing twice is a no-op that keeps the first time.
+        clock = clock.addingTimeInterval(60)
+        success(registry.setPaused(clientID: id, true))
+        precondition(registry.clients()!.first { $0.id == id }!.pausedAt == clock.addingTimeInterval(-60))
+        // The client can still be edited while paused.
+        success(registry.rename(clientID: id, name: "Paused agent 2"))
+        success(registry.setApproval(clientID: id, .allow))
+        success(registry.setApproval(clientID: id, .ask))
+        // Saved, and still paused after a reload; only one revision bump.
+        let reloaded = ClientRegistry(directory: directory, now: { clock })
+        precondition(reloaded.isPaused(clientID: id))
+        precondition(reloaded.clients()!.first { $0.id == id }!.pausedAt == clock.addingTimeInterval(-60))
+        let paused = try json(file)["clients"] as! [[String: Any]]
+        let record = paused.first { $0["id"] as? String == id }!
+        precondition(record["paused"] as? Bool == true && record["revision"] as? Int == revision + 3)
+        precondition(paused.first { $0["id"] as? String == other.id }!["paused"] == nil,
+                     "unpaused clients don't gain the field")
+        // Resuming restores exactly what was there.
+        success(reloaded.setPaused(clientID: id, false))
+        precondition(!reloaded.isPaused(clientID: id))
+        let resumed = reloaded.clients()!.first { $0.id == id }!
+        precondition(!resumed.paused && resumed.pausedAt == nil && resumed.grants == grants)
+        let call = value(reloaded.authorize(clientID: id, request: read, origin: .mcp(agent: nil)))
+        precondition(reloaded.stillAuthorized(call))
+        precondition(value(reloaded.authenticateMCPToken(issued.mcpToken!)) == id)
+        let after = (try json(file)["clients"] as! [[String: Any]]).first { $0["id"] as? String == id }!
+        precondition(after["paused"] == nil && after["pausedAt"] == nil, "resume removes the fields")
+        // Revoking a paused client clears the pause; a revoked client can't be paused.
+        success(reloaded.setPaused(clientID: id, true))
+        success(reloaded.revoke(clientID: id))
+        let revoked = reloaded.clients()!.first { $0.id == id }!
+        precondition(revoked.revoked && !revoked.paused && !reloaded.isPaused(clientID: id))
+        failure(reloaded.setPaused(clientID: id, true), .clientRevoked)
+        failure(reloaded.setPaused(clientID: UUID().uuidString.lowercased(), true), .clientMissing)
+        failure(reloaded.authorize(clientID: id, request: read, origin: .cli), .unauthorized)
+        // A file with a revoked client marked paused fails closed.
+        var bad = try json(file)
+        var clients = bad["clients"] as! [[String: Any]]
+        let index = clients.firstIndex { $0["id"] as? String == id }!
+        clients[index]["paused"] = true
+        bad["clients"] = clients
+        try FileManager.default.removeItem(at: file)
+        try writeRegistry(bad, to: directory)
+        precondition(ClientRegistry(directory: directory).clients() == nil, "revoked + paused is invalid")
+        // A version 4 file from before pause loads with every client unpaused.
+        let legacy = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: legacy) }
+        try writeRegistry(["version": 4, "clients": [legacyClient("Old")], "activity": []], to: legacy)
+        let old = ClientRegistry(directory: legacy)
+        precondition(old.clients()!.count == 1 && !old.clients()!.first!.paused)
     }
 
     /// Cloud access and remote tokens (§22.4): separate from local tokens in

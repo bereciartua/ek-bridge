@@ -51,7 +51,7 @@ enum ApprovalDecision: Equatable {
     case allowedByWindow
     case denied
     case timedOut
-    /// The caller went away, or the request was withdrawn (revoke, bridge off).
+    /// The caller went away, or the request was withdrawn (revoke, pause, bridge off).
     case withdrawn
     /// Too many changes already waiting for this client.
     case tooMany
@@ -122,6 +122,12 @@ final class RequestPipeline {
             reject(request, clientID, origin, ["error": "bridge_off"], completion)
             return ticket
         }
+        // 1b. The client's own switch: paused clients keep their access but
+        // are refused like the bridge being off, without taking rate-limit tokens.
+        if registry.isPaused(clientID: clientID) {
+            reject(request, clientID, origin, ["error": "client_paused"], completion)
+            return ticket
+        }
         // 2. Rate limits, before any grant work.
         if (inFlight[clientID] ?? 0) >= Self.maxInFlightPerClient {
             reject(request, clientID, origin, ["error": "rate_limited", "retryAfter": 1], completion)
@@ -160,8 +166,8 @@ final class RequestPipeline {
         // 5. Nothing changed since step 3.
         guard stillAllowed(call) else { finish(call, ["error": "scope_changed"]); return ticket }
         if ticket.isCancelled { finish(call, ["error": "cancelled"]); return ticket }
-        // 6. Ask before changes, then recheck: the user may have revoked access
-        // or turned the bridge off while the panel was up.
+        // 6. Ask before changes, then recheck: the user may have revoked access,
+        // paused the client or turned the bridge off while the panel was up.
         if request.command.isWrite, call.approval == .ask, let approvals {
             let approval = ApprovalRequest(clientID: clientID, clientName: call.clientName,
                                            agent: origin.agent, request: request,

@@ -176,6 +176,7 @@ struct RequestPipelineTests {
     @MainActor
     static func run() {
         bridgeOff()
+        clientPaused()
         rateLimits()
         authorizeBeforeValidation()
         approvals()
@@ -183,7 +184,7 @@ struct RequestPipelineTests {
         inFlight()
         inlineCommands()
         originsMatch()
-        print("Request pipeline: bridge_off, rate limits, authorize before validation, approvals "
+        print("Request pipeline: bridge_off, client_paused, rate limits, authorize before validation, approvals "
               + "(user/window/denied/timeout/withdrawn/tooMany), changes and cancellation while waiting, "
               + "8 in flight, list_collections, counts, scope_status, CLI = MCP rows passed")
     }
@@ -216,6 +217,58 @@ struct RequestPipelineTests {
         g.bridgeOn = false
         g.send(readEvents(), origin: .cli)
         precondition(g.lastRow.via == "cli" && g.lastRow.agent == nil)
+    }
+
+    @MainActor
+    static func clientPaused() {
+        var policy = RateLimiter.Policy()
+        policy.callBurst = 1
+        let f = Fixture(approval: .ask, policy: policy)
+        let other = value(f.registry.createClient(name: "Other", credentials: [.mcpToken]))
+        success(f.registry.replaceGrants(clientID: other.id, grants: [
+            ClientGrant(resource: .calendar, targetID: "CAL-A", mask: ClientGrant.read)]))
+        success(f.registry.setPaused(clientID: f.clientID, true))
+        // Every request, even one that would fail later checks, is refused
+        // before rate limits, grants, validation and approvals.
+        for request in [createEvent(), readEvents("CAL-NOT-GRANTED", limit: 0), plain(.listCollections),
+                        readEvents(), readEvents()] {
+            let box = f.send(request)
+            precondition(box.error == "client_paused" && box.reply?.count == 1)
+            precondition(f.lastRow.outcome == "error:client_paused" && f.lastRow.clientID == f.clientID)
+            precondition(f.lastRow.via == "mcp" && f.lastRow.agent == "Claude Code 2.4.1")
+        }
+        precondition(f.registry.activity()!.map(\.targetID) == ["CAL-A", "CAL-A", nil, "CAL-NOT-GRANTED", "CAL-A"])
+        precondition(f.executor.calls.isEmpty && f.gate.asked.isEmpty && f.records == 5)
+        precondition(!f.registry.activity()!.contains { $0.outcome == "accepted" })
+        // Other clients are unaffected.
+        precondition(f.send(readEvents(), client: other.id).reply?["ok"] as? Bool == true)
+        // The bridge switch comes first.
+        f.bridgeOn = false
+        precondition(f.send(readEvents(), origin: .cli).error == "bridge_off")
+        f.bridgeOn = true
+        // Resumed: no rate-limit tokens were spent while paused, and access is as before.
+        success(f.registry.setPaused(clientID: f.clientID, false))
+        precondition(f.send(readEvents()).reply?["ok"] as? Bool == true)
+        precondition(f.lastRow.outcome == "success")
+        // Paused while a change waits for approval, then Allow → scope_changed.
+        let w = Fixture(approval: .ask)
+        let waiting = w.send(createEvent())
+        precondition(waiting.reply == nil && w.gate.waitingCount == 1)
+        success(w.registry.setPaused(clientID: w.clientID, true))
+        w.gate.answer(.allowed)
+        precondition(waiting.error == "scope_changed" && w.executor.calls.isEmpty)
+        // Paused while a read runs in EventKit → scope_changed at the recheck.
+        let r = Fixture()
+        r.executor.mode = .hold
+        let running = r.send(readEvents())
+        success(r.registry.setPaused(clientID: r.clientID, true))
+        r.executor.completeOldest()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        precondition(running.error == "scope_changed")
+        // And resumed afterwards, the same client works again.
+        success(r.registry.setPaused(clientID: r.clientID, false))
+        r.executor.mode = .immediate
+        precondition(r.send(readEvents()).reply?["ok"] as? Bool == true)
     }
 
     @MainActor

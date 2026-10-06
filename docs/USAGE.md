@@ -40,9 +40,20 @@ A client's page has these parts:
   - Saved changes apply to the next request; a request already running may need to be sent again.
   - If EventKit doesn't list a calendar a client has access to (account signed out, Full Access off, calendar deleted), the access is kept and a banner says so. **Review…** lists those IDs; **Remove** stages their removal for the next Save. Write access saved on a calendar that has since become read only is dropped on the next Save, and the row warns about it first.
 - **Changes:** next to the Access title, **Ask me first** or **Allow without asking**. See [Ask before changes](#ask-before-changes). It saves immediately and isn't part of the staged edits.
-- The **⋯** menu: **Rename…** (or double-click the name in the sidebar); under MCP Access, **Turn On MCP Access** or **Reset MCP Token…**, **Remove MCP Access…** and **Show Token File in Finder**; under Command Line, **Add Command-Line Key** or **Rotate Key…**, **Remove Command-Line Key…** and **Show Key File in Finder**; and **Revoke Client…**. Removing one credential leaves the other and all access in place.
+- The **⋯** menu: **Rename…** (or double-click the name in the sidebar); under MCP Access, **Turn On MCP Access** or **Reset MCP Token…**, **Remove MCP Access…** and **Show Token File in Finder**; under Command Line, **Add Command-Line Key** or **Rotate Key…**, **Remove Command-Line Key…** and **Show Key File in Finder**; **Pause Client** or **Resume Client**; and **Revoke Client…**. Removing one credential leaves the other and all access in place.
 
 Renaming doesn't change the key, the token, the ID or any access, so running tools keep working. Only commands that use `--client "<old name>"` need the new name. Agent setups use the client ID.
+
+### Pause a client
+
+**Pause Client** (in the **⋯** menu or the sidebar's right-click menu) stops one client without taking anything away. Every request from it, over the command line, MCP or Remote Access, is refused with `client_paused` and shows in Activity as **Client was paused**. Its key, MCP and remote tokens, connected cloud apps, access and Ask before changes setting are all kept, so agents stay configured and connected. **Resume** (on the client's page, or **Resume Client** in either menu) lets its next request through as before; nothing needs to be set up again.
+
+Pausing saves immediately and doesn't ask first, because it's undone by resuming. Changes from the client waiting for your approval are refused, an **Allow for 15 minutes** window ends, and a request already running is refused at its next check. A paused client shows **Paused** in the sidebar, on Overview and on its page, and you can still rename it or change its access while it's paused. It still counts toward the limit of 32. Use **Revoke Client…** instead when the tool should never connect again.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/client-paused-dark.png">
+  <img alt="A paused client's page: a Paused label next to its name, and a card saying it's paused since a date, that every request is refused and shows in Activity as Client was paused, that its keys, tokens, access and cloud connections are kept, with a Resume button." src="images/client-paused-light.png" width="720">
+</picture>
 
 Only active clients count toward the limit of 32. Revoked clients stay in the sidebar under **Revoked**, read only, so Activity stays understandable; the app keeps up to 200 of them and drops the oldest first.
 
@@ -90,6 +101,7 @@ The directory is mode 0700 and the files are mode 0600. The key file contains th
 - **Rotate Key…** replaces the key file and verifier for the client. The old key stops working for future requests. Update any task that points to a moved or copied key file; the app can't remove copies it doesn't know about.
 - **Reset MCP Token…** replaces the token. Launcher and token-file setups keep working; agents you gave the token to directly need the new one. **Remove MCP Access…** deletes it.
 - **Copy Remote Token…** creates the remote token the first time, asks first, and clears the clipboard after 90 seconds; **Reset Remote Token…** replaces it. Turning off **Allow cloud access** deletes it and disconnects the client's cloud apps.
+- **Pause Client** refuses the client's requests without changing its credentials or access; **Resume** undoes it. See [Pause a client](#pause-a-client).
 - **Revoke Client…** invalidates the client's verifier and tokens, disconnects its cloud apps and removes its files. If the file can't be removed, a banner says so with **Show in Finder**. Future requests and asynchronous replies that recheck the client revision are denied; revoking can't undo a write that EventKit already committed.
 - Turning the bridge off stops all client requests without changing access, and is saved. The MCP server and Remote Access keep listening so agents stay connected, but refuse their tool calls. **Quit** stops the running process, the MCP server and Remote Access.
 

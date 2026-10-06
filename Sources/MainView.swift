@@ -121,6 +121,7 @@ struct ClientSidebarRow: View {
     var body: some View {
         HStack(spacing: 8) {
             AvatarView(name: client.name, id: client.id, size: 24)
+                .opacity(client.paused ? 0.5 : 1)
             VStack(alignment: .leading, spacing: 0) {
                 if editing {
                     TextField(String(localized: "Name"), text: $draftName)
@@ -151,6 +152,11 @@ struct ClientSidebarRow: View {
                 Button(String(localized: "Show Key File in Finder")) { model.showKeyFile(client.id) }
             }
             Divider()
+            if client.paused {
+                Button(String(localized: "Resume Client")) { model.setPaused(client.id, false) }
+            } else {
+                Button(String(localized: "Pause Client")) { model.setPaused(client.id, true) }
+            }
             Button(String(localized: "Revoke Client…"), role: .destructive) { model.revokeClient(client.id) }
         }
         .accessibilityElement(children: .combine)
@@ -161,7 +167,9 @@ struct ClientSidebarRow: View {
     private var subtitle: String {
         if editing, let issue { return NameIssueText.message(issue) }
         let state: String
-        if let last = model.lastRequest(for: client.id) {
+        if client.paused {
+            state = String(localized: "Paused")
+        } else if let last = model.lastRequest(for: client.id) {
             state = RelativeTime.ago(last, now: model.now)
         } else if client.hasMCPToken && !client.grants.isEmpty {
             state = String(localized: "waiting")

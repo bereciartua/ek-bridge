@@ -1,6 +1,6 @@
 # Connecting AI agents (MCP)
 
-EventKit Bridge 0.6.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
+EventKit Bridge 0.7.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
 
 The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines can't reach it. Remote Access is a separate listener on `127.0.0.1:47616`, also off by default, with its own credentials; a tunnel such as Tailscale Funnel gives it a public HTTPS address.
 
@@ -35,6 +35,7 @@ Each client's MCP access is a 256-bit token in a private file, `~/Library/Applic
 - **Reset…** (or **Reset MCP Token…** in the **⋯** menu) issues a new token. Launcher and token-file setups keep working; agents you gave the token to directly stop until you copy the new one.
 - **Remove MCP Access…** deletes the token. Its access settings are kept, so **Turn On MCP Access** can bring it back.
 - **Add Command-Line Key** and **Remove Command-Line Key…** do the same for the `client.py` key, without touching MCP access.
+- **Pause Client** refuses every tool call from the agent with `client_paused` but keeps its token, connected cloud apps and access; **Resume** lets it continue without reconnecting. The agent can still list its tools while paused.
 - **Revoke Client…** removes every credential, including the [remote token and connected cloud apps](#use-from-cloud-agents), and all access.
 
 Each change takes effect on the next request.
@@ -401,6 +402,7 @@ The check calls `list_collections` to see whether the bridge is on, so it adds a
 | "Another program is using EventKit Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ MCP Server and choose another port if needed. |
 | Settings says the port is in use | Quit the other app or **Choose Another Port…**. Launcher setups pick up the new port automatically; direct HTTP setups need the new URL. |
 | Bridge off (`bridge_off`) | Turn on the bridge from the menu bar. The agent doesn't need to reconnect. |
+| Paused (`client_paused`) | The client is paused. **Resume** it on its page. The agent doesn't need to reconnect. |
 | Not allowed (`forbidden`) | Select the row in Activity; it names the missing access and links to it. Grant it only if this agent should have it. Agents cache tool lists, so a new grant can take a reconnect (or about 30 seconds for agents on the current protocol) to show a new tool. |
 | Agent sees fewer tools than expected | A tool appears only when the client has that action on at least one calendar or list. `list_collections` is always there. |
 | Declined or not approved in time | Answer the panel, or switch the client to *Allow without asking*. |
@@ -497,6 +499,7 @@ The text the agent sees addresses the model and ends by saying whether to retry,
 | `forbidden` | This client lacks that action on that calendar or list. Ask the user to grant it; don't retry. |
 | `unauthorized` | The client's access was removed. Tell the user. |
 | `bridge_off` | The bridge is off. Ask the user to turn it on; don't retry until they do. |
+| `client_paused` | The user paused this client. Its access is kept; ask the user to resume it, and don't retry until they do. |
 | `full_access_required` | macOS isn't giving the app Full Access to Calendars or Reminders. Ask the user. |
 | `target_unavailable`, `item_unavailable` | The calendar, list or item isn't available, or its ID changed. Call `list_collections` or read again. |
 | `target_not_writable` | Read-only calendar or list. Choose another. |

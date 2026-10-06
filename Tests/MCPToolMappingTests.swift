@@ -278,7 +278,7 @@ struct MCPToolMappingTests {
             ["code": "recurrence_anchor_mismatch", "tool": "create_event"],
             ["code": "alarms_unsupported", "tool": "update_reminder"],
         ]
-        let codes = ["unauthorized", "bridge_off", "target_not_writable", "conflict", "occurrence_conflict",
+        let codes = ["unauthorized", "bridge_off", "client_paused", "target_not_writable", "conflict", "occurrence_conflict",
                      "too_many_events_narrow_range", "nonexistent_local_time", "ambiguous_local_time",
                      "invalid_parameters", "invalid_schedule", "invalid_event_schedule", "invalid_request",
                      "recurrence_requires_due", "recurrence_anchor_mismatch",
@@ -340,6 +340,11 @@ struct MCPToolMappingTests {
                                     idempotencyKey: nil)
               == "Bridge off: EventKit Bridge is turned off. Ask the user to turn it on from the menu bar; "
               + "don't retry until they do. (code: bridge_off)", "bridge_off")
+        check(AgentOutcomeText.text(code: "client_paused", tool: nil, detail: nil, retryAfter: nil,
+                                    idempotencyKey: nil)
+              == "Paused: the user paused this agent's access in EventKit Bridge. Its access isn't removed; "
+              + "ask the user to resume this client if they want you to continue, and don't retry until "
+              + "they do. (code: client_paused)", "client_paused")
 
         // Every code the core and pipeline can return has a specific text.
         let sources = fixtures.appendingPathComponent("../../Sources").standardized

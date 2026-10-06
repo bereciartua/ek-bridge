@@ -87,7 +87,7 @@ The local MCP port, for its part, refuses remote and OAuth tokens (401) and any 
 
 **Shared pipeline**, in this order:
 
-1. The bridge is on, or `bridge_off`.
+1. The bridge is on, or `bridge_off`. Then the client isn't paused, or `client_paused` (no rate-limit tokens are taken; `authorize` refuses paused clients too).
 2. Rate limits: at most 8 calls in progress per client, then the per-client call and write buckets, or `rate_limited`. Steps 1 and 2 are still recorded in Activity.
 3. `ClientRegistry.authorize`: a saved grant for the exact collection and action (client-level commands such as `scope_status` and `list_collections` need only an active client), plus an "accepted" Activity row.
 4. `CommandPolicy` rejects unknown or malformed parameters before EventKit access.
@@ -96,7 +96,7 @@ The local MCP port, for its part, refuses remote and OAuth tokens (401) and any 
 7. Client-level commands are answered inline; everything else goes to `EventKitCommands`, which checks Full Calendar or Reminders access and target writability where needed. For asynchronous reads it rechecks the client revision, the bridge and macOS access before replying. Writes also pass idempotency, target and expected-version checks; `WriteJournal` records a pending write (with its client ID, for the per-client quota) before EventKit is asked to mutate data, and cancellation is checked just before that reservation. A completed same-key retry returns the previous result marked `repeated`. A pending or uncertain write needs reconciliation rather than automatic replay.
 8. The result row is recorded with `via`, the agent's reported name and the approval detail, then the reply is sent. MCP results are converted back to the tool's output shape or to an agent-facing error.
 
-A grant edit, key rotation or removal, MCP or remote token issue, reset or removal, a change to Ask before changes or to Allow cloud access, an OAuth connection added or revoked, or revocation changes the client's revision. Future requests, asynchronous reads and approval waits that recheck it are denied; a write already committed by EventKit cannot be undone by a later policy change. A policy-store failure stops normal access on every transport. UI-created clients begin with zero grants and without cloud access; enabling the bridge, the MCP server or Remote Access, issuing a token, or approving a cloud app grants no collection access. Writes from a client set to *Allow without asking* proceed without a prompt once a grant exists.
+A grant edit, key rotation or removal, MCP or remote token issue, reset or removal, a change to Ask before changes or to Allow cloud access, an OAuth connection added or revoked, pausing or resuming, or revocation changes the client's revision. Future requests, asynchronous reads and approval waits that recheck it are denied; a write already committed by EventKit cannot be undone by a later policy change. A policy-store failure stops normal access on every transport. UI-created clients begin with zero grants and without cloud access; enabling the bridge, the MCP server or Remote Access, issuing a token, or approving a cloud app grants no collection access. Writes from a client set to *Allow without asking* proceed without a prompt once a grant exists.
 
 ## Local state
 
@@ -211,5 +211,10 @@ App 0.5.0 adds Remote Access to version 4 rather than making a version 5, becaus
 - Clients gain `remoteEnabled` (Allow cloud access; missing means off), `remoteVerifier` (the SHA-256 of the remote token, unique among active clients; allowed only while cloud access is on) and `remoteIssuedAt`. Revoked clients have none of them.
 - Activity rows may have `via: remote`.
 - OAuth connections aren't in the registry; they're in `remote-connections.json`.
+
+App 0.7.0 adds pausing, also within version 4:
+
+- Clients gain `paused` (`true`, or missing for not paused) and `pausedAt`. Pausing changes nothing else in the record, so resuming (which removes both fields) restores the client exactly. Revoked clients are never paused; a file with a revoked, paused client fails closed.
+- Paused clients are still active: they count toward the limit of 32, keep unique names and token digests, and authenticate. The pipeline refuses them after authentication, so the Activity row names the client.
 
 A version 2 or 3 file loads unchanged and is written as version 4 on the next change, after a one-time backup named after the version read (`client-registry.v3.backup.json` or `client-registry.v2.backup.json`, mode 0600, never overwritten). Existing clients keep working with *Allow without asking*. **An older build fails closed on a newer registry** ("client settings can't be read"). To roll back, quit the app and restore the backup over `client-registry.json`; changes made since the upgrade are lost, including MCP access (leftover `.mcp-token` files no longer work).

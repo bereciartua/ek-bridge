@@ -432,6 +432,13 @@ final class Harness {
             _ = registry.revoke(clientID: client)
             _ = files.remove(clientID: client, kind: .mcpToken)
             return ["ok": true]
+        case "pause":
+            guard let client else { return ["ok": false] }
+            if case .success = registry.setPaused(clientID: client, command["on"] as? Bool ?? true) {
+                if command["on"] as? Bool ?? true { _ = approvals.answer(.withdrawn) }
+                return ["ok": true]
+            }
+            return ["ok": false]
         case "reset_token":
             guard let client, case .success(let token) = registry.issueMCPToken(clientID: client),
                   case .success = files.replace(clientID: client, token: token) else { return ["ok": false] }
