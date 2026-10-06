@@ -1,52 +1,45 @@
 # EventKit Bridge
 
-EventKit Bridge is a **local macOS menu bar app** that uses Apple's EventKit to work with Calendar and Reminders. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents (Claude Code, Codex, Claude Desktop, Cursor and others) connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for a specific calendar or reminder list, request shape, and write safeguards before using EventKit, and can ask you before each change.
+EventKit Bridge is a **macOS menu bar app** that gives scripts and AI agents scoped, revocable access to your Calendar and Reminders. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents (Claude Code, Codex, Claude Desktop, Cursor and others) connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for a specific calendar or reminder list, request shape, and write safeguards before using Apple's EventKit framework, and can ask you before each change.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
   <img alt="EventKit Bridge Overview: the bridge is on, Calendars and Reminders have Full Access, and three clients are listed with their access and last request." src="docs/images/overview-light.png" width="720">
 </picture>
 
-This is a source project, not a packaged release. The repository is private. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address only. A cloud agent can reach the bridge only through Remote Access and a tunnel the user sets up, only for clients the user allowed, or through an authorized agent or task actually running on the Mac; it cannot assume an offline, sleeping, or logged-out Mac is available.
+Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. A cloud agent can reach the bridge only through Remote Access and a tunnel you set up, only for clients you allowed; it can't reach a Mac that's asleep, offline or logged out.
 
-## Start here
+This is a personal project in **public preview**, with best-effort support. It is not affiliated with Apple.
 
-| Goal | Guide |
-| --- | --- |
-| Build and verify the source without installing it | [Setup and signing](docs/SETUP.md) |
-| Enroll a client and use the app | [User guide](docs/USAGE.md) |
-| Connect an AI agent over MCP, or a cloud agent through Remote Access; tool reference | [MCP guide](docs/MCP.md) |
-| Call the local CLI and understand command parameters | [API and CLI reference](docs/API.md) |
-| Understand processes, file storage, and security limits | [Architecture and threat model](docs/ARCHITECTURE.md) |
-| See what was tested and diagnose failures | [Testing and troubleshooting](docs/TESTING.md) |
-| Continue development or prepare a public release | [Maintainer handoff](docs/MAINTAINING.md) |
+## Install
 
-The app needs macOS 14 or later. On the currently supported development machine, the scripts use the macOS 26.5 SDK from Command Line Tools. Building and offline tests do not install the app or request access:
+1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/eventkit-bridge/releases/latest).
+2. Open it and drag the app to **Applications**.
+3. Open the app. Its window opens on a setup checklist; later, use the calendar icon in the menu bar.
 
-```sh
-sh test.sh
-sh build.sh
-```
+It needs **macOS 14 or later**, on Apple silicon or Intel. Until the first release is published, [build from source](#build-from-source).
 
-The build creates `build/EventKitBridge.app` (with the MCP launcher `bridge-mcp` inside it) and `build/bridge-client`. It signs the app **ad hoc by default for build validation**. For persistent Calendar and Reminders permissions, choose a stable signing identity and follow [the installation guide](docs/SETUP.md) rather than treating an ad hoc build as an update to an installed app. `sh ui_test.sh` runs the window and behavior tests and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data.
+For scripts, install the command-line client from **Settings ▸ Developer ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`.
 
 ## Quick start
 
 These are the same steps as the setup checklist the app shows on first launch:
 
-1. **Build and open the app** (see [Setup and signing](docs/SETUP.md)). Its window opens on the checklist; later, use the calendar icon in the menu bar.
+1. **Open the app** (see [Install](#install)).
 2. **Allow Calendar and/or Reminders access.** You need only the one your tools use.
 3. **Create a client** for each tool or script, with **Connects from ▸ Command line**. It gets its own key file and starts with no access. (For an AI agent, see below.)
 4. **Choose what the client can use:** which calendars and lists, and which actions (Read, Create, Edit, Delete, Complete). Then **Save**.
 5. **Turn on the bridge and send a test request.** The client page has a ready-to-run command:
 
 ```sh
-python3 client.py scope_status --client "Claude Code"
+bridge-client scope_status --client "Claude Code"
 ```
+
+From a source checkout, `python3 client.py` works the same way.
 
 <img alt="A client page: Connect shows the client ID, key file path and a command to copy; Access shows calendars grouped by account with Read, Create, Edit and Delete checkboxes." src="docs/images/client-light.png" width="720">
 
-`python3 client.py --help` lists every command and the access it needs. Errors say what's wrong and how to fix it, with a distinct exit code for each kind of problem ([API and CLI](docs/API.md)). The app's **Activity** pane shows every request with a plain explanation of its result.
+`bridge-client --help` lists every command and the access it needs. Errors say what's wrong and how to fix it, with a distinct exit code for each kind of problem ([API and CLI](docs/API.md)). The app's **Activity** pane shows every request with a plain explanation of its result.
 
 ### Connect an AI agent
 
@@ -71,9 +64,23 @@ When the agent wants to change something, a small panel asks you first. You can 
 
 Setups for every supported agent, the tool reference and troubleshooting are in the [MCP guide](docs/MCP.md).
 
-### Connect a cloud agent
+### Connect a cloud agent (experimental)
 
 Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (Settings ▸ Remote Access, off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each client needs **Allow cloud access** on its page. Agents that send a header (the Anthropic and OpenAI APIs, Claude Code on the web, Cursor and Copilot cloud agents, Devin) use the client's separate remote token. claude.ai, ChatGPT and Gemini Enterprise sign in with OAuth, which you approve on the Mac by matching a six-digit code. See [Use from cloud agents](docs/MCP.md#use-from-cloud-agents).
+
+Remote Access is **experimental**: it has offline tests, but hasn't yet been tested live with every cloud agent and tunnel. Turn it on only while you need it, and keep the Remote Access URL private; its path is the secret.
+
+## Guides
+
+| Goal | Guide |
+| --- | --- |
+| Install, build from source, signing and macOS access | [Setup](docs/SETUP.md) |
+| Enroll a client and use the app | [User guide](docs/USAGE.md) |
+| Connect an AI agent over MCP, or a cloud agent through Remote Access; tool reference | [MCP guide](docs/MCP.md) |
+| Call the CLI and understand command parameters | [API and CLI reference](docs/API.md) |
+| Understand processes, file storage, and security limits | [Architecture and threat model](docs/ARCHITECTURE.md) |
+| See what was tested and diagnose failures | [Testing and troubleshooting](docs/TESTING.md) |
+| Contribute, or maintain and release | [Contributing](CONTRIBUTING.md), [Maintaining](docs/MAINTAINING.md) |
 
 ## What works today
 
@@ -85,9 +92,23 @@ Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote
 - Updates change only the fields they send, and every written field is read back: a mismatch removes a new item or puts an edited one back. Inviting people, answering invitations, attachments, travel time and the Reminders app's tags and subtasks aren't possible through EventKit.
 - Cloud agents can use the same tools through Remote Access, a tunnel you run and a per-client **Allow cloud access** switch, with a separate remote token per client or OAuth connections you approve on the Mac. Remote Access is off by default, can turn itself off on a timer, and is one click to turn off from the menu bar.
 - One window with Overview, Activity (which says whether each request came via MCP, Remote Access or the command line), each client and Settings; a menu bar icon that shows whether the bridge is on, off or needs attention, with a globe while Remote Access is on; and a first-run checklist.
-- The app can launch at login when the local user registers it. The user's bridge-enabled choice and client grants are local state, not repository content.
+- The app can launch at login when you turn that on.
 
 The [support matrix](docs/API.md#support-matrix) and [testing record](docs/TESTING.md) distinguish implemented behavior from provider-specific observations and untested cases.
+
+## Privacy
+
+The app has **no analytics, telemetry or crash reporting**, and no account. Your calendars, reminders, clients and Activity stay on your Mac. These are every network connection it makes:
+
+| Connection | When |
+| --- | --- |
+| MCP server, listening on `127.0.0.1:47615` | Only while **Settings ▸ MCP Server** is on (off by default). Loopback only: other computers can't connect. |
+| Remote Access, listening on `127.0.0.1:47616` | Only while **Settings ▸ Remote Access** is on (off by default). Loopback only; a tunnel you run forwards cloud agents to it. |
+| One HTTPS request to your Remote Access address | Only when you click **Test** in Settings ▸ Remote Access. |
+| One HTTPS request for a cloud agent's client metadata | Only while you pair an OAuth cloud agent (claude.ai, ChatGPT), to the address that agent gives. Private and local addresses are refused. |
+| `bridge-mcp` connecting to `127.0.0.1` | When an agent on your Mac starts it, to reach the MCP server. |
+
+What an agent reads through the bridge goes to that agent and its AI provider, under their privacy terms, so grant only what each agent needs. Tunnels other than Tailscale Funnel can read Remote Access traffic at their edge.
 
 ## Security boundary
 
@@ -95,12 +116,40 @@ The bridge stores each client's Ed25519 signing credential in a mode-0600 file u
 
 The MCP server is **off by default**. When on, it listens only on `127.0.0.1:47615`, never on a network interface. Every request needs the client's own 256-bit token, kept in a mode-0600 file; the registry stores only its SHA-256 hash, and the recommended agent setups read the file instead of putting the token in the agent's config. Requests with a foreign `Host`, any `Origin` (web pages), or tunnel forwarding headers are refused, and repeated failed sign-ins are locked out. See the [threat review](docs/ARCHITECTURE.md#mcp-threat-review-040).
 
-**Remote Access** is also off by default. While on, it listens on `127.0.0.1:47616` for a tunnel the user runs; every path except a 128-bit secret path gets 404, and only clients with **Allow cloud access** can use it, with a separate remote token or an OAuth connection the user approved on the Mac. Local tokens don't work through it, and its credentials don't work on the local port. Calendar data a cloud agent reads goes to that vendor, and tunnels other than Tailscale Funnel can read the traffic at their edge. See the [Remote Access threat review](docs/ARCHITECTURE.md#remote-access-threat-review-050). Request and response files are owned by the user and have restricted permissions. **These controls do not isolate another process running as the same macOS user.** Such a process can access the credential, token or policy files. A grant is therefore a boundary between enrolled clients in this app's protocol, not a defense against a compromised user account. Do not put credentials, raw bridge traffic, personal event contents, or diagnostic logs in this repository.
+**Remote Access** is also off by default. While on, it listens on `127.0.0.1:47616` for a tunnel the user runs; every path except a 128-bit secret path gets 404, and only clients with **Allow cloud access** can use it, with a separate remote token or an OAuth connection the user approved on the Mac. Local tokens don't work through it, and its credentials don't work on the local port. See the [Remote Access threat review](docs/ARCHITECTURE.md#remote-access-threat-review-050). Request and response files are owned by the user and have restricted permissions. **These controls do not isolate another process running as the same macOS user.** Such a process can access the credential, token or policy files. A grant is therefore a boundary between enrolled clients in this app's protocol, not a defense against a compromised user account.
 
-The app's exact installed signing identity, macOS privacy grants, client credentials, collection IDs, and any locally pinned iCloud source ID remain outside source control. No installed service, login item, credential, or Calendar/Reminders data is created by `build.sh` or `test.sh`.
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+
+## Build from source
+
+You need macOS 14 or later, Xcode or the Xcode Command Line Tools, and Python 3. Building and the offline tests don't install the app or ask for access:
+
+```sh
+sh test.sh
+sh build.sh
+```
+
+The build creates `build/EventKitBridge.app`, with the MCP launcher `bridge-mcp` and the command-line client `bridge-client` inside it (`build/bridge-client` links to it). It signs the app **ad hoc by default**, which macOS treats as a new app each time; for lasting Calendar and Reminders access, sign with a stable identity as described in [Setup](docs/SETUP.md#build-from-source). `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app. `sh ui_test.sh` runs the window and behavior tests and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data. See [Contributing](CONTRIBUTING.md).
+
+## Uninstall
+
+1. Quit the app from its menu bar menu.
+2. Remove its Calendar and Reminders access. The first command reads the app's bundle ID, so run these before you delete the app:
+
+   ```sh
+   bundle_id=$(defaults read /Applications/EventKitBridge.app/Contents/Info CFBundleIdentifier)
+   tccutil reset Calendar "$bundle_id"
+   tccutil reset Reminders "$bundle_id"
+   ```
+
+3. Delete the app from Applications, and its data: `~/Library/Application Support/EventKitBridge` (clients, keys, tokens, Activity and the write journal).
+4. If you installed the command-line tool, delete `~/.local/bin/bridge-client`.
+5. Remove the server from your agents' configs (for example `claude mcp remove eventkit-bridge`), and stop any tunnel you ran for Remote Access.
 
 ## Project status
 
-Offline tests and bounded live tests have exercised the local bridge, UI, and synthetic EventKit items. The MCP server, launcher, agent setups, Remote Access and its OAuth server have offline tests over real loopback sockets and a local HTTPS fixture; neither the live agent matrix nor the live cloud matrix has been run yet. A full Mac reboot followed by login was observed with the bridge running and authorized scoped reads working. Notification and provider synchronization behavior is not established for every recurrence shape, and the source has not been packaged or hardened for public distribution. See [testing and open checks](docs/TESTING.md).
+Offline tests and bounded live tests have exercised the local bridge, UI, and synthetic EventKit items. The MCP server, launcher, agent setups, Remote Access and its OAuth server have offline tests over real loopback sockets and a local HTTPS fixture; neither the live agent matrix nor the live cloud matrix has been run yet. A full Mac reboot followed by login was observed with the bridge running and authorized scoped reads working. Notification and provider synchronization behavior is not established for every recurrence shape. Tested on macOS 27.0.1 on Apple silicon with iCloud. See [testing and open checks](docs/TESTING.md) and the [changelog](CHANGELOG.md).
 
-This repository does not yet declare a public license or support policy. Its visibility, license, distribution signing, and public release remain owner decisions; [the handoff guide](docs/MAINTAINING.md) lists them without choosing for the owner.
+## License
+
+EventKit Bridge is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The license doesn't grant rights to the project's name or icon. Apple, Mac and macOS are trademarks of Apple Inc. This project is not affiliated with or endorsed by Apple.

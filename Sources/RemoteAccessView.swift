@@ -11,6 +11,9 @@ struct RemoteAccessSettings: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 SectionTitle(title: String(localized: "Remote Access"))
+                // Until the live cloud matrix has run (docs/TESTING.md).
+                Pill(label: String(localized: "Experimental"), tone: .warn)
+                    .help(String(localized: "Not yet tested with every cloud agent and tunnel."))
                 Text(String(localized: "For cloud agents, through a tunnel you run"))
                     .font(.callout)
                     .foregroundStyle(.secondary)

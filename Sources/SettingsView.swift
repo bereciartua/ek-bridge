@@ -1,7 +1,7 @@
 import ServiceManagement
 import SwiftUI
 
-/// Settings (§11): General, Developer (off by default) and About.
+/// Settings (§11): General, Developer (its tools off by default) and About.
 struct SettingsView: View {
     let model: BridgeAppModel
 
@@ -87,6 +87,16 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: String(localized: "Developer"))
             Card {
+                SettingsRow(title: String(localized: "Command-line tool"),
+                            caption: commandLineToolCaption) {
+                    if model.commandLineTool == .installed {
+                        Pill(label: String(localized: "Installed"), tone: .ok)
+                    } else {
+                        Button(String(localized: "Install Command-Line Tool")) { model.installCommandLineTool() }
+                            .disabled(model.commandLineTool == .unavailable)
+                    }
+                }
+                RowDivider()
                 SettingsRow(title: String(localized: "Show developer tools"),
                             caption: String(localized: "For contributors testing the bridge with throwaway data.")) {
                     Toggle(String(localized: "Show developer tools"),
@@ -148,6 +158,19 @@ struct SettingsView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(String(localized: "Output"))
             }
+        }
+    }
+
+    private var commandLineToolCaption: String {
+        switch model.commandLineTool {
+        case .installed:
+            String(localized: "bridge-client is in ~/.local/bin and runs this copy of the app’s client.")
+        case .notInstalled:
+            String(localized: "Adds bridge-client to ~/.local/bin for scripts and Terminal. No administrator password needed.")
+        case .elsewhere:
+            String(localized: "~/.local/bin/bridge-client points to another copy of the app. Install it again to use this one.")
+        case .unavailable:
+            String(localized: "This copy of the app has no bridge-client.")
         }
     }
 

@@ -261,7 +261,7 @@ struct AppPresentationTests {
     static func formatting() {
         precondition(ClientAvatar.initials("Claude Code") == "CC")
         precondition(ClientAvatar.initials("morning briefing sync") == "MB")
-        precondition(ClientAvatar.initials("T-1000") == "T1")
+        precondition(ClientAvatar.initials("HAL-9000") == "H9")
         precondition(ClientAvatar.initials("  ") == "?")
         precondition(ClientAvatar.colorIndex("abc") == ClientAvatar.colorIndex("abc"))
         precondition((0..<8).contains(ClientAvatar.colorIndex(UUID().uuidString)))
@@ -286,6 +286,10 @@ struct AppPresentationTests {
                      "python3 client.py scope_status --client a", "ambiguous names use the ID")
         precondition(ConnectCommand.scopeStatus(for: solo, among: [twinA, gone, solo]) ==
                      #"python3 client.py scope_status --client "Solo""#)
+        precondition(ConnectCommand.scopeStatus(for: solo, among: [solo], program: "bridge-client") ==
+                     #"bridge-client scope_status --client "Solo""#, "the installed tool")
+        precondition(ConnectCommand.scopeStatus(for: twinA, among: [twinA, twinB], program: "bridge-client") ==
+                     "bridge-client scope_status --client a")
         precondition(ConnectCommand.shellQuoted("It's $HOME") == #"'It'\''s $HOME'"#)
         precondition(ConnectCommand.shellQuoted("/Users/x/Library/Application Support/k.json") ==
                      #""/Users/x/Library/Application Support/k.json""#)

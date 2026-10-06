@@ -1,0 +1,83 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Issues are public: **never paste keys or tokens (anything starting with `ekb_`), Remote Access URLs, tunnel host names, collection IDs, calendar or reminder contents, journal files, or screenshots that show them.** Replace them with `REDACTED`. Security problems go to a [private report](https://github.com/bereciartua/eventkit-bridge/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings ▸ About, for example "0.7.0 (7)".
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu ▸ About This Mac, for example "macOS 15.5".
+    validations:
+      required: true
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How the client connects
+      options:
+        - Command line (bridge-client or client.py)
+        - AI agent on this Mac (MCP)
+        - Cloud agent (Remote Access)
+        - Not about a client
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent or tool
+      description: For example Claude Code, Codex, ChatGPT, Cursor, or your own script. For Remote Access, also the tunnel (Tailscale Funnel, Cloudflare, ngrok).
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Calendar or Reminders account
+      options:
+        - iCloud
+        - Google
+        - Exchange or Microsoft 365
+        - On My Mac
+        - Other CalDAV
+        - Not about an account
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the result or error message, and the Activity row's explanation, with personal details replaced.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Ideally with a throwaway client and the empty test collections from Settings ▸ Developer.
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction
+      options:
+        - label: This report contains no keys, tokens, Remote Access URLs, tunnel host names, collection IDs, or calendar or reminder contents.
+          required: true

@@ -265,15 +265,17 @@ struct CommandLineConnect: View {
                 Divider().padding(.leading, 16)
                 ConnectRow(label: String(localized: "Try it")) {
                     VStack(alignment: .leading, spacing: 2) {
-                        MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients),
+                        MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients, program: model.cliProgram),
                                  truncation: .tail, lines: 2)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(String(localized: "Run it in Terminal, in the eventkit-bridge folder."))
+                        Text(model.commandLineTool == .installed
+                             ? String(localized: "Run it in Terminal.")
+                             : String(localized: "Run it in Terminal, in the eventkit-bridge folder, or install the command-line tool from Settings ▸ Developer."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } actions: {
-                    CopyButton(text: ConnectCommand.scopeStatus(for: client, among: model.clients),
+                    CopyButton(text: ConnectCommand.scopeStatus(for: client, among: model.clients, program: model.cliProgram),
                                title: String(localized: "Copy Command"),
                                help: String(localized: "Copy a command that checks this client's access"))
                 }
@@ -757,7 +759,7 @@ struct NewClientSheet: View {
     private func caption(_ option: ClientKind) -> String? {
         switch option {
         case .agent: String(localized: "For Claude Code, Codex, Claude Desktop, Cursor and other agents. What the agent reads is sent to its AI provider.")
-        case .cli: String(localized: "For scripts that run client.py.")
+        case .cli: String(localized: "For scripts that run bridge-client or client.py.")
         case .both: nil
         }
     }

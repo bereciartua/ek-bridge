@@ -128,6 +128,7 @@ final class UIReview {
             loginItemStatus: { .notRegistered },
             setLoginItem: { _ in },
             isInstalledInApplications: { false },
+            commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory),
             testCollections: nil,
             mcp: MCPControls(
                 start: { [unowned self] _ in
@@ -807,6 +808,18 @@ final class BehaviorReview {
             }
             self.model.agentChoice[claude] = .claudeCode
             return true
+        }
+        step("Install Command-Line Tool links bridge-client") {
+            self.model.refresh()
+            guard self.model.commandLineTool == .notInstalled,
+                  self.model.cliProgram == ConnectCommand.sourceProgram else { return false }
+            self.model.installCommandLineTool()
+            return self.model.commandLineTool == .installed && self.model.banner?.kind == .success
+        }
+        step("copied commands use bridge-client") {
+            guard let client = self.model.clients.first(where: { $0.id == claude }) else { return false }
+            return ConnectCommand.scopeStatus(for: client, among: self.model.clients, program: self.model.cliProgram)
+                .hasPrefix("bridge-client scope_status --client ")
         }
         step("Copy Token asks first") {
             NSPasteboard.general.clearContents()

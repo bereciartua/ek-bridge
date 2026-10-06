@@ -8,7 +8,10 @@ import Foundation
 
 enum CLIIdentity {
     static var productName: String { AppIdentity.displayName }
-    static let launcher = "client.py"
+    /// The name help and errors use: client.py runs the client as "client.py";
+    /// run directly (or as ~/.local/bin/bridge-client) it's "bridge-client".
+    static let launcher = (CommandLine.arguments.first as NSString?)?.lastPathComponent == "client.py"
+        ? "client.py" : "bridge-client"
 }
 
 enum ExitCode {
@@ -28,7 +31,8 @@ struct CLIError: Error {
     static let maxParamsBytes = 30_720
     private static let launcher = CLIIdentity.launcher
     private static let retryAdvice = "Read the item before retrying, and reuse the same idempotencyKey."
-    private static let rebuildAdvice = "Rebuild the client with: sh build.sh"
+    private static let rebuildAdvice =
+        "Use the bridge-client inside the running app (Settings ▸ Developer ▸ Install Command-Line Tool), or rebuild with: sh build.sh"
 
     static func usage(_ message: String) -> CLIError {
         CLIError(exitCode: ExitCode.usage, message: message)

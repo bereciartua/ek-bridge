@@ -1,0 +1,18 @@
+# gitleaks configuration: the default rules, minus known test fixtures.
+# Run before a release: gitleaks git --log-opts="--all" .
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures and code that look like keys but aren't secrets"
+regexTarget = "secret"
+regexes = [
+    # Idempotency keys are request IDs, not credentials; fixtures use fake UUIDs.
+    '''^ekb3_\d+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$''',
+    # The UI review build's fake Remote Access path (Sources/UIReview.swift).
+    '''^q7Zk2vN4bXwP9sL1mT6hYa$''',
+    # A deliberately malformed token in Tests/launcher_test.py.
+    '''^ekb_mcp_v1_NOPE$''',
+    # Code, not a value (Sources/MCP/OAuthServer.swift).
+    '''^prefix\.utf8\.count$''',
+]

@@ -3,16 +3,17 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cache_dir="$project_dir/build/module-cache"
+. "$project_dir/scripts/sdk.sh"
 mkdir -p "$project_dir/build" "$cache_dir"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeEnablement.swift" \
     "$project_dir/Tests/BridgeEnablementTests.swift" \
     -o "$project_dir/build/bridge-enablement-tests"
 "$project_dir/build/bridge-enablement-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
@@ -31,14 +32,14 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/bridge-protocol-tests"
 "$project_dir/build/bridge-protocol-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/ReminderDue.swift" \
     "$project_dir/Tests/ReminderDueTests.swift" \
     -o "$project_dir/build/reminder-due-tests"
 "$project_dir/build/reminder-due-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
@@ -52,7 +53,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/recurrence-tests"
 "$project_dir/build/recurrence-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
@@ -66,7 +67,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/event-fields-tests"
 "$project_dir/build/event-fields-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
@@ -80,7 +81,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/reminder-fields-tests"
 "$project_dir/build/reminder-fields-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
@@ -95,7 +96,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/recurring-completion-tests"
 "$project_dir/build/recurring-completion-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/ReminderDue.swift" \
@@ -110,7 +111,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/reminder-schedule-tests"
 "$project_dir/build/reminder-schedule-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
@@ -119,7 +120,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/write-journal-retention-tests"
 "$project_dir/build/write-journal-retention-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \
@@ -140,7 +141,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-registry-tests"
 "$project_dir/build/client-registry-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
@@ -151,7 +152,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-grant-editing-tests"
 "$project_dir/build/client-grant-editing-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/BridgeProtocol.swift" \
@@ -165,50 +166,42 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/app-presentation-tests"
 "$project_dir/build/app-presentation-tests" "$project_dir/Sources"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Tests/ClientCredentialFilesTests.swift" \
     -o "$project_dir/build/client-credential-files-tests"
 "$project_dir/build/client-credential-files-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgePollingTimer.swift" \
     "$project_dir/Tests/BridgePollingTimerTests.swift" \
     -o "$project_dir/build/bridge-polling-timer-tests"
 "$project_dir/build/bridge-polling-timer-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
-    "$project_dir/Candidate/SignedXPCBoundary.swift" \
-    "$project_dir/Tests/SignedXPCBoundaryTests.swift" \
-    -o "$project_dir/build/signed-xpc-boundary-tests"
-printf 'int main(void) { return 0; }\n' > "$project_dir/build/test-peer.c"
-xcrun clang "$project_dir/build/test-peer.c" -o "$project_dir/build/test-peer-good"
-cp "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
-codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.client \
-    "$project_dir/build/test-peer-good"
-codesign --force --sign - --identifier dev.martin.dot.eventkitbridge.impostor \
-    "$project_dir/build/test-peer-bad"
-"$project_dir/build/signed-xpc-boundary-tests" \
-    "$project_dir/build/test-peer-good" "$project_dir/build/test-peer-bad"
+    "$project_dir/Sources/CommandLineTool.swift" \
+    "$project_dir/Tests/CommandLineToolTests.swift" \
+    -o "$project_dir/build/command-line-tool-tests"
+"$project_dir/build/command-line-tool-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/MCP/HTTPMessage.swift" \
     "$project_dir/Tests/HTTPMessageTests.swift" \
     -o "$project_dir/build/http-message-tests"
 "$project_dir/build/http-message-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/MCP/MCPTime.swift" \
     "$project_dir/Tests/MCPTimeTests.swift" \
     -o "$project_dir/build/mcp-time-tests"
 "$project_dir/build/mcp-time-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/BridgeProtocol.swift" \
@@ -223,7 +216,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/agent-setup-tests"
 "$project_dir/build/agent-setup-tests" "$project_dir/Tests/agent-setup"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
@@ -233,7 +226,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-registry-v4-tests"
 "$project_dir/build/client-registry-v4-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -255,14 +248,14 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/request-pipeline-tests"
 "$project_dir/build/request-pipeline-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
     "$project_dir/Tests/RateLimiterTests.swift" \
     -o "$project_dir/build/rate-limiter-tests"
 "$project_dir/build/rate-limiter-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
@@ -274,7 +267,7 @@ xcrun swiftc -parse-as-library \
 "$project_dir/build/mcp-tool-catalog-tests" "$project_dir/Tests/mcp-fixtures/tools.json"
 # Also prints the median begin+finish time with 10,000 journal entries (§9.7).
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
@@ -283,7 +276,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/write-journal-quota-tests"
 "$project_dir/build/write-journal-quota-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -309,7 +302,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/approval-center-tests"
 "$project_dir/build/approval-center-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -337,7 +330,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/approval-summaries-tests"
 "$project_dir/build/approval-summaries-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -365,7 +358,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/mcp-gate-tests"
 "$project_dir/build/mcp-gate-tests"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/SafePath.swift" \
@@ -380,7 +373,7 @@ xcrun swiftc -parse-as-library \
 # -D EVENTKIT_MCP_TEST adds hooks that let a local HTTPS fixture through the
 # fetcher's SSRF guard; normal builds can't disable it.
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" -D EVENTKIT_MCP_TEST \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/MCP/OAuthTypes.swift" \
@@ -390,7 +383,7 @@ xcrun swiftc -parse-as-library \
 "$project_dir/build/cimd-fetcher-tests"
 # Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
 # fake bridge and key files in temporary directories.
-xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+xcrun swiftc -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -D EVENTKIT_CLIENT_TEST \
     "$project_dir/Sources/BridgeProtocol.swift" \
@@ -402,8 +395,9 @@ xcrun swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/cli_test.py" \
     "$project_dir/build/bridge-client-test"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project_dir/client.py"
+PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/check_version_test.py"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
@@ -426,7 +420,7 @@ xcrun swiftc -parse-as-library \
 # Test build only: -D EVENTKIT_MCP_TEST runs the real MCP server, pipeline,
 # registry and journal with fake EventKit and approvals, over loopback.
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -D EVENTKIT_MCP_TEST \
     -framework EventKit \
@@ -456,7 +450,7 @@ xcrun swiftc -parse-as-library \
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/mcp_test.py" \
     "$project_dir/build/mcp-server-test" "$project_dir/Tests/mcp-fixtures/tools.json"
 xcrun swiftc -parse-as-library \
-    -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+    -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     -D EVENTKIT_MCP_TEST \
     "$project_dir/Sources/SafePath.swift" \
