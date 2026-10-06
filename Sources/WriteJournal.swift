@@ -84,8 +84,8 @@ final class WriteJournal {
             else { return .reject("idempotency_pending_review") }
             return .repeatResult(result)
         }
-        if let semantic = semanticDigest(request), hasSemanticDigest(semantic) {
-            return .reject(Self.semanticCode(request))
+        if let semantic = semanticDigest(request), let match = semanticMatch(semantic) {
+            return .reject(Self.semanticCode(request, done: match))
         }
         let all = shards!.values.lazy.flatMap(\.entries.values)
         guard all.count < maxEntries else { return .reject("journal_full") }
@@ -104,7 +104,9 @@ final class WriteJournal {
         guard let key = request.parameters["idempotencyKey"] as? String,
               let digest = digest(request) else { return .reject("invalid_idempotency_key") }
         let semantic = semanticDigest(request)
-        if let semantic, hasSemanticDigest(semantic) { return .reject(Self.semanticCode(request)) }
+        if let semantic, let match = semanticMatch(semantic) {
+            return .reject(Self.semanticCode(request, done: match))
+        }
         let shard = Self.shardName(clientID)
         shards![shard, default: State(highWater: highWater, entries: [:])].entries[key] =
             Entry(digest: digest, semanticDigest: semantic, result: nil, clientID: clientID)
@@ -141,21 +143,26 @@ final class WriteJournal {
         return nil
     }
 
-    // A semantic match whose write failed doesn't block a deliberate retry.
-    private func hasSemanticDigest(_ semantic: String) -> Bool {
-        shards!.values.contains {
-            $0.entries.values.contains { entry in
-                guard entry.semanticDigest == semantic else { return false }
+    /// An earlier request for the same occurrence: true when it finished
+    /// successfully, false while its outcome is unknown (pending), nil when
+    /// none, or when it failed (a failed write doesn't block a deliberate retry).
+    private func semanticMatch(_ semantic: String) -> Bool? {
+        var pending = false
+        for shard in shards!.values {
+            for entry in shard.entries.values where entry.semanticDigest == semantic {
                 guard let data = entry.result,
                       let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                else { return true }
-                return result["error"] == nil || result["error"] as? String == "already_applied"
+                else { pending = true; continue }
+                if result["error"] == nil { return true }
             }
         }
+        return pending ? false : nil
     }
 
-    private static func semanticCode(_ request: BridgeRequest) -> String {
-        request.command == .deleteEvent ? "already_applied" : "occurrence_already_requested"
+    private static func semanticCode(_ request: BridgeRequest, done: Bool) -> String {
+        guard request.command == .deleteEvent else { return "occurrence_already_requested" }
+        // Only a delete that's known to have happened is "already applied".
+        return done ? "already_applied" : "idempotency_pending_review"
     }
 
     private func pruneCompletedExpired(now current: TimeInterval) {

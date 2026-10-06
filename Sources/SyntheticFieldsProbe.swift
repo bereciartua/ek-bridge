@@ -439,6 +439,27 @@ final class SyntheticFieldsProbe {
                                           "expectedVersion": version(id, second)])
         step("event: delete one occurrence", error(deleted) == "none" && occurrences().count == 4,
              ["error": error(deleted)])
+        // The new series: an occurrence moved two days is still found by its
+        // original start, and a series can't move off its rule's weekday.
+        let newSeries = occurrences().filter { $0["id"] as? String == futureID }
+        if newSeries.count >= 2 {
+            let occ = occurrence(1, newSeries)
+            let movedTwoDays = call(.updateEvent, ["calendarID": calendarID, "itemID": futureID, "occurrenceStart": occ,
+                                                   "expectedVersion": version(futureID, occ),
+                                                   "start": occ + 2 * 86_400, "end": occ + 2 * 86_400 + 3_600])
+            let found = item(call(.getEvent, ["calendarID": calendarID, "itemID": futureID, "occurrenceStart": occ]))
+            step("event: an occurrence moved two days is found by its original start",
+                 error(movedTwoDays) == "none" && (found["start"] as? Double).map(Int.init) == occ + 2 * 86_400,
+                 ["error": error(movedTwoDays)])
+            let head = occurrence(0, newSeries)
+            let offRule = call(.updateEvent, ["calendarID": calendarID, "itemID": futureID, "occurrenceStart": head,
+                                              "expectedVersion": version(futureID, head), "span": "future",
+                                              "start": head + 86_400, "end": head + 86_400 + 3_600])
+            step("event: a series can't move off its weekday", error(offRule) == "recurrence_anchor_mismatch",
+                 ["error": error(offRule)])
+        } else {
+            step("event: the new series has occurrences", false, ["count": newSeries.count])
+        }
         let firstStart = occurrence(0, first)
         let all = call(.updateEvent, ["calendarID": calendarID, "itemID": id, "occurrenceStart": firstStart,
                                       "expectedVersion": version(id, firstStart), "span": "all",

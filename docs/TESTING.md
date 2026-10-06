@@ -38,7 +38,7 @@ These observations were made with explicit local approval and synthetic items, t
 
 ### Plan 03 live probe (0.6.0)
 
-Recorded on **October 5, 2026 (America/New_York)** on macOS **27.0.1 (26A434)**, iCloud account, with `--synthetic-fields-probe` from a build signed with the installed app's local identity: **32 of 32 steps passed**, and the four probe collections were removed and their absence verified after every run. Earlier runs of the same probe found five EventKit behaviors that the offline tests couldn't, each now handled in the core and covered by a unit test:
+Recorded on **October 5, 2026 (America/New_York)** on macOS **27.0.1 (26A434)**, iCloud account, with `--synthetic-fields-probe` from a build signed with the installed app's local identity: **34 of 34 steps passed**, and the four probe collections were removed and their absence verified after every run. Earlier runs of the same probe found five EventKit behaviors that the offline tests couldn't, each now handled in the core and covered by a unit test:
 
 | Behavior observed | Handling |
 | --- | --- |

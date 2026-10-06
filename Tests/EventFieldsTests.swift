@@ -275,6 +275,22 @@ struct EventFieldsTests {
         check(resolve(["recurrence": tuesdays, "start": 1_791_381_600, "end": 1_791_385_200])
               == .failure(FieldError("recurrence_anchor_mismatch")), "moved to Wednesday")
         check(target(["recurrence": ["kind": "none"]]).touched == [.recurrence], "clear")
+        // Moving a series start off its rule's days (span future/all) is refused even without a new rule.
+        let tuesdaySeries = current { $0.recurrence = .rule(RecurrenceSpec(frequency: .weekly, weekdays: [.init(day: 3)])) }
+        let wednesday = parse(["start": 1_791_381_600, "end": 1_791_385_200], creating: false).flatMap {
+            EventFields.resolve($0, current: tuesdaySeries, calendarID: "CAL", supportedAvailability: nil, macZone: ny,
+                                now: now, seriesMoves: true)
+        }
+        check(wednesday == .failure(FieldError("recurrence_anchor_mismatch")), "series moved off its weekday")
+        check(resolve(["start": 1_791_381_600, "end": 1_791_385_200], current: tuesdaySeries) != .failure(
+            FieldError("recurrence_anchor_mismatch")), "one occurrence may move anywhere")
+        // span all across a DST change keeps the wall time (Berlin: series from Jan 5, 09:00).
+        let berlin = TimeZone(identifier: "Europe/Berlin")!
+        let shifted = EventFields.shiftedSeriesTime(requested: 1_793_088_000 /* Oct 27 2026 09:00 CET */,
+                                                    occurrence: 1_792_393_200 /* Oct 19 09:00 CEST */,
+                                                    base: 1_767_600_000 /* Jan 5 09:00 CET */,
+                                                    requestZone: berlin, eventZone: berlin)
+        check(shifted == 1_767_600_000 + 8 * 86_400, "Jan 13 09:00, not 10:00: \(shifted)")
         // Moves.
         check(target(["targetCalendarID": "OTHER"]).target.calendarID == "OTHER", "move")
         check(target(["targetCalendarID": "CAL", "title": "x"]).touched == [.title], "same calendar isn't a move")

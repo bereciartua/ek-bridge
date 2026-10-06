@@ -179,19 +179,30 @@ extension EventKitCommands {
         }
         var adjusted = change
         if span == .all, subject !== occurrence {
-            // Moving every occurrence: shift the series by the requested change.
-            let startShift = subject.startDate.timeIntervalSince(occurrence.startDate)
-            let endShift = subject.endDate.timeIntervalSince(occurrence.endDate)
-            if let start = change.start { adjusted.start = start + Int(startShift) }
+            // Moving every occurrence: the series moves by the same calendar
+            // days, at the requested wall time.
+            let eventZone = occurrence.isAllDay ? TimeZone.current : (occurrence.timeZone ?? .current)
+            let requestZone = change.timeZone ?? eventZone
+            func shift(_ requested: Int, _ from: Date, _ base: Date) -> Int {
+                EventFields.shiftedSeriesTime(requested: requested, occurrence: from.timeIntervalSince1970,
+                                              base: base.timeIntervalSince1970,
+                                              requestZone: requestZone, eventZone: eventZone)
+            }
+            if let start = change.start { adjusted.start = shift(start, occurrence.startDate, subject.startDate) }
             if let end = change.end {
-                adjusted.end = change.start.map { end - $0 + adjusted.start! } ?? end + Int(endShift)
+                // An end alone moves with the old ends; a second back keeps an
+                // exclusive midnight on the right day.
+                adjusted.end = change.start != nil
+                    ? shift(end, occurrence.startDate, subject.startDate)
+                    : shift(end - 1, occurrence.endDate.addingTimeInterval(-1),
+                            subject.endDate.addingTimeInterval(-1)) + 1
             }
         }
         let macZone = TimeZone.current
         let plan: (target: EventFields, touched: Set<EventField>)
         switch EventFields.resolve(adjusted, current: current, calendarID: calendar.calendarIdentifier,
                                    supportedAvailability: EventAvailabilityMapping.supported(targetCalendar),
-                                   macZone: macZone, now: Date()) {
+                                   macZone: macZone, now: Date(), seriesMoves: recurring && span != .this) {
         case .success(let value): plan = value
         case .failure(let error): completion(["error": error.code]); return
         }
@@ -239,10 +250,19 @@ extension EventKitCommands {
         let predicate = store.predicateForEvents(withStart: at.addingTimeInterval(-86_401),
                                                  end: at.addingTimeInterval(86_401), calendars: [calendar])
         let series = Self.seriesID(id)
-        let matches = store.events(matching: predicate).filter {
-            Self.seriesID($0) == series && $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
+        func matches(_ predicate: NSPredicate) -> [EKEvent] {
+            store.events(matching: predicate).filter {
+                Self.seriesID($0) == series && $0.occurrenceDate.map { abs($0.timeIntervalSince(at)) < 0.5 } == true
+            }
         }
-        return matches.count == 1 ? .success(matches[0]) : .failure(FieldError("occurrence_not_found"))
+        var found = matches(predicate)
+        if found.isEmpty {
+            // An occurrence moved on its own keeps its original date as
+            // occurrenceDate but can start anywhere: look a year either side.
+            found = matches(store.predicateForEvents(withStart: at.addingTimeInterval(-366 * 86_400),
+                                                     end: at.addingTimeInterval(366 * 86_400), calendars: [calendar]))
+        }
+        return found.count == 1 ? .success(found[0]) : .failure(FieldError("occurrence_not_found"))
     }
 
     /// The saved event, read fresh from the store.

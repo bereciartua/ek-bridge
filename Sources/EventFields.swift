@@ -211,9 +211,12 @@ struct EventFields: Equatable {
     /// Applies `change` to `current` (nil when creating). Checks the rules
     /// that need both: span lengths, all-day midnights, the recurrence anchor,
     /// availability the calendar supports, alarms in the past.
+    /// `seriesMoves`: a `future` or `all` change of a recurring event, whose
+    /// new start becomes the first occurrence of its rule.
     static func resolve(_ change: EventChange, current: EventFields?, calendarID: String,
                         supportedAvailability: Set<EventAvailability>?, macZone: TimeZone,
-                        now: Date) -> Result<(target: EventFields, touched: Set<EventField>), FieldError> {
+                        now: Date, seriesMoves: Bool = false)
+        -> Result<(target: EventFields, touched: Set<EventField>), FieldError> {
         var touched = Set<EventField>()
         var target = current ?? EventFields(calendarID: calendarID, title: "", start: 0, end: 0, allDay: false,
                                             timeZone: nil, notes: nil, location: nil, place: nil, url: nil,
@@ -317,7 +320,8 @@ struct EventFields: Equatable {
             target.recurrence = .rule(spec)
             touched.insert(.recurrence)
         }
-        if let spec = target.recurrence.spec, touched.contains(.recurrence) {
+        if let spec = target.recurrence.spec,
+           touched.contains(.recurrence) || (seriesMoves && touched.contains(.start)) {
             let zone = target.timeZone.flatMap(TimeZone.init(identifier:)) ?? macZone
             guard spec.matchesAnchor(start: Date(timeIntervalSince1970: target.start), zone: zone) else {
                 return .failure(FieldError("recurrence_anchor_mismatch"))
@@ -329,6 +333,22 @@ struct EventFields: Equatable {
         }
         if creating { touched.insert(.calendar) }
         return .success((target, touched))
+    }
+
+    /// `span: all` moves the series start by as many calendar days as the
+    /// requested occurrence moved, at the requested wall time; seconds would
+    /// drift by an hour across a daylight saving change.
+    static func shiftedSeriesTime(requested: Int, occurrence: Double, base: Double,
+                                  requestZone: TimeZone, eventZone: TimeZone) -> Int {
+        let wanted = RecurrenceExpansion.localDay(Date(timeIntervalSince1970: TimeInterval(requested)), zone: requestZone)
+        let from = RecurrenceExpansion.localDay(Date(timeIntervalSince1970: occurrence), zone: eventZone).day
+        let first = RecurrenceExpansion.localDay(Date(timeIntervalSince1970: base), zone: eventZone).day
+        let (year, month, day) = RecurrenceExpansion.civil(first + wanted.day - from)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = requestZone
+        let parts = DateComponents(year: year, month: month, day: day, hour: wanted.seconds / 3_600,
+                                   minute: wanted.seconds % 3_600 / 60, second: wanted.seconds % 60)
+        return Int(calendar.date(from: parts)!.timeIntervalSince1970)
     }
 
     /// The midnight in `macZone` of the date `seconds` falls on in `zone`.

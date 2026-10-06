@@ -490,7 +490,13 @@ struct BridgeProtocolTests {
         let retry = request(.deleteEvent, delete.merging(["idempotencyKey": key(), "occurrenceStart": 1_086_400])
                             { _, new in new })
         guard case .execute = journal.begin(retry) else { preconditionFailure("a failed delete doesn't block a retry") }
-        checks += 4
+        // That retry is now pending (no result yet): another key is told to check, not that it's done.
+        let third = request(.deleteEvent, delete.merging(["idempotencyKey": key(), "occurrenceStart": 1_086_400])
+                            { _, new in new })
+        guard case .reject("idempotency_pending_review") = journal.begin(third) else {
+            preconditionFailure("a pending delete isn't already applied")
+        }
+        checks += 5
         return checks
     }
 }
