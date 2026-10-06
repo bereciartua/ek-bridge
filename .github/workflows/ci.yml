@@ -15,12 +15,26 @@ concurrency:
 
 jobs:
   test:
-    name: Test and build
+    name: Test and build (Xcode ${{ matrix.xcode }})
     # No secrets: runs the offline tests and an ad hoc signed universal build.
     # ui_test.sh and ui_snapshots.sh stay local; they need a logged-in GUI
     # session and Screen Recording permission.
-    runs-on: macos-latest
+    #
+    # Xcode is pinned, so CI compiles with the same Swift as the Mac that
+    # cuts releases (27.0) and with the previous major release (26.6), which
+    # contributors may still use. Xcode 27 runners are a GitHub preview image.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: "27.0"
+            runner: xcode-27
+          - xcode: "26.6"
+            runner: macos-26
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

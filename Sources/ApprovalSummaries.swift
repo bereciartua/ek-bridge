@@ -19,8 +19,8 @@ struct ApprovalLookup {
 enum ApprovalSummaries {
     static func build(_ approval: ApprovalRequest, store: EKEventStore?,
                       collections: [CollectionInfo]) -> ApprovalSummary {
-        let lookup = store.map { lookup(approval.request, store: $0) }
-        return build(approval, lookup: lookup ?? ApprovalLookup(), collections: collections)
+        let current = store.map { Self.lookup(approval.request, store: $0) }
+        return build(approval, lookup: current ?? ApprovalLookup(), collections: collections)
     }
 
     static func lookup(_ request: BridgeRequest, store: EKEventStore) -> ApprovalLookup {
