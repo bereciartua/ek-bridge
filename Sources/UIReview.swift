@@ -2,6 +2,7 @@
 import AppKit
 import CryptoKit
 import EventKit
+import ServiceManagement
 
 // UI-review build only (EVENTKIT_UI_REVIEW=1). Uses a temporary registry, key
 // folder and defaults suite with fake clients, calendars and activity. It
@@ -42,6 +43,10 @@ final class UIReview {
     var calendarStatus: EKAuthorizationStatus
     var remindersStatus: EKAuthorizationStatus
     var bridgeOn: Bool
+    /// What macOS reports for Start at login, and whether the app counts as
+    /// installed in Applications (the behavior test changes both).
+    var loginItemStatus = SMAppService.Status.notRegistered
+    var installedInApplications = false
     let many: Bool
     /// "listening", "off" or "port-in-use".
     var mcpMode: String
@@ -130,9 +135,9 @@ final class UIReview {
                 self.bridgeOn = on
                 return on ? .on : .off
             },
-            loginItemStatus: { .notRegistered },
-            setLoginItem: { _ in },
-            isInstalledInApplications: { false },
+            loginItemStatus: { [unowned self] in self.loginItemStatus },
+            setLoginItem: { [unowned self] on in self.loginItemStatus = on ? .enabled : .notRegistered },
+            isInstalledInApplications: { [unowned self] in self.installedInApplications },
             commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory),
             testCollections: nil,
             mcp: MCPControls(
@@ -1014,6 +1019,20 @@ final class BehaviorReview {
             self.model.openClientAccess(claude, focus: GrantKey(resource: .reminderList, targetID: "list-groceries"))
             return self.model.route == .client(claude) && self.model.accessTab[claude] == .reminderList &&
                 self.model.accessFocus?.targetID == "list-groceries"
+        }
+        // A first install has never been registered as a login item, and
+        // macOS reports that as .notFound; the switch must still work.
+        step("Start at login on a first install") {
+            self.review.installedInApplications = true
+            self.review.loginItemStatus = .notFound
+            self.model.refresh()
+            guard self.model.canChangeStartAtLogin else { return false }
+            self.model.setStartAtLogin(true)
+            let enabled = self.model.loginItem == .enabled && self.model.loginItemError == nil
+            self.review.installedInApplications = false
+            self.review.loginItemStatus = .notRegistered
+            self.model.refresh()
+            return enabled && !self.model.canChangeStartAtLogin
         }
         next()
     }
