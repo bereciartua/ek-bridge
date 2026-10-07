@@ -32,7 +32,7 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 - **Approve every change.** A panel shows every field an agent wants to write. Nothing changes until you click Allow.
 - **See everything, switch it off in one click.** Activity explains every request. Pause or revoke a client in one click, or turn the whole bridge off from the menu bar.
 
-Setups are included for Claude Code, Claude Desktop, Codex, Cursor, VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant, Devin Desktop and any other MCP client. claude.ai and ChatGPT connect through Remote Access, which is experimental. EK Bridge is a personal project in **public preview**, with best-effort support, and isn't affiliated with Apple.
+Works with Claude Code, Claude Desktop, Codex and Cursor ([tested live](docs/TESTING.md#live-mcp-matrix)), with setups included for VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant, Devin Desktop and any other MCP client. claude.ai and ChatGPT connect through Remote Access, which is experimental. EK Bridge is a personal project in **public preview**, with best-effort support, and isn't affiliated with Apple.
 
 ## Install
 
@@ -254,7 +254,7 @@ Installed with Homebrew? Do steps 1, 2 and 5, and `brew uninstall --cask ek-brid
 
 ## Project status
 
-Offline tests and bounded live tests have exercised the local bridge, UI, and synthetic EventKit items. The MCP server, launcher, agent setups, Remote Access and its OAuth server have offline tests over real loopback sockets and a local HTTPS fixture; neither the live agent matrix nor the live cloud matrix has been run yet. A full Mac reboot followed by login was observed with the bridge running and authorized scoped reads working. Notification and provider synchronization behavior is not established for every recurrence shape. Tested on macOS 27.0.1 on Apple silicon with iCloud. See [testing and open checks](docs/TESTING.md) and the [changelog](CHANGELOG.md).
+Offline tests and bounded live tests have exercised the local bridge, UI, and synthetic EventKit items. The MCP server, launcher, agent setups, Remote Access and its OAuth server have offline tests over real loopback sockets and a local HTTPS fixture; a first live check passed with Claude Code, Claude Desktop, Codex and Cursor (connect, read, an approved write, a refused request), but the full live agent matrix and the live cloud matrix haven't been run yet. A full Mac reboot followed by login was observed with the bridge running and authorized scoped reads working. Notification and provider synchronization behavior is not established for every recurrence shape. Tested on macOS 27.0.1 on Apple silicon with iCloud. See [testing and open checks](docs/TESTING.md) and the [changelog](CHANGELOG.md).
 
 ## License
 
