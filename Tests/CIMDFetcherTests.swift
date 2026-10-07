@@ -357,6 +357,15 @@ struct CIMDFetcherTests {
             self.end_headers()
             self.wfile.write(body)
             self.close_connection = True
+            if not length:
+                # The body ends where the connection does, so end it with TLS close_notify. An
+                # abrupt close lets the client's TLS stack drop the last records unread (seen on
+                # fast CI runners), which would test the race instead of the framing.
+                self.wfile.flush()
+                try:
+                    self.connection.unwrap()
+                except (OSError, ssl.SSLError):
+                    pass
         def do_GET(self):
             note('GET ' + self.path)
             base = 'https://localhost:%d' % self.server.server_port
