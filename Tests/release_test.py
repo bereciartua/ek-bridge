@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Tests the release tools offline: scripts/release_notes.py, scripts/appcast.py,
-the argument checks of scripts/check_notarized.sh, and release.sh's refusals
+scripts/release_assets.sh (the stable DMG name and SHA256SUMS), the argument
+checks of scripts/check_notarized.sh, and release.sh's refusals
 before it builds anything, in a throwaway git repository with a stub
 `security` command on PATH (so no keychain, identity or network is needed)."""
 
+import hashlib
 import os
 import plistlib
 import shutil
@@ -195,6 +197,50 @@ def test_check_notarized():
     check("check_notarized usage", out.returncode != 0 and "usage" in out.stderr)
 
 
+def test_release_assets():
+    """release_assets.sh copies the DMG to its stable name and checksums all three downloads."""
+    tmp = Path(tempfile.mkdtemp(prefix="eventkit-release-assets-"))
+    try:
+        script = ROOT / "scripts" / "release_assets.sh"
+
+        def run(*args):
+            process = subprocess.run(["sh", str(script), *args], capture_output=True, text=True,
+                                     env={"PATH": "/usr/bin:/bin"})
+            return process.returncode, process.stdout + process.stderr
+
+        dist = tmp / "dist"
+        dist.mkdir()
+        code, output = run(str(dist), "EKBridge", "0.8.2")
+        check("assets: a missing DMG fails", code == 1 and "EKBridge-0.8.2.dmg doesn't exist" in output, output)
+        dmg = dist / "EKBridge-0.8.2.dmg"
+        dmg.write_bytes(os.urandom(4096))
+        code, output = run(str(dist), "EKBridge", "0.8.2")
+        check("assets: a missing zip fails", code == 1 and "EKBridge-0.8.2.zip doesn't exist" in output, output)
+        zip_file = dist / "EKBridge-0.8.2.zip"
+        zip_file.write_bytes(os.urandom(2048))
+        (dist / "EKBridge.dmg").write_bytes(b"a stale copy from an earlier run")
+        code, output = run(str(dist), "EKBridge", "0.8.2")
+        check("assets: succeeds", code == 0, output)
+        stable = dist / "EKBridge.dmg"
+        check("assets: the stable name is an exact copy",
+              stable.is_file() and not stable.is_symlink() and stable.read_bytes() == dmg.read_bytes())
+
+        def sha(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        lines = (dist / "SHA256SUMS").read_text().splitlines()
+        expected = [f"{sha(dmg)}  EKBridge-0.8.2.dmg", f"{sha(dmg)}  EKBridge.dmg", f"{sha(zip_file)}  EKBridge-0.8.2.zip"]
+        check("assets: SHA256SUMS lists both DMG names and the zip", lines == expected, f"{lines!r}")
+        verify = subprocess.run(["shasum", "-a", "256", "-c", "SHA256SUMS"], cwd=str(dist), capture_output=True, text=True)
+        check("assets: shasum -c passes", verify.returncode == 0, verify.stdout + verify.stderr)
+        # The Homebrew tap matches the versioned name exactly (awk '$2 == f').
+        listed = [line.split()[0] for line in lines if line.split()[1] == "EKBridge-0.8.2.dmg"]
+        check("assets: the versioned DMG is listed once by its own name", listed == [sha(dmg)], f"{listed!r}")
+        code, output = run(str(dist), "EKBridge")
+        check("assets: usage without a version", code != 0 and "usage: release_assets.sh" in output, output)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def git(repo, *args):
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True,
                    env={"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@example.com",
@@ -209,7 +255,8 @@ def test_release_refusals():
         repo = tmp / "repo"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(ROOT / "release.sh", repo)
-        for name in ("check_version.sh", "check_notarized.sh", "check_bundle.sh", "release_notes.py", "appcast.py"):
+        for name in ("check_version.sh", "check_notarized.sh", "check_bundle.sh", "release_notes.py", "appcast.py",
+                     "release_assets.sh"):
             shutil.copy(ROOT / "scripts" / name, repo / "scripts")
         with open(ROOT / "Info.plist", "rb") as source:
             plist = plistlib.load(source)
@@ -301,11 +348,12 @@ def main() -> int:
     test_release_notes()
     test_appcast()
     test_check_notarized()
+    test_release_assets()
     test_release_refusals()
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Release tools: {checks} release notes, appcast, notarization check and release.sh refusal checks passed")
+    print(f"Release tools: {checks} release notes, appcast, release assets, notarization check and release.sh refusal checks passed")
     return 0
 
 

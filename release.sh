@@ -2,10 +2,11 @@
 set -eu
 
 # Builds a release: the offline tests, a universal Developer ID–signed build,
-# notarization and stapling, a DMG and a zip, SHA-256 sums, the Sparkle
-# appcast (when a Sparkle key is given), and a draft GitHub release for the
-# maintainer to review and publish. The release workflow runs it on a v* tag;
-# it also runs by hand on a Mac with the identity and the notary credentials.
+# notarization and stapling, a DMG (also as EKBridge.dmg, a name that never
+# changes) and a zip, SHA-256 sums, the Sparkle appcast (when a Sparkle key is
+# given), and a draft GitHub release for the maintainer to review and publish.
+# The release workflow runs it on a v* tag; it also runs by hand on a Mac with
+# the identity and the notary credentials.
 #
 # Usage: sh release.sh [--untagged] [--no-notarize] [--no-release] [--skip-tests]
 #
@@ -69,6 +70,7 @@ public_key=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$plist" 2>/dev/n
 tag="v$version"
 app="$build_dir/$app_name.app"
 dmg="$dist_dir/$app_name-$version.dmg"
+stable_dmg="$dist_dir/$app_name.dmg"
 zip="$dist_dir/$app_name-$version.zip"
 
 # 1. A clean tree at a matching tag (or --untagged), and a consistent version.
@@ -237,7 +239,9 @@ ditto -c -k --keepParent "$app" "$zip"
 
 # 7. Checksums, and the Sparkle appcast when a key is given.
 step "Writing checksums and release notes"
-(cd "$dist_dir" && shasum -a 256 "$(basename "$dmg")" "$(basename "$zip")" > SHA256SUMS)
+# The same DMG as EKBridge.dmg, so releases/latest/download/EKBridge.dmg always
+# works, and SHA256SUMS for all three downloads.
+sh "$project_dir/scripts/release_assets.sh" "$dist_dir" "$app_name" "$version"
 cat "$dist_dir/SHA256SUMS"
 python3 "$project_dir/scripts/release_notes.py" "$version" --repo "$repo" --format markdown \
     > "$build_dir/notes-section.md"
@@ -270,8 +274,8 @@ fi
 {
     cat "$build_dir/notes-section.md"
     printf '\n## Install\n\n'
-    printf 'Download `%s`, open it and drag the app to **Applications**. It needs macOS %s or later, on Apple silicon or Intel. ' \
-        "$(basename "$dmg")" "$minimum_macos"
+    printf 'Download `%s` (`%s` is the same file, under a name that stays the same in every release), open it and drag the app to **Applications**. It needs macOS %s or later, on Apple silicon or Intel. ' \
+        "$(basename "$dmg")" "$(basename "$stable_dmg")" "$minimum_macos"
     printf 'The first start asks for Calendar and Reminders access ([Setup](https://github.com/%s/blob/%s/docs/SETUP.md)). ' "$repo" "$tag"
     printf 'Replacing an installed copy at the same path keeps its access, clients and agent setups.'
     # Only copies from an earlier release have the updater (0.8.0 is the first).
@@ -297,7 +301,7 @@ fi
 # 8. A draft release for the maintainer to review and publish.
 if [ "$release" = 1 ]; then
     step "Creating the draft release $tag in $repo"
-    set -- "$dmg" "$zip" "$dist_dir/SHA256SUMS"
+    set -- "$dmg" "$stable_dmg" "$zip" "$dist_dir/SHA256SUMS"
     [ -f "$dist_dir/appcast.xml" ] && set -- "$@" "$dist_dir/appcast.xml"
     gh release create "$tag" --repo "$repo" --draft --verify-tag \
         --title "$display_name $version" --notes-file "$dist_dir/RELEASE-NOTES.md" "$@"

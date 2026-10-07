@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Added
+
+- Each release also carries its disk image as **`EKBridge.dmg`**, a name that's the same in every release, so [`releases/latest/download/EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg) always downloads the newest version. `scripts/release_assets.sh` makes the copy and writes `SHA256SUMS` for both DMG names and the zip; the versioned `EKBridge-<version>.dmg` stays for the Homebrew cask and older links.
+
 ## [0.8.1] - 2026-10-07
 
 The first update that installed copies of 0.8.0 get through **Check for Updates…**. Nothing changes for callers or agents, and the client registry stays at **version 4**, so going back to 0.8.0 means installing its DMG over this one.
