@@ -9,6 +9,8 @@ set -eu
 # script waits for 0.0.2 to be running and checks it.
 #
 # Usage: sh scripts/update_test.sh   (from a logged-in GUI session)
+#        sh scripts/update_test.sh --clean   quits the test app and removes its
+#                                            settings, caches and build folder
 #
 #   EVENTKIT_SIGN_IDENTITY  Sign both copies with this identity (a Developer ID
 #                           checks Sparkle's same-team rule too). Default: ad hoc.
@@ -20,6 +22,18 @@ bundle_id=io.github.bereciartua.ekbridge.updatetest
 installed="$work/install/EKBridge.app"
 
 fail() { printf 'update_test: %s\n' "$*" >&2; exit 1; }
+
+if [ "${1:-}" = "--clean" ]; then
+    osascript -e "tell application id \"$bundle_id\" to quit" > /dev/null 2>&1 || true
+    defaults delete "$bundle_id" > /dev/null 2>&1 || true
+    for name in Preferences/$bundle_id.plist Caches/$bundle_id HTTPStorages/$bundle_id WebKit/$bundle_id \
+        "Application Support/EKBridge Update Test"; do
+        rm -rf "$HOME/Library/$name"
+    done
+    rm -rf "$work" "/tmp/ek-bridge-update-test-$(id -u)"
+    printf 'update_test: removed the test app and its traces\n'
+    exit 0
+fi
 step() { printf '\n==> %s\n' "$*"; }
 
 server_pid=""
@@ -63,7 +77,8 @@ signature_line=$("$project_dir/build/vendor/Sparkle/bin/sign_update" --ed-key-fi
 printf '<p>Update test build. Nothing changed but the version.</p>\n' > "$work/notes.html"
 python3 "$project_dir/scripts/appcast.py" --version 0.0.2 --build 2 --minimum-system-version 14.0 \
     --url "http://127.0.0.1:$port/EKBridge-0.0.2.zip" --signature-line "$signature_line" \
-    --notes-html "$work/notes.html" --title "EK Bridge Update Test 0.0.2" --output "$work/feed/appcast.xml"
+    --notes-html "$work/notes.html" --title "EK Bridge Update Test 0.0.2" --output "$work/feed/appcast.xml" \
+    --allow-local-http
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$work/feed" > "$work/server.log" 2>&1 &
 server_pid=$!
 sleep 1
@@ -98,6 +113,4 @@ grep -q 'GET /EKBridge-0.0.2.zip' "$work/server.log" || fail "the zip was never 
 [ "$(xattr -p com.apple.quarantine "$installed" 2>/dev/null || true)" = "" ] \
     || printf 'note: the updated app carries a quarantine flag\n'
 printf '\nupdate_test: 0.0.1 updated itself to 0.0.2 through Sparkle and is running.\n'
-printf 'Quit "EK Bridge Update Test", then remove its traces with:\n'
-printf '  defaults delete %s; rm -rf "%s" "$HOME/Library/Application Support/EKBridge Update Test"\n' \
-    "$bundle_id" "$work"
+printf 'Remove the test app and its traces with: sh scripts/update_test.sh --clean\n'

@@ -11,7 +11,10 @@ Usage: appcast.py --version 0.8.0 --build 8 --minimum-system-version 14.0
                   --signature-line 'sparkle:edSignature="..." length="..."'
                   --notes-html notes.html [--title "EK Bridge 0.8.0"]
                   [--link https://.../releases/tag/v0.8.0] [--date RFC822]
-                  [--critical] [--output appcast.xml]
+                  [--critical] [--output appcast.xml] [--allow-local-http]
+
+--allow-local-http accepts an http://127.0.0.1 download URL, for
+scripts/update_test.sh's local feed only; releases always use https.
 """
 
 import argparse
@@ -47,12 +50,13 @@ def cdata(text: str) -> str:
 
 
 def appcast(*, version, build, minimum_system_version, url, signature, length,
-            notes_html, title, link, date, critical=False) -> str:
+            notes_html, title, link, date, critical=False, allow_local_http=False) -> str:
     for name, value in (("version", version), ("build", build),
                         ("minimum system version", minimum_system_version)):
         if not re.fullmatch(r"[0-9]+(\.[0-9]+)*", value):
             raise AppcastError(f"the {name} {value!r} isn't dotted digits")
-    if not url.startswith("https://"):
+    local = allow_local_http and re.fullmatch(r"http://127\.0\.0\.1:[0-9]+/[^?#]+", url)
+    if not url.startswith("https://") and not local:
         raise AppcastError(f"the download URL must use https: {url}")
     if length <= 0:
         raise AppcastError("the download length must be positive")
@@ -95,6 +99,8 @@ def main(argv=None) -> int:
     parser.add_argument("--date", help="RFC 822 date; default: now", default=None)
     parser.add_argument("--critical", action="store_true", help="mark it a security update")
     parser.add_argument("--output", help="file to write; default: stdout", default=None)
+    parser.add_argument("--allow-local-http", action="store_true",
+                        help="accept an http://127.0.0.1 URL (the local update test only)")
     args = parser.parse_args(argv)
     try:
         signature, length = parse_signature_line(args.signature_line)
@@ -107,7 +113,7 @@ def main(argv=None) -> int:
             title=args.title or f"EK Bridge {args.version}",
             link=args.link or release_page(args.url),
             date=args.date or email.utils.formatdate(usegmt=True),
-            critical=args.critical)
+            critical=args.critical, allow_local_http=args.allow_local_http)
     except (OSError, AppcastError) as error:
         print(f"appcast: {error}", file=sys.stderr)
         return 1

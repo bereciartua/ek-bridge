@@ -155,7 +155,11 @@ def test_appcast():
     check("not critical by default", item.find(f"{SPARKLE_NS}criticalUpdate") is None)
     critical = ET.fromstring(appcast.appcast(**dict(kwargs, critical=True)))
     check("critical update marked", critical.find(f"channel/item/{SPARKLE_NS}criticalUpdate") is not None)
+    local = appcast.appcast(**dict(kwargs, url="http://127.0.0.1:47690/EKBridge-0.0.2.zip", allow_local_http=True))
+    check("local http allowed only when asked", 'url="http://127.0.0.1:47690/EKBridge-0.0.2.zip"' in local)
     for name, change in (("http url", dict(url="http://x/y.zip")), ("bad build", dict(build="8a")),
+                         ("local http not asked for", dict(url="http://127.0.0.1:47690/y.zip")),
+                         ("other http host even when asked", dict(url="http://example.com/y.zip", allow_local_http=True)),
                          ("zero length", dict(length=0)), ("cdata end in notes", dict(notes_html="a]]>b"))):
         try:
             appcast.appcast(**dict(kwargs, **change))

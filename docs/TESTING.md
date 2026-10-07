@@ -63,7 +63,7 @@ The ordinary source build has no persistent installation, privacy grants, login 
 
 Run it before the first public release and after any change to the bundle layout or the updater, and record the date, macOS version and architecture here.
 
-**October 6, 2026:** the owner installed the notarized 0.7.0 rehearsal DMG on a separate Mac (an M1 Pro MacBook); it opened without warnings and everything worked (steps 1–3). Step 4, installing over it, is covered by the [update test](#update-test) with Sparkle; step 5 wasn't run (no Intel Mac).
+**October 6, 2026:** the owner installed the notarized 0.7.0 rehearsal DMG on a separate Mac (an M1 Pro MacBook); it opened without warnings and everything worked (steps 1–3). Step 4, installing over it, ran as the [update test](#update-test) with Sparkle; step 5 wasn't run (no Intel Mac).
 
 1. On a fresh macOS user account, or a macOS VM on Apple silicon (UTM or Tart), download the DMG from the draft release in Safari, so it carries the quarantine flag.
 2. Open it: no Gatekeeper warning. `spctl --assess --type open --context context:primary-signature -v EKBridge-<version>.dmg` says `source=Notarized Developer ID`. Drag the app to Applications and open it from there: no warning, and the window opens on the setup checklist.
@@ -75,9 +75,9 @@ Run it before the first public release and after any change to the bundle layout
 
 `sh scripts/update_test.sh` from a logged-in GUI session (about 3 minutes plus your clicks). Run it after any change to the updater, the bundle layout or the Sparkle version, preferably with `EVENTKIT_SIGN_IDENTITY` set to the Developer ID so Sparkle's same-team check runs too.
 
-It builds two copies, 0.0.1 and 0.0.2, of a separate app, **EK Bridge Update Test** (`EVENTKIT_UPDATE_TEST=1`: bundle ID `io.github.bereciartua.ekbridge.updatetest`, data folder `EKBridge Update Test`, `/tmp/ek-bridge-update-test-<uid>`, no rename migration), so an installed EK Bridge and its data are never touched. It signs 0.0.2's zip with a throwaway EdDSA key, serves `appcast.xml` and the zip on `127.0.0.1` (plain HTTP, allowed to this Mac only in these builds), and opens 0.0.1. You check for updates from its menu and install 0.0.2 as a user would; the script waits for 0.0.2 to be running, checks its bundle and that the zip was downloaded from the feed, and prints how to remove the test app's settings and data.
+It builds two copies, 0.0.1 and 0.0.2, of a separate app, **EK Bridge Update Test** (`EVENTKIT_UPDATE_TEST=1`: bundle ID `io.github.bereciartua.ekbridge.updatetest`, data folder `EKBridge Update Test`, `/tmp/ek-bridge-update-test-<uid>`, no rename migration), so an installed EK Bridge and its data are never touched. It signs 0.0.2's zip with a throwaway EdDSA key, serves `appcast.xml` and the zip on `127.0.0.1` (plain HTTP, allowed to this Mac only in these builds), and opens 0.0.1. You check for updates from its menu and install 0.0.2 as a user would; the script waits for 0.0.2 to be running, checks its bundle and that the zip was downloaded from the feed. `sh scripts/update_test.sh --clean` then quits the test app and removes its settings, caches and build folder.
 
-**Not yet run** with the real flow.
+**October 6, 2026**, Developer ID–signed, on the development Mac (Apple silicon, macOS 27.0.1), with the owner clicking: 0.0.1 fetched the local `appcast.xml`, **Check for Updates…** showed 0.0.2 with its notes, **Install Update** downloaded the zip (verified against the throwaway key), and **Install and Relaunch** restarted the app as 0.0.2, signed by the same team and passing `check_bundle.sh`. The installed EK Bridge and its data folder weren't touched; the test app never created a data folder. The relaunch gate's wait for pending approvals is covered by its unit tests, not by this run.
 
 ### Test-run manifest
 
