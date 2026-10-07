@@ -64,13 +64,27 @@ jobs:
             exit 1
           fi
           encoded=$(jq -rn --arg n "$name" '$n | @uri')
-          status=$(curl --silent --location --output /dev/null --write-out '%{http_code}' \
-            "$REGISTRY/v0.1/servers/$encoded/versions/$version")
-          if [ "$status" = 200 ]; then
-            echo "$name $version is already in the registry"
-            exit 0
-          fi
-          "$RUNNER_TEMP/mcp-publisher" login github-oidc
-          "$RUNNER_TEMP/mcp-publisher" publish server.json
-          curl --fail --silent --show-error --location "$REGISTRY/v0.1/servers/$encoded/versions/$version" |
-            jq '{name: .server.name, version: .server.version, status: ._meta."io.modelcontextprotocol.registry/official".status}'
+          # 200 when this version is in the registry, 404 when it isn't, anything
+          # else when the registry didn't answer.
+          lookup() {
+            curl --silent --location --max-time 90 --output "$RUNNER_TEMP/entry.json" --write-out '%{http_code}' \
+              "$REGISTRY/v0.1/servers/$encoded/versions/$version" || true
+          }
+          # The registry can time out on a publish that went through (504), so a
+          # failed attempt is followed by a lookup before the next one.
+          for attempt in 1 2 3; do
+            status=$(lookup)
+            if [ "$status" = 200 ]; then
+              jq '{name: .server.name, version: .server.version, status: ._meta."io.modelcontextprotocol.registry/official".status}' \
+                "$RUNNER_TEMP/entry.json"
+              exit 0
+            fi
+            echo "Attempt $attempt: the registry answered $status for $name $version; publishing"
+            if "$RUNNER_TEMP/mcp-publisher" login github-oidc && "$RUNNER_TEMP/mcp-publisher" publish server.json; then
+              exit 0
+            fi
+            sleep 60
+          done
+          [ "$(lookup)" = 200 ] && exit 0
+          echo "::error::$name $version isn't in the registry after 3 attempts"
+          exit 1
