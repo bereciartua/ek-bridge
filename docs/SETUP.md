@@ -10,7 +10,7 @@ Most people install a release. Building from source is for contributors, or for 
 
 The app needs macOS 14 or later, on Apple silicon or Intel. Releases are signed with a Developer ID and notarized by Apple. Replacing the app with a newer release at the same path keeps its Calendar and Reminders access, clients and agent setups. The app does that for you: it checks for a newer version once a day (**Settings ▸ General ▸ Check for updates automatically**) and from **Check for Updates…**, shows **Update Available** in the menu bar menu and on Overview, and installs only when you click **Install Update** in the update window, after checking the download's signature.
 
-To verify a download, compare its SHA-256 with the release's `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS` in the folder with the download), and, for releases built by the release workflow, check its provenance with the GitHub CLI: `gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`.
+To verify a download, compare its SHA-256 with the release's `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS --ignore-missing` in the folder with the download; without `--ignore-missing` it also reports the files you didn't download), and, for releases built by the release workflow, check its provenance with the GitHub CLI: `gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`.
 
 ### Upgrading from EventKit Bridge (0.7.0 or earlier)
 
