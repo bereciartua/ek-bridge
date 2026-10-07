@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/bereciartua/ek-bridge/discussions/categories/q-a
+    about: Setting up an agent, a script or access, or something that doesn't behave as you expected. Issues are for bugs.
   - name: Report a security vulnerability
     url: https://github.com/bereciartua/ek-bridge/security/advisories/new
     about: Report vulnerabilities privately, never in a public issue. See SECURITY.md.
