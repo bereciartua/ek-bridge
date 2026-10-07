@@ -3,9 +3,16 @@ import Foundation
 enum AppIdentity {
     /// The product name in one place, so a rename is a one-line change.
     /// Bundle IDs, data paths and protocol prefixes are separate decisions.
+    #if EVENTKIT_UPDATE_TEST
+    // The update test's copy (scripts/update_test.sh) has its own name and
+    // data, so it never touches an installed EK Bridge.
+    static let displayName = "EK Bridge Update Test"
+    static let dataFolderName = "EKBridge Update Test"
+    #else
     static let displayName = "EK Bridge"
     /// `~/Library/Application Support/EKBridge`.
     static let dataFolderName = "EKBridge"
+    #endif
     /// The key agents store this MCP server under. It becomes part of agents'
     /// tool names (`mcp__ek-bridge__read_events`), so renaming it later
     /// breaks users' allowlists. Keep it stable.
@@ -33,7 +40,11 @@ enum AppIdentity {
     }
 
     /// The folder in /tmp that the app and bridge-client exchange requests through.
+    #if EVENTKIT_UPDATE_TEST
+    static var bridgeRoot: String { "/tmp/ek-bridge-update-test-\(getuid())" }
+    #else
     static var bridgeRoot: String { "/tmp/ek-bridge-\(getuid())" }
+    #endif
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"

@@ -8,7 +8,7 @@ Most people install a release. Building from source is for contributors, or for 
 2. Open the app and follow the setup checklist ([macOS permissions and first run](#macos-permissions-and-first-run)).
 3. For scripts, choose **Settings ▸ Developer ▸ Install Command-Line Tool**. It links the app's `bridge-client` into `~/.local/bin` without asking for an administrator password. If your shell can't find `bridge-client`, add `~/.local/bin` to your `PATH` (for zsh: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new Terminal window). The link points into the app, so install it again if you move the app.
 
-The app needs macOS 14 or later, on Apple silicon or Intel. Releases are signed with a Developer ID and notarized by Apple. Replacing the app with a newer release at the same path keeps its Calendar and Reminders access, clients and agent setups.
+The app needs macOS 14 or later, on Apple silicon or Intel. Releases are signed with a Developer ID and notarized by Apple. Replacing the app with a newer release at the same path keeps its Calendar and Reminders access, clients and agent setups. The app does that for you: it checks for a newer version once a day (**Settings ▸ General ▸ Check for updates automatically**) and from **Check for Updates…**, shows **Update Available** in the menu bar menu and on Overview, and installs only when you click **Install Update** in the update window, after checking the download's signature.
 
 To verify a download, compare its SHA-256 with the release's `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS` in the folder with the download), and, for releases built by the release workflow, check its provenance with the GitHub CLI: `gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`.
 

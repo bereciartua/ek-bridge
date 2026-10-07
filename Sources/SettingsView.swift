@@ -79,8 +79,38 @@ struct SettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                 }
+                RowDivider()
+                SettingsRow(title: String(localized: "Check for updates automatically"),
+                            caption: updatesCaption) {
+                    Toggle(String(localized: "Check for updates automatically"),
+                           isOn: Binding(get: { model.automaticUpdateChecks },
+                                         set: { model.setAutomaticUpdateChecks($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!model.updaterAvailable)
+                }
+                if model.updaterAvailable {
+                    RowDivider()
+                    SettingsRow(title: String(localized: "Updates"), caption: lastCheckCaption) {
+                        Button(String(localized: "Check for Updates…")) { model.checkForUpdates() }
+                    }
+                }
             }
         }
+    }
+
+    private var updatesCaption: String {
+        model.updaterAvailable
+            ? String(localized: "Once a day, \(AppIdentity.displayName) asks GitHub for its latest version, sending only your IP address and the app's version. An update installs only when you click.")
+            : String(localized: "This copy was built from source and can't update itself. Releases are on GitHub.")
+    }
+
+    private var lastCheckCaption: String {
+        if let found = model.foundUpdate {
+            return String(localized: "Version \(found.version) is available.")
+        }
+        guard let date = model.lastUpdateCheck else { return String(localized: "Not checked yet.") }
+        return String(localized: "Last checked: \(RelativeTime.ago(date, now: model.now)).")
     }
 
     private var developer: some View {

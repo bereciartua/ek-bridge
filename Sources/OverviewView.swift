@@ -10,6 +10,9 @@ struct OverviewView: View {
                 if model.renameNoticePending {
                     RenameNotice(model: model)
                 }
+                if model.showsUpdateCard {
+                    UpdateCard(model: model)
+                }
                 if !model.policyStoreAvailable {
                     PolicyUnavailableCard(model: model)
                 }
@@ -64,6 +67,27 @@ struct RenameNotice: View {
             text += " " + String(localized: "Install the command-line tool again from Settings ▸ Developer.")
         }
         return text
+    }
+}
+
+/// An update a scheduled check found (Sparkle's gentle reminder). Install
+/// Update opens Sparkle's window with the release notes; nothing installs
+/// without a click there.
+struct UpdateCard: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        if let update = model.foundUpdate {
+            BannerView(banner: Banner(
+                kind: update.critical ? .warning : .info,
+                title: update.critical
+                    ? String(localized: "A security update is available: version \(update.version).")
+                    : String(localized: "Version \(update.version) is available."),
+                message: String(localized: "See what's new, then install it. \(AppIdentity.displayName) restarts, and your access, clients and agent setups stay as they are."),
+                actionTitle: String(localized: "Install Update…"),
+                action: { model.checkForUpdates() }),
+                onDismiss: update.critical ? nil : { model.dismissFoundUpdate() })
+        }
     }
 }
 
@@ -341,6 +365,20 @@ struct SetupChecklistView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if model.updaterAvailable {
+                    // The one request that leaves this Mac, so it's named here.
+                    Toggle(isOn: Binding(get: { model.automaticUpdateChecks },
+                                         set: { model.setAutomaticUpdateChecks($0) })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "Check for updates automatically"))
+                            Text(String(localized: "Once a day, asks GitHub for the latest version, sending only your IP address and the app's version. Change it any time in Settings."))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                }
                 HStack {
                     Spacer()
                     Button(String(localized: "Hide Setup")) { model.hideSetup() }

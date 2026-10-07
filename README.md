@@ -107,6 +107,8 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 | One HTTPS request to your Remote Access address | Only when you click **Test** in Settings ▸ Remote Access. |
 | One HTTPS request for a cloud agent's client metadata | Only while you pair an OAuth cloud agent (claude.ai, ChatGPT), to the address that agent gives. Private and local addresses are refused. |
 | `bridge-mcp` connecting to `127.0.0.1` | When an agent on your Mac starts it, to reach the MCP server. |
+| One HTTPS request to GitHub for `appcast.xml`, the list of the latest version | Once a day while **Settings ▸ General ▸ Check for updates automatically** is on (on in downloaded copies; a copy built from source never checks), and when you choose **Check for Updates…**. GitHub sees your IP address and the app's version; nothing else is sent. |
+| Downloading an update from GitHub | Only after you click **Install Update** in the update window. The app checks the download's EdDSA signature and that it's signed by the same developer before installing it. |
 
 What an agent reads through the bridge goes to that agent and its AI provider, under their privacy terms, so grant only what each agent needs. Tunnels other than Tailscale Funnel can read Remote Access traffic at their edge.
 
@@ -142,7 +144,7 @@ The build creates `build/EKBridge.app`, with the MCP launcher `bridge-mcp` and t
    tccutil reset Reminders "$bundle_id"
    ```
 
-3. Delete the app from Applications, and its data: `~/Library/Application Support/EKBridge` (clients, keys, tokens, Activity and the write journal). If you upgraded from EventKit Bridge, also delete the `EventKitBridge` link next to it.
+3. Delete the app from Applications, and its data: `~/Library/Application Support/EKBridge` (clients, keys, tokens, Activity and the write journal). If you upgraded from EventKit Bridge, also delete the `EventKitBridge` link next to it. Settings and the updater's downloads are in `~/Library/Preferences/io.github.bereciartua.ekbridge.plist` and `~/Library/Caches/io.github.bereciartua.ekbridge`.
 4. If you installed the command-line tool, delete `~/.local/bin/bridge-client`.
 5. Remove the server from your agents' configs (for example `claude mcp remove ek-bridge`), and stop any tunnel you ran for Remote Access.
 

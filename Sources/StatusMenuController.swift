@@ -146,6 +146,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        if let update = model.foundUpdate {
+            let title = update.critical
+                ? String(localized: "Security Update Available: \(update.version)…")
+                : String(localized: "Update Available: \(update.version)…")
+            let updateItem = item(title) { [weak self] in self?.model.checkForUpdates() }
+            updateItem.attributedTitle = iconTitle(
+                symbol("arrow.down.circle.fill", color: update.critical ? .systemRed : .systemBlue), title)
+            menu.addItem(updateItem)
+            menu.addItem(.separator())
+        }
+
         let problems = model.problems
         for problem in problems {
             let title = item(problem.title) { [weak self] in self?.fix(problem) }
@@ -185,6 +196,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(item(String(localized: "Settings…"), key: ",") { [weak self] in
             self?.model.show(.settings)
         })
+        if model.updaterAvailable {
+            menu.addItem(item(String(localized: "Check for Updates…")) { [weak self] in
+                self?.model.checkForUpdates()
+            })
+        }
         menu.addItem(.separator())
         menu.addItem(item(String(localized: "Quit \(AppIdentity.displayName)"), key: "q") {
             NSApp.terminate(nil)

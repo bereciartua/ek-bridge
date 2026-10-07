@@ -30,8 +30,10 @@ This guide is for maintainers: where the code lives, how a change is made and re
 | `Sources/WriteJournal.swift`, `Sources/WriteIdempotencyKey.swift` | Pending write reservation, replay, expiry, reconciliation signals |
 | `Sources/Synthetic*.swift`, `Sources/TestCollections.swift` | Supervised synthetic test controls; most command routes compile only with `EVENTKIT_SYNTHETIC_TEST=1` |
 | `Sources/CommandLineTool.swift` | Settings ▸ Developer ▸ Install Command-Line Tool: links the bundled `bridge-client` into `~/.local/bin` |
-| `build.sh`, `scripts/sdk.sh`, `scripts/check_bundle.sh`, `scripts/check_version.sh` | The build (native or universal with `EVENTKIT_ARCHS`, signed inside out, with a secure timestamp for a real identity); the SDK choice shared with `test.sh`; the bundle layout check used by CI and releases; the release version check |
-| `release.sh`, `scripts/check_notarized.sh`, `scripts/release_notes.py`, `scripts/appcast.py` | The release: tests, universal Developer ID build, notarization and stapling, DMG and zip, checksums, the Sparkle appcast and a draft GitHub release ([Releasing](#releasing)); Gatekeeper and staple checks; the CHANGELOG section as Markdown or HTML; the appcast writer |
+| `Sources/Updates.swift`, `Sources/SparkleUpdater.swift` | In-app updates ([details](#updates)): the controls the model uses (faked in the UI-review build), the found-update reminder, and the gate that holds a relaunch while changes wait for approval; the Sparkle wrapper with gentle reminders for scheduled checks |
+| `build.sh`, `scripts/sdk.sh`, `scripts/sparkle.sh`, `scripts/check_bundle.sh`, `scripts/check_version.sh` | The build (native or universal with `EVENTKIT_ARCHS`, Sparkle embedded, signed inside out, with a secure timestamp for a real identity); the SDK choice shared with `test.sh`; the pinned Sparkle download; the bundle layout check used by CI and releases; the release version check |
+| `release.sh`, `scripts/check_notarized.sh`, `scripts/release_notes.py`, `scripts/appcast.py`, `scripts/verify_update_signature.swift` | The release: tests, universal Developer ID build, notarization and stapling, DMG and zip, checksums, the Sparkle appcast and a draft GitHub release ([Releasing](#releasing)); Gatekeeper and staple checks; the CHANGELOG section as Markdown or HTML; the appcast writer; the zip's signature against `SUPublicEDKey` |
+| `scripts/update_test.sh` | The Sparkle update end to end with a local feed and a separate test app (`EVENTKIT_UPDATE_TEST=1` builds) ([Testing](TESTING.md#update-test)) |
 | `Tests/`, `test.sh`, `ui_test.sh`, `ui_snapshots.sh` | Offline policy/shape/CLI tests, the isolated GUI window and behavior tests, and PNG snapshots of every screen |
 | `Tests/mcp-fixtures/` | `tools.json` (the tool catalog contract, compared exactly), mapping goldens (`<tool>.<case>.args.json` → `.core.json`, `core-result.<case>.json` → `.structured.json`), agent error texts |
 | `Tests/agent-setup/` | One golden per agent × method, the source of the setups in [MCP](MCP.md#set-up-your-agent), plus `cloud-*.txt` per cloud agent and `tunnel-*.txt` per tunnel, the source of [Use from cloud agents](MCP.md#use-from-cloud-agents) |
@@ -59,24 +61,24 @@ The scripts are deliberately simple: plain `swiftc` calls, no Xcode project or p
 - [ ] No personal data in the tree or the new commits: no keys, tokens, Remote Access URLs, tunnel host names, collection IDs, calendar or reminder contents, journal files or raw logs. `gitleaks git` over the new commits is clean.
 - [ ] For UI changes: `sh ui_test.sh` passes and the screenshots in `docs/images/` are current.
 - [ ] Live checks the release needs ran on synthetic data with the owner's approval: the fields probe for EventKit writes, the [live MCP matrix](TESTING.md#live-mcp-matrix) for MCP changes, the [live cloud matrix](TESTING.md#live-cloud-matrix) for Remote Access changes (Remote Access stays labeled Experimental until it has run).
-- [ ] The release build installs over the previous one at the same path and keeps Calendar and Reminders access, clients, tokens and agent setups ([release install test](TESTING.md#release-install-test)).
+- [ ] The release build installs over the previous one at the same path and keeps Calendar and Reminders access, clients, tokens and agent setups ([release install test](TESTING.md#release-install-test)). After a change to the updater, the bundle layout or the Sparkle version, `sh scripts/update_test.sh` passes too.
 - [ ] A rehearsal, `sh release.sh --untagged --no-release`, has produced a notarized DMG and zip from the release commit, so the workflow run is a formality.
 
 The runtime write journal (`write-journal.json` and `write-journal/<client>.json`) can contain reminder titles, item IDs and due summaries in its completed receipts. Never attach Application Support files or raw logs to an issue or a release.
 
 ## Releasing
 
-`Info.plist` is the one source of the version. A release is a tag `v<CFBundleShortVersionString>` on `main`, built by `release.sh`: in GitHub Actions when the tag is pushed (`.github/workflows/release.yml`, in the protected `release` environment), or by hand on a Mac that has the Developer ID identity and the notary credentials. Both produce a **draft** GitHub release for you to review and publish. In-app updates (Sparkle) aren't wired into the app yet; the pipeline already writes the appcast once a Sparkle key is set.
+`Info.plist` is the one source of the version. A release is a tag `v<CFBundleShortVersionString>` on `main`, built by `release.sh`: in GitHub Actions when the tag is pushed (`.github/workflows/release.yml`, in the protected `release` environment), or by hand on a Mac that has the Developer ID identity and the notary credentials. Both produce a **draft** GitHub release for you to review and publish. Publishing it is also what installed copies see: their feed is the latest release's `appcast.xml` ([Updates](#updates)).
 
 ### What `release.sh` does
 
 1. Refuses a tree with uncommitted changes or a `HEAD` that isn't tagged `v<version>` (`--untagged` for a rehearsal), and runs `scripts/check_version.sh` (tag, a higher `CFBundleVersion` than the previous `v*` tag, a `## [x.y.z]` section in the changelog).
 2. Runs `sh test.sh` (`--skip-tests` only for repeated rehearsals).
-3. Builds the universal app (`EVENTKIT_ARCHS="arm64 x86_64"`) in `build/release/`, signed inside out (`bridge-mcp`, `bridge-client`, then the app) with the Developer ID identity, the hardened runtime and a secure timestamp, and runs `scripts/check_bundle.sh`.
+3. Builds the universal app (`EVENTKIT_ARCHS="arm64 x86_64"`) in `build/release/`, signed inside out (Sparkle's `Autoupdate` and `Updater.app`, `Sparkle.framework`, `bridge-mcp`, `bridge-client`, then the app) with the Developer ID identity, the hardened runtime and a secure timestamp, and runs `scripts/check_bundle.sh`.
 4. Notarizes the app (`notarytool submit --wait`; on anything but Accepted it prints Apple's log) and staples the ticket.
 5. Builds `EKBridge-<version>.dmg` (LZFSE, HFS+, with an Applications link), signs, notarizes and staples it. `scripts/check_notarized.sh` confirms Gatekeeper's verdict (`source=Notarized Developer ID`) and the staple on the app and on the image.
 6. Builds `EKBridge-<version>.zip` from the stapled app (Sparkle installs from the zip; people download the DMG) and writes `SHA256SUMS`.
-7. With `EVENTKIT_SPARKLE_KEY_FILE`, signs the zip with Sparkle's `sign_update` and writes `appcast.xml` (`scripts/appcast.py`) with the version, build number, minimum macOS, URL, length, signature and the release notes as HTML.
+7. With `EVENTKIT_SPARKLE_KEY_FILE`, signs the zip with Sparkle's `sign_update`, checks that signature against `SUPublicEDKey` in `Info.plist` as installed copies will (`scripts/verify_update_signature.swift`), and writes `appcast.xml` (`scripts/appcast.py`) with the version, build number, minimum macOS, URL, length, signature and the release notes as HTML. A release (not a rehearsal) refuses to start without the key once `Info.plist` has `SUPublicEDKey`: the feed is the latest release's `appcast.xml`, so a release without one would leave installed copies unable to see it.
 8. Creates the draft release `v<version>` with the DMG, the zip, `SHA256SUMS`, `appcast.xml` and notes: the changelog section (`scripts/release_notes.py`, relative links made absolute) followed by Install and Checksums sections.
 
 Everything goes to `dist/` (ignored). `sh release.sh --help` lists the options and environment variables.
@@ -109,13 +111,33 @@ Create it under Settings ▸ Environments with yourself as a required reviewer, 
 | `DEVELOPER_ID_P12_PASSWORD` | The `.p12` password |
 | `NOTARY_KEY` | An App Store Connect API key (`.p8`, Users and Access ▸ Integrations ▸ App Store Connect API, Developer role), base64 encoded |
 | `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` | The key's ID and the issuer ID shown next to it |
-| `SPARKLE_PRIVATE_KEY` | Later, with Sparkle: the EdDSA private key from `generate_keys -x`. Unset, the release has no `appcast.xml` |
+| `SPARKLE_PRIVATE_KEY` | The EdDSA private key from `generate_keys -x` ([Updates](#updates)), as the file's text. Required: without it `release.sh` refuses a release |
 
-The workflow imports the certificate into a temporary keychain, writes the keys to files under `RUNNER_TEMP`, runs `release.sh` with `GH_TOKEN` for the draft, attaches build attestations to the DMG and the zip (`gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`; public repositories only), and deletes the keychain and the keys. Add a tag ruleset that lets only you create `v*` tags. Keep the exported `.p12` and the Sparkle key in a password manager too: losing the Developer ID key ends Calendar and Reminders access continuity for every user, and losing the Sparkle key leaves existing installs unable to verify updates.
+The workflow imports the certificate into a temporary keychain, writes the keys to files under `RUNNER_TEMP`, runs `release.sh` with `GH_TOKEN` for the draft, attaches build attestations to the DMG and the zip (`gh attestation verify EKBridge-<version>.dmg --repo bereciartua/ek-bridge`; public repositories only), and deletes the keychain and the keys. Add a tag ruleset that lets only you create `v*` tags. Keep the exported `.p12` and the Sparkle key backed up outside GitHub too. A lost Developer ID key means creating a new certificate under the same team (macOS ties Calendar and Reminders access to the team and bundle ID, so users keep it). A lost Sparkle key is worse: installed copies can't verify updates any more, and every user has to download the next version by hand once.
 
 ### By hand
 
 `release.sh` finds the one `Developer ID Application` identity in the keychain (or takes `EVENTKIT_SIGN_IDENTITY`). For notarization, store the API key once in a keychain profile with any name, `xcrun notarytool store-credentials <profile> --key AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <issuer>`, and run `EVENTKIT_NOTARY_PROFILE=<profile> sh release.sh`, or pass `EVENTKIT_NOTARY_KEY`, `EVENTKIT_NOTARY_KEY_ID` and `EVENTKIT_NOTARY_ISSUER`. The draft needs `gh` signed in. A full run from a tagged commit behaves exactly like the workflow, minus the attestations.
+
+## Updates
+
+The app updates itself with [Sparkle](https://sparkle-project.org) 2 (`Sources/SparkleUpdater.swift`). Its feed (`SUFeedURL`) is `https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml`, which GitHub redirects to the newest published, non-prerelease release, so drafts and prereleases are never offered and there's no server. `release.sh` writes that `appcast.xml` with only the new version.
+
+- **Checks:** once a day while **Check for updates automatically** is on (`SUEnableAutomaticChecks`; on by default), and from **Check for Updates…**. Installing always takes a click (`SUAllowsAutomaticUpdates` and `SUAutomaticallyUpdate` are off), and Sparkle's system profile is off.
+- **A menu bar app:** a scheduled check never opens a window unless the app is in front. A found update shows as **Update Available** in the menu bar menu and a card on Overview (Sparkle's gentle reminders); a security update (`appcast.py --critical`, `sparkle:criticalUpdate`) says so, and its card can't be closed.
+- **Before relaunching**, `UpdateRelaunchGate` holds Sparkle while changes wait in the approval panel (45 seconds at most), then the app quits as it always does: listeners close, the bridge stops without saving that choice, and anything left waiting is refused. Sparkle replaces the app at the same path, so the `bridge-mcp` path in agent setups, Calendar and Reminders access (same team and bundle ID) and Start at login all stay.
+- **Trust:** Sparkle installs an update only if its EdDSA signature matches `SUPublicEDKey` and, both apps being Developer ID–signed, the new app's team matches. An ad hoc build has no key (`build.sh` empties `SUPublicEDKey`), so a copy built from source never checks and says so in Settings.
+
+**The key.** Created once by the maintainer with Sparkle's tools (in `build/vendor/Sparkle/bin` after a build):
+
+```sh
+build/vendor/Sparkle/bin/generate_keys            # creates the key in the login keychain, prints the public key
+build/vendor/Sparkle/bin/generate_keys -x sparkle-private-key.txt   # exports the private key
+```
+
+The public key goes into `Info.plist` (`SUPublicEDKey`); the exported private key becomes the `SPARKLE_PRIVATE_KEY` secret and goes into a backup outside GitHub, then the exported file is deleted. Never change `SUPublicEDKey` in a release: installed copies only accept updates signed with the key they shipped with.
+
+**Updating Sparkle.** Change `sparkle_version` and `sparkle_sha256` in `scripts/sparkle.sh` (the SHA-256 of the release's `Sparkle-<version>.tar.xz`), read Sparkle's changelog for changes to the delegate methods and signing, run `sh scripts/update_test.sh` (with `EVENTKIT_SIGN_IDENTITY` set to the Developer ID) and note the version in CHANGELOG. Dependabot doesn't see this pin.
 
 ## Regenerating goldens
 
