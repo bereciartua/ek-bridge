@@ -11,6 +11,8 @@ Everything is off until you turn it on. The only network listeners are the MCP s
 
 This is a personal project in **public preview**, with best-effort support. It is not affiliated with Apple.
 
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/bereciartua/ek-bridge)
+
 ## Install
 
 1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/ek-bridge/releases/latest).
