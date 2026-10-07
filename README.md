@@ -119,6 +119,11 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
 
 EK Bridge holds the Calendar and Reminders permission, and nothing reaches Apple's EventKit framework except through it. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for the specific calendar or reminder list, the request's shape and the write safeguards before it touches your data, and it can ask you before each change.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/access-dark.png">
+  <img alt="A client's Access table: Work has Read, Create and Edit; Home has Read; Family and a Google team calendar have nothing; Birthdays and US Holidays are read-only calendars. Changes are set to Ask me first." src="docs/images/access-light.png" width="640">
+</picture>
+
 - **Local by default.** Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. No account, analytics or server of ours.
 - **A key per client.** Each agent has its own 256-bit token, stored only as a hash; scripts sign their requests with their own Ed25519 key.
 - **Safe writes.** Edits and deletes need the latest version of an item. Every written field is read back, and a mismatch is rolled back.
