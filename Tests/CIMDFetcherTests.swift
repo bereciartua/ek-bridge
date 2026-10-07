@@ -357,15 +357,6 @@ struct CIMDFetcherTests {
             self.end_headers()
             self.wfile.write(body)
             self.close_connection = True
-            if not length:
-                # The body ends where the connection does, so end it with TLS close_notify. An
-                # abrupt close lets the client's TLS stack drop the last records unread (seen on
-                # fast CI runners), which would test the race instead of the framing.
-                self.wfile.flush()
-                try:
-                    self.connection.unwrap()
-                except (OSError, ssl.SSLError):
-                    pass
         def do_GET(self):
             note('GET ' + self.path)
             base = 'https://localhost:%d' % self.server.server_port
@@ -404,7 +395,18 @@ struct CIMDFetcherTests {
                 self.reply(404, 'text/plain', b'no')
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    class Server(http.server.ThreadingHTTPServer):
+        def shutdown_request(self, request):
+            # End every connection with TLS close_notify. After an abrupt close, the client can
+            # lose the last bytes it hasn't read yet (seen on macOS 27 CI runners), and these
+            # checks are about the fetcher's parsing and limits, not about lossy closes.
+            try:
+                request.settimeout(2)
+                request.unwrap()
+            except (OSError, ValueError):
+                pass
+            super().shutdown_request(request)
+    server = Server(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
     # Exit with the test, even when it crashes before terminating this process.
