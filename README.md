@@ -16,8 +16,8 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 
 <p align="center">
   <a href="https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg"><b>Download for Mac</b></a> ·
-  <a href="#install">Homebrew</a> ·
-  <a href="docs/MCP.md">Connect an agent</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="docs/MCP.md">Agent setups</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -28,83 +28,15 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 </picture>
 </p>
 
-- **Choose what each agent can touch.** Pick calendars and reminder lists per client, and whether it may read, create, edit, delete or complete. New clients start with nothing.
-- **Approve every change.** A panel shows every field an agent wants to write. Nothing changes until you click Allow.
-- **See everything, switch it off in one click.** Activity explains every request. Pause or revoke a client in one click, or turn the whole bridge off from the menu bar.
+- **Choose what each agent can touch.** Pick the calendars and reminder lists each agent may use, and whether it may read, create, edit, delete or complete. A new agent starts with nothing.
+- **Approve every change.** A panel shows exactly what an agent wants to write. Nothing changes until you click Allow.
+- **See everything, switch it off in one click.** Activity explains every request. Pause or revoke an agent, or turn the whole bridge off from the menu bar.
 
-Works with Claude Code, Claude Desktop, Codex and Cursor ([tested live](docs/TESTING.md#live-mcp-matrix)), with setups included for VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant, Devin Desktop and any other MCP client. claude.ai and ChatGPT connect through Remote Access, which is experimental. EK Bridge is a personal project in **public preview**, with best-effort support, and isn't affiliated with Apple.
-
-## Install
-
-1. Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), the latest release (release notes and checksums are on [Releases](https://github.com/bereciartua/ek-bridge/releases/latest)).
-2. Open it and drag the app to **Applications**.
-3. Open the app. Its window opens on a setup checklist; later, use the calendar icon in the menu bar.
-
-Or install it with [Homebrew](https://brew.sh), which also links `bridge-client` into Homebrew's `bin`:
-
-```sh
-brew install --cask bereciartua/tap/ek-bridge
-```
-
-It needs **macOS 14 or later**, on Apple silicon or Intel. Either way the app updates itself. Upgrading from EventKit Bridge, its earlier name? See [Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier).
-
-For scripts, install the command-line client from **Settings ▸ Developer ▸ Install Command-Line Tool** (Homebrew already linked it). It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`.
-
-## Quick start
-
-These are the same steps as the setup checklist the app shows on first launch:
-
-1. **Open the app** (see [Install](#install)).
-2. **Allow Calendar and/or Reminders access.** You need only the one your tools use.
-3. **Create a client** for each tool or script, with **Connects from ▸ Command line**. It gets its own key file and starts with no access. (For an AI agent, see below.)
-4. **Choose what the client can use:** which calendars and lists, and which actions (Read, Create, Edit, Delete, Complete). Then **Save**.
-5. **Turn on the bridge and send a test request.** The client page has a ready-to-run command:
-
-```sh
-bridge-client scope_status --client "Claude Code"
-```
-
-Until `bridge-client` is installed (or linked by Homebrew), the client page copies the same command with the app's full path, `/Applications/EKBridge.app/Contents/MacOS/bridge-client`, so it works as pasted. From a source checkout, `python3 client.py` works the same way.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/client-dark.png">
-  <img alt="A client page: Connect shows the client ID, key file path and a command to copy; Access shows calendars grouped by account with Read, Create, Edit and Delete checkboxes." src="docs/images/client-light.png" width="720">
-</picture>
-
-`bridge-client --help` lists every command and the access it needs. Errors say what's wrong and how to fix it, with a distinct exit code for each kind of problem ([API and CLI](docs/API.md)). The app's **Activity** pane shows every request with a plain explanation of its result.
-
-### Connect an AI agent
-
-After steps 1 and 2 above, the checklist follows the same path for an agent:
-
-1. **New Client…**: name it after the agent and choose **Connects from ▸ AI agent (MCP)**. The app creates a token file for it; the client has no access, and **Ask me before each change** is on.
-2. **Choose access** in the client's Access table, then **Save**. Grant Read only on what the agent needs: what it reads goes to its AI provider.
-3. **Turn on the bridge and the MCP server** (Settings ▸ MCP Server, or the checklist). The server listens on `http://127.0.0.1:47615/mcp`.
-4. **Copy the setup** from the client's **Connect ▸ AI agent** tab: pick your agent and paste the command or config. The status line says **Connected** when the first request arrives.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect-agent-dark.png">
-  <img alt="Connect ▸ AI agent on a client page: Claude Code is selected with the recommended direct HTTP method, a claude mcp add-json command to copy, a Connected status, a hidden token with Reset, and the server URL." src="docs/images/connect-agent-light.png" width="720">
-</picture>
-
-When the agent wants to change something, a small panel asks you first. You can turn that off per client.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/approval-panel-dark.png">
-  <img alt="The Ask before changes panel: Claude Code wants to add a weekly event to Work in Europe/Madrid, with rows for when, repeats, where with a map pin, notes, the link with its host in bold, alerts and show as, Deny and Allow buttons, a 45-second countdown and a checkbox to allow changes for 15 minutes." src="docs/images/approval-panel-light.png" width="420">
-</picture>
-
-Setups for every supported agent, the tool reference and troubleshooting are in the [MCP guide](docs/MCP.md).
-
-### Connect a cloud agent (experimental)
-
-Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (Settings ▸ Remote Access, off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each client needs **Allow cloud access** on its page. Agents that send a header (the Anthropic and OpenAI APIs, Claude Code on the web, Cursor and Copilot cloud agents, Devin) use the client's separate remote token. claude.ai, ChatGPT and Gemini Enterprise sign in with OAuth, which you approve on the Mac by matching a six-digit code. See [Use from cloud agents](docs/MCP.md#use-from-cloud-agents).
-
-Remote Access is **experimental**: it has offline tests, but hasn't yet been tested live with every cloud agent and tunnel. Turn it on only while you need it, and keep the Remote Access URL private; its path is the secret.
+**Works with** Claude Code, Claude Desktop, Codex and Cursor ([tested live](docs/TESTING.md#live-mcp-matrix)), and any other MCP client, with ready-made setups for VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant and Devin Desktop. claude.ai and ChatGPT can connect through [Remote Access](#from-cloud-agents-experimental), which is experimental.
 
 ## What you can ask
 
-Once an agent is connected, ask in plain words. It can act only inside the calendars and lists you granted.
+Once an agent is connected, ask in plain words. It can act only inside the calendars and lists you gave it.
 
 | You ask | The agent uses |
 | --- | --- |
@@ -113,25 +45,66 @@ Once an agent is connected, ask in plain words. It can act only inside the calen
 | "Remind me to renew my passport next Monday at 9." | `create_reminder` in the list you granted |
 | "Block 9:30–10:30 every weekday for focus time." | `create_event` with a repeat rule |
 
-Twelve tools cover events and reminders, with every field Calendar supports: time zones, repeats, alerts, locations, notes and links. Each agent sees only the tools its grants allow. The [MCP guide](docs/MCP.md#tools) has the full reference.
+Twelve tools cover events and reminders, with every field Calendar supports: time zones, repeats, alerts, locations, notes and links. Each agent sees only the tools its access allows. The [MCP guide](docs/MCP.md#tools) has the full reference.
 
-## How it works
+## Get started
 
-EK Bridge holds the Calendar and Reminders permission, and nothing reaches Apple's EventKit framework except through it. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for the specific calendar or reminder list, the request's shape and the write safeguards before it touches your data, and it can ask you before each change.
+1. **Install.** Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), open it and drag EK Bridge to **Applications**. Or use [Homebrew](https://brew.sh):
+
+   ```sh
+   brew install --cask bereciartua/tap/ek-bridge
+   ```
+
+2. **Open the app.** It opens on a short setup checklist; later, you'll find it in the menu bar. First, allow Calendar and/or Reminders access; you need only the one your agent uses.
+3. **Add your agent.** Click **New Client…**, name it after the agent and choose **Connects from ▸ AI agent (MCP)**. Then tick the calendars and lists it may use, and **Save**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
+4. **Turn on the bridge and the MCP server** from the checklist.
+5. **Copy the setup.** On the client's **Connect** tab, pick your agent and copy the command or config into it. The status changes to **Connected** when the agent's first request arrives.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect-agent-dark.png">
+  <img alt="Connect ▸ AI agent on a client page: Claude Code is selected with the recommended direct HTTP method, a claude mcp add-json command to copy, a Connected status, a hidden token with Reset, and the server URL." src="docs/images/connect-agent-light.png" width="720">
+</picture>
+
+That's it: ask your agent one of the questions above. Setups for every agent and troubleshooting are in the [MCP guide](docs/MCP.md).
+
+EK Bridge needs **macOS 14 or later**, on Apple silicon or Intel. It's notarized by Apple and keeps itself up to date (you click to install each update). Release notes and checksums are on [Releases](https://github.com/bereciartua/ek-bridge/releases/latest). Upgrading from EventKit Bridge, its earlier name? See [Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier). EK Bridge is a personal project in **public preview**, with best-effort support.
+
+## How you stay in control
+
+EK Bridge is the only app that holds your Calendar and Reminders permission. Your agents talk to it, never to your calendars directly, and it checks every request against what you allowed.
+
+### Each agent gets only what you tick
+
+Every agent has its own key and its own access: Read, Create, Edit and Delete for each calendar, plus Complete for each reminder list. Share Work, keep Family to yourself.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/access-dark.png">
   <img alt="A client's Access table: Work has Read, Create and Edit; Home has Read; Family and a Google team calendar have nothing; Birthdays and US Holidays are read-only calendars. Changes are set to Ask me first." src="docs/images/access-light.png" width="640">
 </picture>
 
-- **Local by default.** Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. No account, analytics or server of ours.
-- **A key per client.** Each agent has its own 256-bit token, stored only as a hash; scripts sign their requests with their own Ed25519 key.
+### You approve each change
+
+By default, before an agent writes anything, a small panel shows every field it wants to set. Click **Allow** or **Deny**, or let one agent work for 15 minutes. A request you don't answer is refused after 45 seconds. For a script you trust, you can turn asking off.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/approval-panel-dark.png">
+  <img alt="The Ask before changes panel: Claude Code wants to add a weekly event to Work in Europe/Madrid, with rows for when, repeats, where with a map pin, notes, the link with its host in bold, alerts and show as, Deny and Allow buttons, a 45-second countdown and a checkbox to allow changes for 15 minutes." src="docs/images/approval-panel-light.png" width="400">
+</picture>
+
+### You can see everything, and stop anything
+
+**Activity** lists every request and explains its result in plain words, including the ones that were refused. **Pause** an agent to refuse its requests while keeping its setup, **Revoke** it to cut it off for good, or turn the whole bridge off from the menu bar.
+
+### Under the hood
+
+- **Local by default.** Everything is off until you turn it on. The MCP server listens only on `127.0.0.1`. No account, no analytics, no server of ours.
+- **A key per agent.** Each agent has its own 256-bit token, stored only as a hash; scripts sign their requests with their own Ed25519 key.
 - **Safe writes.** Edits and deletes need the latest version of an item. Every written field is read back, and a mismatch is rolled back.
-- **Cloud only through your tunnel.** A cloud agent can reach the bridge only through Remote Access and a tunnel you set up, only for clients you allowed. It can't reach a Mac that's asleep, offline or logged out.
-- **Signed updates.** Updates come from GitHub, signed by the developer and checked before they install. Installing always takes a click.
+- **Cloud only through your tunnel.** A cloud agent can reach the bridge only through Remote Access and a tunnel you run, for agents you allowed, and never while your Mac is asleep, offline or logged out.
+- **Signed updates.** Updates come from GitHub, signed by the developer and checked before they install.
 - **Open source.** Read the code, the [threat model](docs/ARCHITECTURE.md) and the [test record](docs/TESTING.md).
 
-**What it doesn't protect against:** another program running as your macOS user can read the same key files. A grant separates the agents you connect; it isn't a defense against malware already on your Mac. Details are in [Security boundary](#security-boundary).
+**What it doesn't protect against:** another program running as your macOS user can read the same key files. Access settings separate the agents you connect; they aren't a defense against malware already on your Mac. Details are in [Security boundary](#security-boundary).
 
 ## FAQ
 
@@ -150,7 +123,7 @@ EK Bridge itself sends nothing anywhere; [Privacy](#privacy) lists every connect
 <details>
 <summary><b>Does it always ask before a change?</b></summary>
 
-For AI agents, yes by default. You can turn asking off per client, for example for a script you trust, or allow one agent's changes for 15 minutes at a time. A request you don't answer is refused after 45 seconds. See [Ask before changes](docs/MCP.md#ask-before-changes).
+For AI agents, yes by default. You can turn asking off per client, for example for a script you trust, or allow one agent's changes for 15 minutes at a time. See [Ask before changes](docs/MCP.md#ask-before-changes).
 </details>
 
 <details>
@@ -162,7 +135,13 @@ The accounts that appear in the Calendar and Reminders apps, such as iCloud, Goo
 <details>
 <summary><b>Can I use it with ChatGPT or claude.ai?</b></summary>
 
-Yes, through Remote Access, which forwards cloud agents to your Mac through a tunnel you run, such as Tailscale Funnel. It's off by default and experimental, and your Mac has to be awake and online. See [Connect a cloud agent](#connect-a-cloud-agent-experimental).
+Yes, through Remote Access, which forwards cloud agents to your Mac through a tunnel you run, such as Tailscale Funnel. It's off by default and experimental, and your Mac has to be awake and online. See [From cloud agents](#from-cloud-agents-experimental).
+</details>
+
+<details>
+<summary><b>Can my own scripts use it?</b></summary>
+
+Yes, with the `bridge-client` command-line tool. Each script gets its own key and its own access, like an agent. See [From scripts](#from-scripts).
 </details>
 
 <details>
@@ -179,6 +158,31 @@ No. EK Bridge is an independent open-source project built on Apple's public Even
 
 Something else? Ask in [Discussions](https://github.com/bereciartua/ek-bridge/discussions/categories/q-a).
 
+## More ways to connect
+
+### From scripts
+
+Scripts and tools without MCP use `bridge-client`, which signs each request with the client's own key.
+
+1. Create a client with **Connects from ▸ Command line**, choose its access and **Save**.
+2. Install the tool from **Settings ▸ Developer ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`. (Homebrew already linked it into its own `bin`.)
+3. Send a test request. The client page has it ready to copy:
+
+   ```sh
+   bridge-client scope_status --client "Morning briefing"
+   ```
+
+Until the tool is installed, the copied command uses the app's full path, `/Applications/EKBridge.app/Contents/MacOS/bridge-client`, so it works as pasted. `bridge-client --help` lists every command and the access it needs. Errors say what's wrong and how to fix it, with a distinct exit code for each kind of problem. See [A safe first CLI check](docs/USAGE.md#a-safe-first-cli-check) and the [API and CLI reference](docs/API.md).
+
+### From cloud agents (experimental)
+
+Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (Settings ▸ Remote Access, off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each client also needs **Allow cloud access**.
+
+- Agents that send a header (the Anthropic and OpenAI APIs, Claude Code on the web, Cursor and Copilot cloud agents, Devin) use the client's separate remote token.
+- claude.ai, ChatGPT and Gemini Enterprise sign in with OAuth, which you approve on the Mac by matching a six-digit code.
+
+Remote Access has offline tests, but hasn't yet been tested live with every cloud agent and tunnel. Turn it on only while you need it, and keep its URL private; its path is the secret. See [Use from cloud agents](docs/MCP.md#use-from-cloud-agents).
+
 ## Guides
 
 | Goal | Guide |
@@ -190,20 +194,6 @@ Something else? Ask in [Discussions](https://github.com/bereciartua/ek-bridge/di
 | Understand processes, file storage, and security limits | [Architecture and threat model](docs/ARCHITECTURE.md) |
 | See what was tested and diagnose failures | [Testing and troubleshooting](docs/TESTING.md) |
 | Contribute, or maintain and release | [Contributing](CONTRIBUTING.md), [Maintaining](docs/MAINTAINING.md) |
-
-## What works today
-
-- The user chooses collections and Read, Create, Edit, Delete, or reminder Complete grants per client. New clients have zero grants. Saved grants persist until edited or revoked; the bridge itself is off until enabled locally. A client can be paused, which refuses its requests but keeps its credentials and access, and resumed later.
-- AI agents on the Mac use twelve MCP tools (`list_collections`, `read_events`, `get_event`, `create_event`, `update_event`, `delete_event`, `read_reminders`, `get_reminder`, `create_reminder`, `update_reminder`, `complete_reminder`, `delete_reminder`) with ISO 8601 times. Each agent sees only the tools its grants allow. **Ask before changes** can require your approval for every write, per client, and shows every field that would change.
-- Reads return bounded event or reminder rows, not unrestricted access to the user's EventKit store. Reads of other collections are denied. Writes use an idempotency key; edits and deletes require the latest item version.
-- Events support every field EventKit exposes: times saved in the time zone you choose (or the Mac's, never UTC by default), all-day events up to a year, notes, location with a map pin, URL, alarms (including arriving or leaving a place), availability, and repeat rules. Recurring events can be changed or deleted one occurrence at a time, from one occurrence on, or as a whole series. Attendees, the organizer and your response are readable; invitations stay read-only, because changing them can notify every attendee.
-- Reminders support title, due and start dates, notes, URL, priority, several alarms (including location alarms), repeat rules, completing and reopening, moving between lists, and deleting a repeating reminder as a series. One occurrence of a repeating reminder can be completed for the shapes and account types a supervised probe has verified (today an iCloud daily reminder with a due time).
-- Updates change only the fields they send, and every written field is read back: a mismatch removes a new item or puts an edited one back. Inviting people, answering invitations, attachments, travel time and the Reminders app's tags and subtasks aren't possible through EventKit.
-- Cloud agents can use the same tools through Remote Access, a tunnel you run and a per-client **Allow cloud access** switch, with a separate remote token per client or OAuth connections you approve on the Mac. Remote Access is off by default, can turn itself off on a timer, and is one click to turn off from the menu bar.
-- One window with Overview, Activity (which says whether each request came via MCP, Remote Access or the command line), each client and Settings; a menu bar icon that shows whether the bridge is on, off or needs attention, with a globe while Remote Access is on; and a first-run checklist.
-- The app can launch at login when you turn that on.
-
-The [support matrix](docs/API.md#support-matrix) and [testing record](docs/TESTING.md) distinguish implemented behavior from provider-specific observations and untested cases.
 
 ## Privacy
 
@@ -223,13 +213,34 @@ What an agent reads through the bridge goes to that agent and its AI provider, u
 
 ## Security boundary
 
-The bridge stores each client's Ed25519 signing credential in a mode-0600 file under the user's Application Support directory; the registry stores a public verifier and grants.
+- **Script keys.** The bridge stores each command-line client's Ed25519 signing credential in a mode-0600 file under your Application Support directory; the registry stores only a public verifier and the grants.
+- **MCP server.** Off by default. When on, it listens only on `127.0.0.1:47615`, never on a network interface. Every request needs the client's own 256-bit token, kept in a mode-0600 file; the registry stores only its SHA-256 hash, and the recommended agent setups read the file instead of putting the token in the agent's config. Requests with a foreign `Host`, any `Origin` (web pages), or tunnel forwarding headers are refused, and repeated failed sign-ins are locked out. See the [threat review](docs/ARCHITECTURE.md#mcp-threat-review-040).
+- **Remote Access.** Also off by default. While on, it listens on `127.0.0.1:47616` for a tunnel you run; every path except a 128-bit secret path gets 404, and only clients with **Allow cloud access** can use it, with a separate remote token or an OAuth connection you approved on the Mac. Local tokens don't work through it, and its credentials don't work on the local port. See the [Remote Access threat review](docs/ARCHITECTURE.md#remote-access-threat-review-050).
+- **Request files** are owned by you and have restricted permissions.
 
-The MCP server is **off by default**. When on, it listens only on `127.0.0.1:47615`, never on a network interface. Every request needs the client's own 256-bit token, kept in a mode-0600 file; the registry stores only its SHA-256 hash, and the recommended agent setups read the file instead of putting the token in the agent's config. Requests with a foreign `Host`, any `Origin` (web pages), or tunnel forwarding headers are refused, and repeated failed sign-ins are locked out. See the [threat review](docs/ARCHITECTURE.md#mcp-threat-review-040).
-
-**Remote Access** is also off by default. While on, it listens on `127.0.0.1:47616` for a tunnel the user runs; every path except a 128-bit secret path gets 404, and only clients with **Allow cloud access** can use it, with a separate remote token or an OAuth connection the user approved on the Mac. Local tokens don't work through it, and its credentials don't work on the local port. See the [Remote Access threat review](docs/ARCHITECTURE.md#remote-access-threat-review-050). Request and response files are owned by the user and have restricted permissions. **These controls do not isolate another process running as the same macOS user.** Such a process can access the credential, token or policy files. A grant is therefore a boundary between enrolled clients in this app's protocol, not a defense against a compromised user account.
+**These controls do not isolate another process running as the same macOS user.** Such a process can access the credential, token or policy files. A grant is therefore a boundary between enrolled clients in this app's protocol, not a defense against a compromised user account.
 
 Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+
+## What works today
+
+The short version is above. The complete list, with what EventKit doesn't allow:
+
+<details>
+<summary><b>Show the full list</b></summary>
+
+- The user chooses collections and Read, Create, Edit, Delete, or reminder Complete grants per client. New clients have zero grants. Saved grants persist until edited or revoked; the bridge itself is off until enabled locally. A client can be paused, which refuses its requests but keeps its credentials and access, and resumed later.
+- AI agents on the Mac use twelve MCP tools (`list_collections`, `read_events`, `get_event`, `create_event`, `update_event`, `delete_event`, `read_reminders`, `get_reminder`, `create_reminder`, `update_reminder`, `complete_reminder`, `delete_reminder`) with ISO 8601 times. Each agent sees only the tools its grants allow. **Ask before changes** can require your approval for every write, per client, and shows every field that would change.
+- Reads return bounded event or reminder rows, not unrestricted access to the user's EventKit store. Reads of other collections are denied. Writes use an idempotency key; edits and deletes require the latest item version.
+- Events support every field EventKit exposes: times saved in the time zone you choose (or the Mac's, never UTC by default), all-day events up to a year, notes, location with a map pin, URL, alarms (including arriving or leaving a place), availability, and repeat rules. Recurring events can be changed or deleted one occurrence at a time, from one occurrence on, or as a whole series. Attendees, the organizer and your response are readable; invitations stay read-only, because changing them can notify every attendee.
+- Reminders support title, due and start dates, notes, URL, priority, several alarms (including location alarms), repeat rules, completing and reopening, moving between lists, and deleting a repeating reminder as a series. One occurrence of a repeating reminder can be completed for the shapes and account types a supervised probe has verified (today an iCloud daily reminder with a due time).
+- Updates change only the fields they send, and every written field is read back: a mismatch removes a new item or puts an edited one back. Inviting people, answering invitations, attachments, travel time and the Reminders app's tags and subtasks aren't possible through EventKit.
+- Cloud agents can use the same tools through Remote Access, a tunnel you run and a per-client **Allow cloud access** switch, with a separate remote token per client or OAuth connections you approve on the Mac. Remote Access is off by default, can turn itself off on a timer, and is one click to turn off from the menu bar.
+- One window with Overview, Activity (which says whether each request came via MCP, Remote Access or the command line), each client and Settings; a menu bar icon that shows whether the bridge is on, off or needs attention, with a globe while Remote Access is on; and a first-run checklist.
+- The app can launch at login when you turn that on.
+
+The [support matrix](docs/API.md#support-matrix) and [testing record](docs/TESTING.md) distinguish implemented behavior from provider-specific observations and untested cases.
+</details>
 
 ## Build from source
 
@@ -240,7 +251,13 @@ sh test.sh
 sh build.sh
 ```
 
-The build creates `build/EKBridge.app`, with the MCP launcher `bridge-mcp` and the command-line client `bridge-client` inside it (`build/bridge-client` links to it). It signs the app **ad hoc by default**, which macOS treats as a new app each time; for lasting Calendar and Reminders access, sign with a stable identity as described in [Setup](docs/SETUP.md#build-from-source). `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app. `sh ui_test.sh` runs the window and behavior tests and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data. See [Contributing](CONTRIBUTING.md). Releases are built by `release.sh` (Developer ID signing, notarization, a DMG and a zip), by hand or by the release workflow; see [Maintaining](docs/MAINTAINING.md#releasing).
+The build creates `build/EKBridge.app`, with the MCP launcher `bridge-mcp` and the command-line client `bridge-client` inside it (`build/bridge-client` links to it). It signs the app **ad hoc by default**, which macOS treats as a new app each time; for lasting Calendar and Reminders access, sign with a stable identity as described in [Setup](docs/SETUP.md#build-from-source).
+
+- `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app.
+- `sh ui_test.sh` runs the window and behavior tests, and `sh ui_snapshots.sh` writes screenshots of every screen; both use fake data.
+- Releases are built by `release.sh` (Developer ID signing, notarization, a DMG and a zip), by hand or by the release workflow; see [Maintaining](docs/MAINTAINING.md#releasing).
+
+To contribute, see [Contributing](CONTRIBUTING.md).
 
 ## Uninstall
 
@@ -261,7 +278,13 @@ Installed with Homebrew? Do steps 1, 2 and 5, and `brew uninstall --cask ek-brid
 
 ## Project status
 
-Offline tests and bounded live tests have exercised the local bridge, UI, and synthetic EventKit items. The MCP server, launcher, agent setups, Remote Access and its OAuth server have offline tests over real loopback sockets and a local HTTPS fixture; a first live check passed with Claude Code, Claude Desktop, Codex and Cursor (connect, read, an approved write, a refused request), but the full live agent matrix and the live cloud matrix haven't been run yet. A full Mac reboot followed by login was observed with the bridge running and authorized scoped reads working. Notification and provider synchronization behavior is not established for every recurrence shape. Tested on macOS 27.0.1 on Apple silicon with iCloud. See [testing and open checks](docs/TESTING.md) and the [changelog](CHANGELOG.md).
+EK Bridge is in **public preview**, with best-effort support.
+
+- **Tested offline:** the local bridge and UI; the MCP server, launcher, agent setups, Remote Access and its OAuth server, over real loopback sockets and a local HTTPS fixture.
+- **Tested live:** bounded tests on synthetic EventKit items, a full Mac reboot and login with scoped reads still working, and a first check with Claude Code, Claude Desktop, Codex and Cursor (connect, read, an approved write, a refused request). Tested on macOS 27.0.1 on Apple silicon with iCloud.
+- **Not yet run:** the full live agent matrix and the live cloud matrix. Notification and provider sync behavior isn't established for every recurrence shape.
+
+See [testing and open checks](docs/TESTING.md) and the [changelog](CHANGELOG.md).
 
 ## License
 
