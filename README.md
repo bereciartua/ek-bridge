@@ -172,6 +172,8 @@ Most give agents broad access to many apps, with one switch per app or service. 
 No. EK Bridge is an independent open-source project built on Apple's public EventKit framework. It isn't affiliated with or endorsed by Apple.
 </details>
 
+Something else? Ask in [Discussions](https://github.com/bereciartua/ek-bridge/discussions/categories/q-a).
+
 ## Guides
 
 | Goal | Guide |

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with EK Bridge. This is a personal project maintained on a best-effort basis, so open an issue to discuss anything bigger than a small fix before you start.
+Thanks for helping with EK Bridge. This is a personal project maintained on a best-effort basis, so open an issue to discuss anything bigger than a small fix before you start. Questions and ideas go to [Discussions](https://github.com/bereciartua/ek-bridge/discussions); issues are for bugs and concrete changes.
 
 Report security problems privately, as described in [SECURITY.md](SECURITY.md), never in a public issue.
 
