@@ -49,7 +49,25 @@ if [ "${EVENTKIT_UPDATE_TEST:-0}" = "1" ]; then
     /usr/libexec/PlistBuddy -c 'Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true' \
         "$contents_dir/Info.plist"
 fi
+# The icon: AppIcon.icns for macOS 14 and 15, drawn by Resources/make_icon.swift.
+# On macOS 26 and later the system draws it from the Icon Composer document
+# instead (Liquid Glass, Dark, Clear and Tinted), compiled into Assets.car.
+# actool comes with Xcode, not the Command Line Tools; without it the app uses
+# the .icns everywhere.
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
+rm -f "$contents_dir/Resources/Assets.car"
+if xcrun --find actool > /dev/null 2>&1; then
+    icon_dir=$(mktemp -d)
+    xcrun actool "$project_dir/Resources/AppIcon.icon" --compile "$icon_dir" --platform macosx \
+        --minimum-deployment-target "$minimum_macos" --app-icon AppIcon \
+        --output-partial-info-plist "$icon_dir/partial.plist" --errors --warnings > "$icon_dir/actool.log" 2>&1 \
+        || { cat "$icon_dir/actool.log" >&2; exit 1; }
+    cp "$icon_dir/Assets.car" "$contents_dir/Resources/Assets.car"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string AppIcon' "$contents_dir/Info.plist"
+    rm -rf "$icon_dir"
+else
+    printf 'build.sh: actool not found (it comes with Xcode); the app uses AppIcon.icns only\n' >&2
+fi
 cp "$project_dir/LICENSE" "$project_dir/NOTICE" "$contents_dir/Resources/"
 # Sparkle's MIT license must travel with the copy of it inside the app.
 cp "$sparkle_dir/LICENSE" "$contents_dir/Resources/Sparkle-LICENSE.txt"

@@ -1,20 +1,19 @@
 #!/bin/sh
 set -eu
 
-# Regenerates Resources/AppIcon.icns from make_icon.swift. The .icns is
-# committed, so build.sh doesn't need to run this.
+# Regenerates Resources/AppIcon.icns and AppIcon-1024.png from make_icon.swift.
+# The .icns is committed, so build.sh doesn't need to run this. Each size is
+# drawn at its own pixel size; 32 px and below get the simpler small drawing.
 resources=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 xcrun swiftc -sdk "$(xcrun --show-sdk-path)" "$resources/make_icon.swift" -o "$work/make_icon"
-"$work/make_icon" "$work/icon-1024.png"
 iconset="$work/AppIcon.iconset"
 mkdir "$iconset"
 for size in 16 32 128 256 512; do
-    sips -z "$size" "$size" "$work/icon-1024.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z "$double" "$double" "$work/icon-1024.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    "$work/make_icon" "$iconset/icon_${size}x${size}.png" "$size"
+    "$work/make_icon" "$iconset/icon_${size}x${size}@2x.png" $((size * 2))
 done
 iconutil -c icns "$iconset" -o "$resources/AppIcon.icns"
-cp "$work/icon-1024.png" "$resources/AppIcon-1024.png"
+cp "$iconset/icon_512x512@2x.png" "$resources/AppIcon-1024.png"
 printf '%s\n' "$resources/AppIcon.icns"
