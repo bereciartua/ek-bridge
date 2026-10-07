@@ -396,6 +396,8 @@ struct CIMDFetcherTests {
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
     class Server(http.server.ThreadingHTTPServer):
+        # The test opens 11 connections at once; the default backlog of 5 can drop some under load.
+        request_queue_size = 64
         def shutdown_request(self, request):
             # End every connection with TLS close_notify. After an abrupt close, the client can
             # lose the last bytes it hasn't read yet (seen on macOS 27 CI runners), and these
@@ -526,15 +528,15 @@ struct CIMDFetcherTests {
             precondition(result(path) == fixtureDoc(path), "\(path): \(result(path))")
         }
         let twice = Array(repeating: fixtureDoc("/client.json"), count: 2)
-        precondition(results.calls[base + "/client.json"]! == twice)
-        precondition(result("/redirect.json") == .failure(.redirected))
-        precondition(result("/big.json") == .failure(.tooLarge))
-        precondition(result("/big-close.json") == .failure(.tooLarge))
-        precondition(result("/slow.json") == .failure(.timedOut))
-        precondition(result("/missing.json") == .failure(.httpStatus(404)))
+        precondition(results.calls[base + "/client.json"]! == twice, "/client.json twice: \(results.calls[base + "/client.json"]!)")
+        precondition(result("/redirect.json") == .failure(.redirected), "/redirect.json: \(result("/redirect.json"))")
+        precondition(result("/big.json") == .failure(.tooLarge), "/big.json: \(result("/big.json"))")
+        precondition(result("/big-close.json") == .failure(.tooLarge), "/big-close.json: \(result("/big-close.json"))")
+        precondition(result("/slow.json") == .failure(.timedOut), "/slow.json: \(result("/slow.json"))")
+        precondition(result("/missing.json") == .failure(.httpStatus(404)), "/missing.json: \(result("/missing.json"))")
         guard case .failure(.invalidDocument) = result("/text.json"),
               case .failure(.invalidDocument) = result("/mismatch.json") else {
-            preconditionFailure("documents")
+            preconditionFailure("documents: \(result("/text.json")), \(result("/mismatch.json"))")
         }
         precondition(elapsed > 4.8 && elapsed < 6.5, "timeout took \(elapsed) s")
         // Two concurrent fetches made one request.
