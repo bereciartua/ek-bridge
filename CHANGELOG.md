@@ -11,6 +11,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - A Homebrew cask: `brew install --cask bereciartua/tap/ek-bridge` installs the release DMG's app and links `bridge-client` into Homebrew's `bin`. The cask lives in [`bereciartua/homebrew-tap`](https://github.com/bereciartua/homebrew-tap), which updates it after each release once the DMG's build attestation and checksum check out.
 - An entry in the official [MCP Registry](https://registry.modelcontextprotocol.io), `io.github.bereciartua/ek-bridge` (`server.json`), published by `.github/workflows/mcp-registry.yml` when a release is published, with GitHub's OIDC token instead of a stored secret. `scripts/check_version.sh` checks that its version matches `Info.plist`.
 
+### Changed
+
+- A new app icon: the sun's path across a day over a dawn-cream tile, replacing the calendar page with a bridge, which read as Apple's Calendar icon at Dock size. The small sizes in Finder lists use a simpler drawing so they stay readable.
+
 ## [0.8.0] - 2026-10-06
 
 **The first public release.** EK Bridge is open source under the Apache License 2.0, and it ships as a universal (Apple silicon and Intel) download, signed with a Developer ID and notarized by Apple, that keeps itself up to date: it checks GitHub once a day and installs a new version when you click. The client registry stays at **version 4**, so rolling back to 0.7.0 keeps working (see the end of this list). Remote Access is labeled Experimental until its live cloud checks have run.
