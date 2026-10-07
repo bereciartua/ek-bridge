@@ -1,17 +1,38 @@
-# EK Bridge
+<p align="center">
+  <img src="Resources/AppIcon-1024.png" width="128" height="128" alt="">
+</p>
+<h1 align="center">EK Bridge</h1>
+<p align="center"><b>Give AI agents your calendar. Not all of it.</b><br>
+A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your scripts use only the calendars and reminder lists you choose, and asks you before they change anything.</p>
 
-EK Bridge is a **macOS menu bar app** that gives scripts and AI agents scoped, revocable access to your Calendar and Reminders. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents (Claude Code, Codex, Claude Desktop, Cursor and others) connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for a specific calendar or reminder list, request shape, and write safeguards before using Apple's EventKit framework, and can ask you before each change.
+<p align="center">
+  <a href="https://github.com/bereciartua/ek-bridge/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/bereciartua/ek-bridge?label=release"></a>
+  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-black">
+  <img alt="Notarized with a Developer ID" src="https://img.shields.io/badge/notarized-Developer%20ID-success">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/bereciartua/ek-bridge"></a>
+  <a href="https://registry.modelcontextprotocol.io/v0/servers?search=ek-bridge"><img alt="Listed in the MCP Registry as io.github.bereciartua/ek-bridge" src="https://img.shields.io/badge/MCP%20Registry-listed-blue"></a>
+  <a href="https://mcpservers.org/servers/bereciartua/ek-bridge"><img alt="Listed on mcpservers.org" src="https://mcpservers.org/badge.svg"></a>
+</p>
 
+<p align="center">
+  <a href="https://github.com/bereciartua/ek-bridge/releases/latest"><b>Download for Mac</b></a> ·
+  <a href="#install">Homebrew</a> ·
+  <a href="docs/MCP.md">Connect an agent</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
   <img alt="EK Bridge Overview: the bridge is on, Calendars and Reminders have Full Access, and three clients are listed with their access and last request." src="docs/images/overview-light.png" width="720">
 </picture>
+</p>
 
-Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. A cloud agent can reach the bridge only through Remote Access and a tunnel you set up, only for clients you allowed; it can't reach a Mac that's asleep, offline or logged out.
+- **Choose what each agent can touch.** Pick calendars and reminder lists per client, and whether it may read, create, edit, delete or complete. New clients start with nothing.
+- **Approve every change.** A panel shows every field an agent wants to write. Nothing changes until you click Allow.
+- **See everything, switch it off in one click.** Activity explains every request. Pause or revoke a client in one click, or turn the whole bridge off from the menu bar.
 
-This is a personal project in **public preview**, with best-effort support. It is not affiliated with Apple.
-
-[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/bereciartua/ek-bridge)
+Setups are included for Claude Code, Claude Desktop, Codex, Cursor, VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant, Devin Desktop and any other MCP client. claude.ai and ChatGPT connect through Remote Access, which is experimental. EK Bridge is a personal project in **public preview**, with best-effort support, and isn't affiliated with Apple.
 
 ## Install
 
@@ -77,6 +98,76 @@ Setups for every supported agent, the tool reference and troubleshooting are in 
 Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (Settings ▸ Remote Access, off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each client needs **Allow cloud access** on its page. Agents that send a header (the Anthropic and OpenAI APIs, Claude Code on the web, Cursor and Copilot cloud agents, Devin) use the client's separate remote token. claude.ai, ChatGPT and Gemini Enterprise sign in with OAuth, which you approve on the Mac by matching a six-digit code. See [Use from cloud agents](docs/MCP.md#use-from-cloud-agents).
 
 Remote Access is **experimental**: it has offline tests, but hasn't yet been tested live with every cloud agent and tunnel. Turn it on only while you need it, and keep the Remote Access URL private; its path is the secret.
+
+## What you can ask
+
+Once an agent is connected, ask in plain words. It can act only inside the calendars and lists you granted.
+
+| You ask | The agent uses |
+| --- | --- |
+| "What's on my Work calendar this week, and where are my free hours?" | `read_events` |
+| "Move Thursday's design review to Friday at 3, same length." | `read_events`, then `update_event` (which asks you first) |
+| "Remind me to renew my passport next Monday at 9." | `create_reminder` in the list you granted |
+| "Block 9:30–10:30 every weekday for focus time." | `create_event` with a repeat rule |
+
+Twelve tools cover events and reminders, with every field Calendar supports: time zones, repeats, alerts, locations, notes and links. Each agent sees only the tools its grants allow. The [MCP guide](docs/MCP.md#tools) has the full reference.
+
+## How it works
+
+EK Bridge holds the Calendar and Reminders permission, and nothing reaches Apple's EventKit framework except through it. Tools on the same Mac reach it two ways: a command-line client sends signed JSON requests through a private file exchange, and AI agents connect to an optional **MCP server** on `127.0.0.1`. With optional **Remote Access**, cloud agents such as claude.ai, ChatGPT and Cursor's cloud agents reach that server through a tunnel you run. Either way, the app checks macOS Full Access, the client's saved grant for the specific calendar or reminder list, the request's shape and the write safeguards before it touches your data, and it can ask you before each change.
+
+- **Local by default.** Everything is off until you turn it on. The only network listeners are the MCP server and Remote Access, both off by default and bound to the loopback address. No account, analytics or server of ours.
+- **A key per client.** Each agent has its own 256-bit token, stored only as a hash; scripts sign their requests with their own Ed25519 key.
+- **Safe writes.** Edits and deletes need the latest version of an item. Every written field is read back, and a mismatch is rolled back.
+- **Cloud only through your tunnel.** A cloud agent can reach the bridge only through Remote Access and a tunnel you set up, only for clients you allowed. It can't reach a Mac that's asleep, offline or logged out.
+- **Signed updates.** Updates come from GitHub, signed by the developer and checked before they install. Installing always takes a click.
+- **Open source.** Read the code, the [threat model](docs/ARCHITECTURE.md) and the [test record](docs/TESTING.md).
+
+**What it doesn't protect against:** another program running as your macOS user can read the same key files. A grant separates the agents you connect; it isn't a defense against malware already on your Mac. Details are in [Security boundary](#security-boundary).
+
+## FAQ
+
+<details>
+<summary><b>Is it free?</b></summary>
+
+Yes. EK Bridge is open source under the Apache License 2.0, with no account or trial.
+</details>
+
+<details>
+<summary><b>Does my calendar data leave my Mac?</b></summary>
+
+EK Bridge itself sends nothing anywhere; [Privacy](#privacy) lists every connection it makes. What an agent reads through it goes to that agent and its AI provider, under their terms, so grant Read only where the agent needs it.
+</details>
+
+<details>
+<summary><b>Does it always ask before a change?</b></summary>
+
+For AI agents, yes by default. You can turn asking off per client, for example for a script you trust, or allow one agent's changes for 15 minutes at a time. A request you don't answer is refused after 45 seconds. See [Ask before changes](docs/MCP.md#ask-before-changes).
+</details>
+
+<details>
+<summary><b>Which calendars work?</b></summary>
+
+The accounts that appear in the Calendar and Reminders apps, such as iCloud, Google, Exchange, CalDAV and On My Mac. The live tests so far ran on iCloud; see [Testing](docs/TESTING.md).
+</details>
+
+<details>
+<summary><b>Can I use it with ChatGPT or claude.ai?</b></summary>
+
+Yes, through Remote Access, which forwards cloud agents to your Mac through a tunnel you run, such as Tailscale Funnel. It's off by default and experimental, and your Mac has to be awake and online. See [Connect a cloud agent](#connect-a-cloud-agent-experimental).
+</details>
+
+<details>
+<summary><b>How is this different from other Mac MCP servers?</b></summary>
+
+Most give agents broad access to many apps, with one switch per app or service. EK Bridge does only Calendar and Reminders, but per calendar, per agent, with approvals, an activity log and revocation. If you trust an agent with everything, you may not need it.
+</details>
+
+<details>
+<summary><b>Is it made by Apple?</b></summary>
+
+No. EK Bridge is an independent open-source project built on Apple's public EventKit framework. It isn't affiliated with or endorsed by Apple.
+</details>
 
 ## Guides
 
@@ -165,3 +256,5 @@ Offline tests and bounded live tests have exercised the local bridge, UI, and sy
 ## License
 
 EK Bridge is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The license doesn't grant rights to the project's name or icon. Apple, Mac and macOS are trademarks of Apple Inc. This project is not affiliated with or endorsed by Apple.
+
+EK Bridge is made by [Martin Bereciartua](https://www.linkedin.com/in/bereciartua/).
