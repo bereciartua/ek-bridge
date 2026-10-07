@@ -15,7 +15,7 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 </p>
 
 <p align="center">
-  <a href="https://github.com/bereciartua/ek-bridge/releases/latest"><b>Download for Mac</b></a> ·
+  <a href="https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg"><b>Download for Mac</b></a> ·
   <a href="#install">Homebrew</a> ·
   <a href="docs/MCP.md">Connect an agent</a> ·
   <a href="CHANGELOG.md">Changelog</a>
@@ -36,7 +36,7 @@ Setups are included for Claude Code, Claude Desktop, Codex, Cursor, VS Code (Cop
 
 ## Install
 
-1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/ek-bridge/releases/latest).
+1. Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), the latest release (release notes and checksums are on [Releases](https://github.com/bereciartua/ek-bridge/releases/latest)).
 2. Open it and drag the app to **Applications**.
 3. Open the app. Its window opens on a setup checklist; later, use the calendar icon in the menu bar.
 

@@ -4,7 +4,7 @@ Most people install a release. Building from source is for contributors, or for 
 
 ## Install a release
 
-1. Download the latest `.dmg` from [Releases](https://github.com/bereciartua/ek-bridge/releases/latest), open it, and drag the app to **Applications**. Or run `brew install --cask bereciartua/tap/ek-bridge`: the same app, from the same DMG, with `bridge-client` linked into Homebrew's `bin`.
+1. Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), the latest release (notes and checksums on [Releases](https://github.com/bereciartua/ek-bridge/releases/latest)), open it, and drag the app to **Applications**. Or run `brew install --cask bereciartua/tap/ek-bridge`: the same app, from the same DMG, with `bridge-client` linked into Homebrew's `bin`.
 2. Open the app and follow the setup checklist ([macOS permissions and first run](#macos-permissions-and-first-run)).
 3. For scripts, choose **Settings ▸ Developer ▸ Install Command-Line Tool**. It links the app's `bridge-client` into `~/.local/bin` without asking for an administrator password. If your shell can't find `bridge-client`, add `~/.local/bin` to your `PATH` (for zsh: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new Terminal window). The link points into the app, so install it again if you move the app.
 
