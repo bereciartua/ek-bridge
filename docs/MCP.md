@@ -4,6 +4,8 @@ EK Bridge can run a small **MCP server** inside the app, so AI agents on this Ma
 
 The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines can't reach it. Remote Access is a separate listener on `127.0.0.1:47616`, also off by default, with its own credentials; a tunnel such as Tailscale Funnel gives it a public HTTPS address.
 
+It's listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.bereciartua/ek-bridge`. The entry points here: the server comes with the app, so there's nothing else to install.
+
 - [User guide](#user-guide): turning it on, creating an agent client, setup for each agent, cloud agents through Remote Access, Ask before changes, troubleshooting.
 - [Reference](#reference): tools, times, idempotency, error codes, limits, HTTP statuses, protocol versions, the Remote Access endpoints and OAuth.
 

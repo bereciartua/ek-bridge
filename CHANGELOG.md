@@ -9,6 +9,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Added
 
 - A Homebrew cask: `brew install --cask bereciartua/tap/ek-bridge` installs the release DMG's app and links `bridge-client` into Homebrew's `bin`. The cask lives in [`bereciartua/homebrew-tap`](https://github.com/bereciartua/homebrew-tap), which updates it after each release once the DMG's build attestation and checksum check out.
+- An entry in the official [MCP Registry](https://registry.modelcontextprotocol.io), `io.github.bereciartua/ek-bridge` (`server.json`), published by `.github/workflows/mcp-registry.yml` when a release is published, with GitHub's OIDC token instead of a stored secret. `scripts/check_version.sh` checks that its version matches `Info.plist`.
 
 ## [0.8.0] - 2026-10-06
 

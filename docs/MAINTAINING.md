@@ -33,6 +33,7 @@ This guide is for maintainers: where the code lives, how a change is made and re
 | `Sources/Updates.swift`, `Sources/SparkleUpdater.swift` | In-app updates ([details](#updates)): the controls the model uses (faked in the UI-review build), the found-update reminder, and the gate that holds a relaunch while changes wait for approval; the Sparkle wrapper with gentle reminders for scheduled checks |
 | `build.sh`, `scripts/sdk.sh`, `scripts/sparkle.sh`, `scripts/check_bundle.sh`, `scripts/check_version.sh` | The build (native or universal with `EVENTKIT_ARCHS`, Sparkle embedded, signed inside out, with a secure timestamp for a real identity); the SDK choice shared with `test.sh`; the pinned Sparkle download; the bundle layout check used by CI and releases; the release version check |
 | `release.sh`, `scripts/check_notarized.sh`, `scripts/release_notes.py`, `scripts/appcast.py`, `scripts/verify_update_signature.swift` | The release: tests, universal Developer ID build, notarization and stapling, DMG and zip, checksums, the Sparkle appcast and a draft GitHub release ([Releasing](#releasing)); Gatekeeper and staple checks; the CHANGELOG section as Markdown or HTML; the appcast writer; the zip's signature against `SUPublicEDKey` |
+| `server.json`, `.github/workflows/mcp-registry.yml` | The [MCP Registry](https://registry.modelcontextprotocol.io) entry, `io.github.bereciartua/ek-bridge`: a server embedded in the app, with no package to install, pointing at [MCP](MCP.md). The workflow validates it on pull requests and publishes it when a release is published (or by hand), signed in with GitHub's OIDC token, so it needs no secret ([Cutting a release](#cutting-a-release)) |
 | `scripts/update_test.sh` | The Sparkle update end to end with a local feed and a separate test app (`EVENTKIT_UPDATE_TEST=1` builds) ([Testing](TESTING.md#update-test)) |
 | `Tests/`, `test.sh`, `ui_test.sh`, `ui_snapshots.sh` | Offline policy/shape/CLI tests, the isolated GUI window and behavior tests, and PNG snapshots of every screen |
 | `Tests/mcp-fixtures/` | `tools.json` (the tool catalog contract, compared exactly), mapping goldens (`<tool>.<case>.args.json` → `.core.json`, `core-result.<case>.json` → `.structured.json`), agent error texts |
@@ -72,7 +73,7 @@ The runtime write journal (`write-journal.json` and `write-journal/<client>.json
 
 ### What `release.sh` does
 
-1. Refuses a tree with uncommitted changes or a `HEAD` that isn't tagged `v<version>` (`--untagged` for a rehearsal), and runs `scripts/check_version.sh` (tag, a higher `CFBundleVersion` than the previous `v*` tag, a `## [x.y.z]` section in the changelog).
+1. Refuses a tree with uncommitted changes or a `HEAD` that isn't tagged `v<version>` (`--untagged` for a rehearsal), and runs `scripts/check_version.sh` (tag, a higher `CFBundleVersion` than the previous `v*` tag, a `## [x.y.z]` section in the changelog, the same version in `server.json`).
 2. Runs `sh test.sh` (`--skip-tests` only for repeated rehearsals).
 3. Builds the universal app (`EVENTKIT_ARCHS="arm64 x86_64"`) in `build/release/`, signed inside out (Sparkle's `Autoupdate` and `Updater.app`, `Sparkle.framework`, `bridge-mcp`, `bridge-client`, then the app) with the Developer ID identity, the hardened runtime and a secure timestamp, and runs `scripts/check_bundle.sh`.
 4. Notarizes the app (`notarytool submit --wait`; on anything but Accepted it prints Apple's log) and staples the ticket.
@@ -85,11 +86,11 @@ Everything goes to `dist/` (ignored). `sh release.sh --help` lists the options a
 
 ### Cutting a release
 
-1. On a branch: raise `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`, turn `## [Unreleased]` into `## [x.y.z] - YYYY-MM-DD` in the changelog (keep an empty Unreleased above it), work through [Before every release](#before-every-release), and merge with CI green.
+1. On a branch: raise `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist` and `version` in `server.json`, turn `## [Unreleased]` into `## [x.y.z] - YYYY-MM-DD` in the changelog (keep an empty Unreleased above it), work through [Before every release](#before-every-release), and merge with CI green.
 2. Rehearse on `main`: `sh release.sh --untagged --no-release` with the notary credentials (`--no-notarize` without them). It builds, notarizes and checks the DMG and the zip without touching GitHub.
 3. `git tag v<x.y.z> && git push origin v<x.y.z>`, then approve the run in Actions. It takes about 10 minutes plus Apple's notarization time.
 4. Open the draft under Releases: check the notes and the four assets (DMG, zip, `SHA256SUMS`, `appcast.xml`), download the DMG and run `shasum -a 256 -c SHA256SUMS`, and before the first release or after a change to the bundle layout or the updater, run the [release install test](TESTING.md#release-install-test).
-5. Publish. `https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml` then resolves to this version's feed.
+5. Publish. `https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml` then resolves to this version's feed, and the **MCP Registry** workflow publishes `server.json`'s version to the registry (versions there are permanent, so it publishes only the latest release's version, and skips one that's already there).
 6. Update the Homebrew cask: `gh workflow run update.yml --repo bereciartua/homebrew-tap` (it also runs every six hours). It moves [`bereciartua/homebrew-tap`](https://github.com/bereciartua/homebrew-tap)'s `ek-bridge` cask to the new version only if the DMG's build attestation shows this repository's release workflow built it from the tag, and its SHA-256 matches `SHA256SUMS`; then it audits and installs the cask on a runner before pushing. If GitHub turned the schedule off after 60 days without activity there, `gh workflow enable update.yml --repo bereciartua/homebrew-tap` first.
 
 ### Release notes

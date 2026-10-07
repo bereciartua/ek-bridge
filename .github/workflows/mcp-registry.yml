@@ -1,0 +1,76 @@
+name: MCP Registry
+
+# Publishes server.json to the official MCP Registry
+# (registry.modelcontextprotocol.io) as io.github.bereciartua/ek-bridge when a
+# release is published, and by hand. GitHub's OIDC token proves the
+# repository is bereciartua's, so no secret is stored. Pull requests that
+# change server.json only validate it.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - server.json
+      - .github/workflows/mcp-registry.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-registry-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate and publish server.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PUBLISHER_VERSION: 1.8.1
+      PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+      REGISTRY: https://registry.modelcontextprotocol.io
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install mcp-publisher
+        run: |
+          archive="$RUNNER_TEMP/mcp-publisher.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --output "$archive" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v$PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$PUBLISHER_SHA256  $archive" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" mcp-publisher
+      - name: Validate
+        run: |
+          "$RUNNER_TEMP/mcp-publisher" validate server.json
+          version=$(jq -r .version server.json)
+          plist_version=$(grep -A1 '<key>CFBundleShortVersionString</key>' Info.plist | sed -n 's:.*<string>\(.*\)</string>.*:\1:p')
+          if [ "$version" != "$plist_version" ]; then
+            echo "::error::server.json has version $version, Info.plist $plist_version"
+            exit 1
+          fi
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        run: |
+          name=$(jq -r .name server.json)
+          version=$(jq -r .version server.json)
+          # Only a version that's out: the registry keeps every version for good.
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [ "v$version" != "$latest" ]; then
+            echo "::error::server.json has version $version, but the latest release is $latest"
+            exit 1
+          fi
+          encoded=$(jq -rn --arg n "$name" '$n | @uri')
+          status=$(curl --silent --location --output /dev/null --write-out '%{http_code}' \
+            "$REGISTRY/v0.1/servers/$encoded/versions/$version")
+          if [ "$status" = 200 ]; then
+            echo "$name $version is already in the registry"
+            exit 0
+          fi
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish server.json
+          curl --fail --silent --show-error --location "$REGISTRY/v0.1/servers/$encoded/versions/$version" |
+            jq '{name: .server.name, version: .server.version, status: ._meta."io.modelcontextprotocol.registry/official".status}'

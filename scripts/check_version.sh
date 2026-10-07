@@ -3,8 +3,9 @@ set -eu
 
 # Checks the version before a release. Info.plist is the one source of it:
 # CFBundleShortVersionString is x.y.z and CFBundleVersion a whole number higher
-# than in the newest earlier v* tag; a tag, if given, is v<x.y.z>; and
-# CHANGELOG.md has a "## [x.y.z]" section for the release notes.
+# than in the newest earlier v* tag; a tag, if given, is v<x.y.z>;
+# CHANGELOG.md has a "## [x.y.z]" section for the release notes; and
+# server.json, the MCP Registry entry, has the same version.
 #
 # Usage: sh scripts/check_version.sh [TAG]
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -33,4 +34,9 @@ fi
 
 grep -q "^## \[$version\]" "$project_dir/CHANGELOG.md" \
     || fail "CHANGELOG.md has no \"## [$version]\" section"
+if [ -f "$project_dir/server.json" ]; then
+    registry_version=$(plutil -extract version raw -o - "$project_dir/server.json" 2>/dev/null || true)
+    [ "$registry_version" = "$version" ] \
+        || fail "server.json has version \"$registry_version\", expected $version"
+fi
 printf 'check_version: %s (%s) passed%s\n' "$version" "$build" "${previous:+, after $previous}"
