@@ -34,9 +34,9 @@ let context = CGContext(data: nil, width: Int(width), height: Int(height), bitsP
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 context.interpolationQuality = .high
 
-// Background: a light wash from white to the icon's blue, faintly.
+// Background: a light wash from white to the icon's dawn cream, faintly.
 let background = CGGradient(colorsSpace: space,
-                            colors: [color(0xFFFFFF), color(0xEAF1FD)] as CFArray, locations: nil)!
+                            colors: [color(0xFFFFFF), color(0xFFF1E3)] as CFArray, locations: nil)!
 context.drawLinearGradient(background, start: CGPoint(x: 0, y: height), end: CGPoint(x: width, y: 0),
                            options: [])
 
