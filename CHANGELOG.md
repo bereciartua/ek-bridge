@@ -13,7 +13,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Changed
 
-- A new app icon: the sun's path across a day over a dawn-cream tile, replacing the calendar page with a bridge, which read as Apple's Calendar icon at Dock size. The small sizes in Finder lists use a simpler drawing so they stay readable.
+- A new app icon: the sun's path across a day over a dawn-cream tile, replacing the calendar page with a bridge, which read as Apple's Calendar icon at Dock size. The small sizes in Finder lists use a simpler drawing so they stay readable. On macOS 26 and later it's an Icon Composer icon, so it follows the system's Liquid Glass look and the Dark, Clear and Tinted icon styles.
 
 ## [0.8.0] - 2026-10-06
 
