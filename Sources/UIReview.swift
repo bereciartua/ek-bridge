@@ -475,6 +475,13 @@ final class UIReview {
         if let version = Self.value(arguments, "--ui-update-found") {
             model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
         }
+        // This build shares the app's bundle ID, so macOS's icon cache can hand
+        // back an older icon; show the one this bundle carries in panels and
+        // snapshots.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         DispatchQueue.main.async { self.runMode(model: model, window: window, statusMenu: statusMenu) }
     }
 
@@ -1404,6 +1411,14 @@ final class SnapshotReview {
             step("sheet-unavailable") {
                 self.model.sheet = .unavailableGrants(UIReview.claudeID)
                 return main?.attachedSheet ?? main
+            }
+            step("client-access") {
+                // The README's Access picture: Claude Code's calendars, scrolled to the table.
+                self.model.sheet = nil
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.accessTab[UIReview.claudeID] = .calendar
+                self.model.clientScrollTarget = "access"
+                return main
             }
             step("setup") {
                 self.model.sheet = nil
