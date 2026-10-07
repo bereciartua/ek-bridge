@@ -70,13 +70,21 @@ def main() -> int:
         check("version isn't x.y.z", [], 1, "isn't x.y.z")
         write(repo, "0.9.0", "9a")
         check("build isn't a number", [], 1, "isn't a whole number")
+
+        write(repo, "0.9.0", "9")
+        (repo / "server.json").write_text('{"name": "io.github.example/test", "version": "0.8.0"}\n')
+        check("server.json not raised", ["v0.9.0"], 1, 'server.json has version "0.8.0", expected 0.9.0')
+        (repo / "server.json").write_text('{"name": "io.github.example/test"}\n')
+        check("server.json without a version", ["v0.9.0"], 1, 'server.json has version "", expected 0.9.0')
+        (repo / "server.json").write_text('{"name": "io.github.example/test", "version": "0.9.0"}\n')
+        check("server.json raised", ["v0.9.0"], 0, "0.9.0 (9) passed")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Version check: {checks} tag, build number and changelog checks passed")
+    print(f"Version check: {checks} tag, build number, changelog and server.json checks passed")
     return 0
 
 
