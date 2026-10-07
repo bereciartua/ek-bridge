@@ -268,9 +268,7 @@ struct CommandLineConnect: View {
                         MonoText(text: ConnectCommand.scopeStatus(for: client, among: model.clients, program: model.cliProgram),
                                  truncation: .tail, lines: 2)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(model.commandLineTool == .installed
-                             ? String(localized: "Run it in Terminal.")
-                             : String(localized: "Run it in Terminal, in the ek-bridge folder, or install the command-line tool from Settings ▸ Developer."))
+                        Text(tryItHint)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -286,6 +284,17 @@ struct CommandLineConnect: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 2)
+        }
+    }
+
+    private var tryItHint: String {
+        switch model.cliCommand {
+        case .onPath:
+            String(localized: "Run it in Terminal.")
+        case .bundled:
+            String(localized: "Run it in Terminal. To type just bridge-client, install the command-line tool from Settings ▸ Developer.")
+        case .source:
+            String(localized: "Run it in Terminal, in the ek-bridge folder.")
         }
     }
 }

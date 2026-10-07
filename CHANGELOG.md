@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-07
+
+Copied command-line commands now work as pasted in a downloaded copy, and every release also ships its disk image as `EKBridge.dmg`, so [one link](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg) always downloads the newest version. Nothing changes for agents or for existing scripts, and the client registry stays at **version 4**, so going back to 0.8.1 means installing its DMG over this one.
+
 ### Added
 
 - Each release also carries its disk image as **`EKBridge.dmg`**, a name that's the same in every release, so [`releases/latest/download/EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg) always downloads the newest version. `scripts/release_assets.sh` makes the copy and writes `SHA256SUMS` for both DMG names and the zip; the versioned `EKBridge-<version>.dmg` stays for the Homebrew cask and older links.
@@ -13,6 +17,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Changed
 
 - The README opens like a product page: the icon, a one-line pitch, badges, a Download link, the Overview screenshot, three reasons to use it and the agents it has setups for. Three new sections follow the setup steps: **What you can ask** (example prompts and the tools they use), **How it works** (what's checked, the safeguards, and what it doesn't protect against) and a short **FAQ**. Nothing was removed.
+
+### Fixed
+
+- **A copied command now works as pasted in a downloaded copy.** The client page and the setup checklist offered `python3 client.py …`, "in the ek-bridge folder", unless the command-line tool was installed in `~/.local/bin`, which works only in a source checkout. They now copy `bridge-client …` when `bridge-client` runs this copy of the app (installed from Settings ▸ Developer or linked by Homebrew's cask), else the app's own copy by its full path, `/Applications/EKBridge.app/Contents/MacOS/bridge-client …`. Settings ▸ Developer says when Homebrew already linked it.
 
 ## [0.8.1] - 2026-10-07
 

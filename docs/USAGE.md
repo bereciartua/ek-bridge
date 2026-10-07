@@ -13,7 +13,7 @@ On first launch the window opens on a setup checklist. The steps can be done in 
 - **Choose what the client can use.** Opens the client's Access table.
 - **Turn on the bridge.** The choice is kept across launches.
 - **Turn on the MCP server.** Shown only when the client connects as an AI agent.
-- **Connect your tool.** For a command-line client, **Copy Command** copies `bridge-client scope_status --client "<name>"` once the command-line tool is installed (Settings ▸ Developer), or `python3 client.py …` to run in Terminal in a source checkout. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
+- **Connect your tool.** For a command-line client, **Copy Command** copies a command that works as pasted: `bridge-client scope_status --client "<name>"` once `bridge-client` runs this copy of the app (installed from Settings ▸ Developer, or linked by Homebrew), else the app's own copy by its full path, such as `/Applications/EKBridge.app/Contents/MacOS/bridge-client scope_status …`. A build without a bundled client falls back to `python3 client.py …`, run in the source checkout. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
 
 **Hide Setup** hides the checklist; **Help ▸ Show Setup Checklist** or Settings ▸ About brings it back.
 

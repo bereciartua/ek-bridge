@@ -64,9 +64,12 @@ These are the same steps as the setup checklist the app shows on first launch:
 bridge-client scope_status --client "Claude Code"
 ```
 
-From a source checkout, `python3 client.py` works the same way.
+Until `bridge-client` is installed (or linked by Homebrew), the client page copies the same command with the app's full path, `/Applications/EKBridge.app/Contents/MacOS/bridge-client`, so it works as pasted. From a source checkout, `python3 client.py` works the same way.
 
-<img alt="A client page: Connect shows the client ID, key file path and a command to copy; Access shows calendars grouped by account with Read, Create, Edit and Delete checkboxes." src="docs/images/client-light.png" width="720">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/client-dark.png">
+  <img alt="A client page: Connect shows the client ID, key file path and a command to copy; Access shows calendars grouped by account with Read, Create, Edit and Delete checkboxes." src="docs/images/client-light.png" width="720">
+</picture>
 
 `bridge-client --help` lists every command and the access it needs. Errors say what's wrong and how to fix it, with a distinct exit code for each kind of problem ([API and CLI](docs/API.md)). The app's **Activity** pane shows every request with a plain explanation of its result.
 

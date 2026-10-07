@@ -195,6 +195,8 @@ struct SettingsView: View {
         switch model.commandLineTool {
         case .installed:
             String(localized: "bridge-client is in ~/.local/bin and runs this copy of the app’s client.")
+        case .notInstalled where model.cliLinkedByHomebrew:
+            String(localized: "Homebrew already linked bridge-client to this copy of the app. Installing also adds it to ~/.local/bin.")
         case .notInstalled:
             String(localized: "Adds bridge-client to ~/.local/bin for scripts and Terminal. No administrator password needed.")
         case .elsewhere:
