@@ -17,9 +17,15 @@ This is a personal project in **public preview**, with best-effort support. It i
 2. Open it and drag the app to **Applications**.
 3. Open the app. Its window opens on a setup checklist; later, use the calendar icon in the menu bar.
 
-It needs **macOS 14 or later**, on Apple silicon or Intel. Until the first release is published, [build from source](#build-from-source). Upgrading from EventKit Bridge, its earlier name? See [Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier).
+Or install it with [Homebrew](https://brew.sh), which also links `bridge-client` into Homebrew's `bin`:
 
-For scripts, install the command-line client from **Settings ▸ Developer ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`.
+```sh
+brew install --cask bereciartua/tap/ek-bridge
+```
+
+It needs **macOS 14 or later**, on Apple silicon or Intel. Either way the app updates itself. Upgrading from EventKit Bridge, its earlier name? See [Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier).
+
+For scripts, install the command-line client from **Settings ▸ Developer ▸ Install Command-Line Tool** (Homebrew already linked it). It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`.
 
 ## Quick start
 
@@ -147,6 +153,8 @@ The build creates `build/EKBridge.app`, with the MCP launcher `bridge-mcp` and t
 3. Delete the app from Applications, and its data: `~/Library/Application Support/EKBridge` (clients, keys, tokens, Activity and the write journal). If you upgraded from EventKit Bridge, also delete the `EventKitBridge` link next to it. Settings and the updater's downloads are in `~/Library/Preferences/io.github.bereciartua.ekbridge.plist` and `~/Library/Caches/io.github.bereciartua.ekbridge`.
 4. If you installed the command-line tool, delete `~/.local/bin/bridge-client`.
 5. Remove the server from your agents' configs (for example `claude mcp remove ek-bridge`), and stop any tunnel you ran for Remote Access.
+
+Installed with Homebrew? Do steps 1, 2 and 5, and `brew uninstall --cask ek-bridge` removes the app and its `bridge-client` link; with `--zap` it also moves the data and settings in step 3 to the Trash.
 
 ## Project status
 

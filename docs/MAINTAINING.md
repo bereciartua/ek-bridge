@@ -88,8 +88,9 @@ Everything goes to `dist/` (ignored). `sh release.sh --help` lists the options a
 1. On a branch: raise `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`, turn `## [Unreleased]` into `## [x.y.z] - YYYY-MM-DD` in the changelog (keep an empty Unreleased above it), work through [Before every release](#before-every-release), and merge with CI green.
 2. Rehearse on `main`: `sh release.sh --untagged --no-release` with the notary credentials (`--no-notarize` without them). It builds, notarizes and checks the DMG and the zip without touching GitHub.
 3. `git tag v<x.y.z> && git push origin v<x.y.z>`, then approve the run in Actions. It takes about 10 minutes plus Apple's notarization time.
-4. Open the draft under Releases: check the notes and the five assets, download the DMG and run `shasum -a 256 -c SHA256SUMS`, and before the first release or after a change to the bundle layout or the updater, run the [release install test](TESTING.md#release-install-test).
+4. Open the draft under Releases: check the notes and the four assets (DMG, zip, `SHA256SUMS`, `appcast.xml`), download the DMG and run `shasum -a 256 -c SHA256SUMS`, and before the first release or after a change to the bundle layout or the updater, run the [release install test](TESTING.md#release-install-test).
 5. Publish. `https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml` then resolves to this version's feed.
+6. Update the Homebrew cask: `gh workflow run update.yml --repo bereciartua/homebrew-tap` (it also runs every six hours). It moves [`bereciartua/homebrew-tap`](https://github.com/bereciartua/homebrew-tap)'s `ek-bridge` cask to the new version only if the DMG's build attestation shows this repository's release workflow built it from the tag, and its SHA-256 matches `SHA256SUMS`; then it audits and installs the cask on a runner before pushing. If GitHub turned the schedule off after 60 days without activity there, `gh workflow enable update.yml --repo bereciartua/homebrew-tap` first.
 
 ### Release notes
 
