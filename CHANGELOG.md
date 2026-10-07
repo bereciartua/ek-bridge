@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-06
+
+**The first public release.** EK Bridge is open source under the Apache License 2.0, and it ships as a universal (Apple silicon and Intel) download, signed with a Developer ID and notarized by Apple, that keeps itself up to date: it checks GitHub once a day and installs a new version when you click. The client registry stays at **version 4**, so rolling back to 0.7.0 keeps working (see the end of this list). Remote Access is labeled Experimental until its live cloud checks have run.
+
 **EventKit Bridge is now EK Bridge.** The new name comes with a new bundle ID, `io.github.bereciartua.ekbridge`, and a new app name, `EKBridge.app`. To macOS it's a different app, so this upgrade needs a few steps once ([Setup](docs/SETUP.md#upgrading-from-eventkit-bridge-070-or-earlier)):
 
 - Open the new app next to the old one. It asks the old app to quit, moves `~/Library/Application Support/EventKitBridge` to `EKBridge` (leaving a link at the old path), and copies the settings. Clients, keys, tokens, grants, cloud connections and Activity move unchanged; the client registry stays at version 4.

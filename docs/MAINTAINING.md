@@ -117,7 +117,7 @@ The workflow imports the certificate into a temporary keychain, writes the keys 
 
 ### By hand
 
-`release.sh` finds the one `Developer ID Application` identity in the keychain (or takes `EVENTKIT_SIGN_IDENTITY`). For notarization, store the API key once in a keychain profile with any name, `xcrun notarytool store-credentials <profile> --key AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <issuer>`, and run `EVENTKIT_NOTARY_PROFILE=<profile> sh release.sh`, or pass `EVENTKIT_NOTARY_KEY`, `EVENTKIT_NOTARY_KEY_ID` and `EVENTKIT_NOTARY_ISSUER`. The draft needs `gh` signed in. A full run from a tagged commit behaves exactly like the workflow, minus the attestations.
+`release.sh` finds the one `Developer ID Application` identity in the keychain (or takes `EVENTKIT_SIGN_IDENTITY`). For the appcast, `EVENTKIT_SPARKLE_KEYCHAIN=1` signs with the Sparkle key `generate_keys` keeps in the login keychain, so the key never has to be exported on the maintainer's Mac (macOS asks once to let `sign_update` use it). For notarization, store the API key once in a keychain profile with any name, `xcrun notarytool store-credentials <profile> --key AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <issuer>`, and run `EVENTKIT_NOTARY_PROFILE=<profile> sh release.sh`, or pass `EVENTKIT_NOTARY_KEY`, `EVENTKIT_NOTARY_KEY_ID` and `EVENTKIT_NOTARY_ISSUER`. The draft needs `gh` signed in. A full run from a tagged commit behaves exactly like the workflow, minus the attestations.
 
 ## Updates
 

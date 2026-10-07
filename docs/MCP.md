@@ -1,6 +1,6 @@
 # Connecting AI agents (MCP)
 
-EK Bridge 0.7.0 can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
+EK Bridge can run a small **MCP server** inside the app, so AI agents on this Mac can use Calendar and Reminders through the same grants, checks, journal and Activity as the command line. MCP is a second way into the same bridge, not a second bridge: an agent sees only the tools and calendars or lists its client was granted. Cloud agents, such as claude.ai, ChatGPT or Cursor's cloud agents, can use it too through **Remote Access** and a tunnel you run.
 
 The server listens on `http://127.0.0.1:47615/mcp` (loopback only) and is **off** until you turn it on. Agents on other machines can't reach it. Remote Access is a separate listener on `127.0.0.1:47616`, also off by default, with its own credentials; a tunnel such as Tailscale Funnel gives it a public HTTPS address.
 

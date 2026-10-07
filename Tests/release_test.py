@@ -288,6 +288,8 @@ def test_release_refusals():
         sign_update.chmod(sign_update.stat().st_mode | stat.S_IXUSR)
         sparkle["EVENTKIT_SPARKLE_BIN"] = str(stubs)
         expect("rehearsals may skip the sparkle key", ["--untagged"], 3, "stub tests ran", EVENTKIT_NOTARY_PROFILE="p")
+        expect("the keychain's sparkle key counts", ["--skip-tests"], 1, "gh (the GitHub CLI) is needed",
+               EVENTKIT_NOTARY_PROFILE="p", EVENTKIT_SPARKLE_KEYCHAIN="1", EVENTKIT_SPARKLE_BIN=str(stubs))
         expect("release needs gh", ["--skip-tests"], 1, "gh (the GitHub CLI) is needed", **sparkle)
         # With every check passed, the next step is the tests; a failure there stops the release.
         expect("checks pass up to the tests, whose failure stops it", ["--no-release"], 3, "stub tests ran", **sparkle)

@@ -29,6 +29,9 @@ set -eu
 #                             for a release once Info.plist has SUPublicEDKey:
 #                             without an appcast, installed copies wouldn't
 #                             see the release. Rehearsals may leave it out.
+#   EVENTKIT_SPARKLE_KEYCHAIN=1  Instead of a key file, sign with the key
+#                             generate_keys stored in the login keychain (a
+#                             release by hand on the maintainer's Mac).
 #   EVENTKIT_SPARKLE_BIN      Folder with Sparkle's sign_update. Default: the
 #                             pinned Sparkle in build/vendor (downloaded by
 #                             scripts/sparkle.sh), then PATH.
@@ -107,8 +110,10 @@ if [ "$notarize" = 1 ]; then
     fi
 fi
 sign_update=""
-if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ]; then
-    [ -f "$EVENTKIT_SPARKLE_KEY_FILE" ] || fail "EVENTKIT_SPARKLE_KEY_FILE $EVENTKIT_SPARKLE_KEY_FILE isn't a file"
+if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ] || [ "${EVENTKIT_SPARKLE_KEYCHAIN:-0}" = 1 ]; then
+    if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ]; then
+        [ -f "$EVENTKIT_SPARKLE_KEY_FILE" ] || fail "EVENTKIT_SPARKLE_KEY_FILE $EVENTKIT_SPARKLE_KEY_FILE isn't a file"
+    fi
     [ -n "$public_key" ] || fail "a Sparkle key is set but Info.plist has no SUPublicEDKey for the app to check it with"
     if [ -z "${EVENTKIT_SPARKLE_BIN:-}" ] && [ -f "$project_dir/scripts/sparkle.sh" ]; then
         . "$project_dir/scripts/sparkle.sh"
@@ -120,7 +125,7 @@ if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ]; then
     [ -n "$sign_update" ] || fail "a Sparkle key is set but sign_update wasn't found; set EVENTKIT_SPARKLE_BIN"
 fi
 if [ "$release" = 1 ] && [ -n "$public_key" ] && [ -z "$sign_update" ]; then
-    fail "set EVENTKIT_SPARKLE_KEY_FILE: without an appcast, installed copies won't see this release"
+    fail "set EVENTKIT_SPARKLE_KEY_FILE (or EVENTKIT_SPARKLE_KEYCHAIN=1): without an appcast, installed copies won't see this release"
 fi
 if [ "$release" = 1 ]; then
     command -v gh > /dev/null || fail "gh (the GitHub CLI) is needed to create the draft release"
@@ -240,7 +245,11 @@ python3 "$project_dir/scripts/release_notes.py" "$version" --repo "$repo" --form
     > "$build_dir/notes.html"
 if [ -n "$sign_update" ]; then
     step "Signing the zip for Sparkle and writing the appcast"
-    signature_line=$("$sign_update" --ed-key-file "$EVENTKIT_SPARKLE_KEY_FILE" "$zip")
+    if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ]; then
+        signature_line=$("$sign_update" --ed-key-file "$EVENTKIT_SPARKLE_KEY_FILE" "$zip")
+    else
+        signature_line=$("$sign_update" "$zip")
+    fi
     # The check installed copies will make: the signature against SUPublicEDKey.
     signature=$(printf '%s\n' "$signature_line" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
     xcrun swiftc -O -o "$build_dir/verify-update-signature" "$project_dir/scripts/verify_update_signature.swift"
