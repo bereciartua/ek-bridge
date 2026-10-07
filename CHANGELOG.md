@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-07
+
+The first update that installed copies of 0.8.0 get through **Check for Updates…**. Nothing changes for callers or agents, and the client registry stays at **version 4**, so going back to 0.8.0 means installing its DMG over this one.
+
 ### Added
 
 - A Homebrew cask: `brew install --cask bereciartua/tap/ek-bridge` installs the release DMG's app and links `bridge-client` into Homebrew's `bin`. The cask lives in [`bereciartua/homebrew-tap`](https://github.com/bereciartua/homebrew-tap), which updates it after each release once the DMG's build attestation and checksum check out.
