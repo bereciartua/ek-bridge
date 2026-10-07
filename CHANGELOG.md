@@ -43,7 +43,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Fixed
 
-- Pairing an OAuth cloud agent could fail with a network error when the server holding the agent's client metadata closed the connection abruptly (without TLS close_notify) right after replying: the request's send completion reported the close before the reply was read. The read now reports the outcome.
+- Pairing an OAuth cloud agent could fail with a network error when the server holding the agent's client metadata closed the connection abruptly (without TLS close_notify) right after replying: the request's send completion reported the close before the reply was read. The read now reports the outcome. The fetch also no longer resumes TLS sessions, so every fetch evaluates the server's certificate in full.
 - **Start at login** could not be turned on in a copy that had never been registered as a login item, such as every first install and the first launch after the rename: macOS reports that state as "not found", which disabled the switch. Only the install location disables it now.
 
 ### Removed
