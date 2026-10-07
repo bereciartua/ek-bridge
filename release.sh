@@ -274,7 +274,9 @@ fi
         "$(basename "$dmg")" "$minimum_macos"
     printf 'The first start asks for Calendar and Reminders access ([Setup](https://github.com/%s/blob/%s/docs/SETUP.md)). ' "$repo" "$tag"
     printf 'Replacing an installed copy at the same path keeps its access, clients and agent setups.'
-    if [ -f "$dist_dir/appcast.xml" ]; then
+    # Only copies from an earlier release have the updater (0.8.0 is the first).
+    earlier=$(git -C "$project_dir" tag --list 'v*' | grep -vx "$tag" | head -n 1 || true)
+    if [ -f "$dist_dir/appcast.xml" ] && [ -n "$earlier" ]; then
         printf ' An installed copy offers this version from **Check for Updates…**.'
     fi
     printf '\n\n## Checksums (SHA-256)\n\n```\n'
