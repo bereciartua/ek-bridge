@@ -9,6 +9,7 @@ app_dir="$output_dir/$app_name.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 . "$project_dir/scripts/sdk.sh"
+. "$project_dir/scripts/sparkle.sh"
 # This Mac's architecture by default, for fast development builds. Releases set
 # EVENTKIT_ARCHS="arm64 x86_64" for a universal app.
 archs=${EVENTKIT_ARCHS:-$(uname -m)}
@@ -21,11 +22,37 @@ fi
 if [ "${EVENTKIT_UI_REVIEW:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_UI_REVIEW"
 fi
+if [ "${EVENTKIT_UPDATE_TEST:-0}" = "1" ]; then
+    test_flag="-D EVENTKIT_UPDATE_TEST"
+fi
 
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$cache_dir"
 cp "$project_dir/Info.plist" "$contents_dir/Info.plist"
+# Default signing is ad hoc for build validation only. Use the same approved
+# identity for installed updates when testing permission-grant persistence.
+sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
+if [ "$sign_identity" = "-" ]; then
+    # Without Sparkle's public key the app never checks for updates: an ad hoc
+    # build from source shouldn't offer to replace itself with a release.
+    /usr/libexec/PlistBuddy -c 'Set :SUPublicEDKey ""' "$contents_dir/Info.plist"
+fi
+if [ "${EVENTKIT_UPDATE_TEST:-0}" = "1" ]; then
+    # scripts/update_test.sh: a separate app with its own identity, version,
+    # local feed and throwaway key, so it can't touch an installed EK Bridge.
+    # Plain HTTP is allowed only to this Mac (App Transport Security).
+    for entry in "CFBundleIdentifier io.github.bereciartua.ekbridge.updatetest" \
+        "CFBundleName EK Bridge Update Test" "CFBundleDisplayName EK Bridge Update Test" \
+        "CFBundleShortVersionString $EVENTKIT_UPDATE_TEST_VERSION" "CFBundleVersion $EVENTKIT_UPDATE_TEST_BUILD" \
+        "SUFeedURL $EVENTKIT_UPDATE_TEST_FEED" "SUPublicEDKey $EVENTKIT_UPDATE_TEST_PUBLIC_KEY"; do
+        /usr/libexec/PlistBuddy -c "Set :${entry%% *} ${entry#* }" "$contents_dir/Info.plist"
+    done
+    /usr/libexec/PlistBuddy -c 'Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true' \
+        "$contents_dir/Info.plist"
+fi
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 cp "$project_dir/LICENSE" "$project_dir/NOTICE" "$contents_dir/Resources/"
+# Sparkle's MIT license must travel with the copy of it inside the app.
+cp "$sparkle_dir/LICENSE" "$contents_dir/Resources/Sparkle-LICENSE.txt"
 
 # The app is every Swift file in Sources/ except the two command-line tools.
 # Test-only routes (UIReview, Synthetic*) compile to nothing without their -D flag.
@@ -50,6 +77,7 @@ for arch in $archs; do
         -target "$target" \
         -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
         -framework SwiftUI -framework Network -framework IOKit \
+        -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
         "$@" \
         -o "$slice/$app_name"
 
@@ -82,14 +110,22 @@ for name in "$app_name" bridge-client bridge-mcp; do
 done
 rm -rf "$slices_dir"
 
+# Sparkle, the updater (Contents/Frameworks/Sparkle.framework). Its XPC services
+# exist for sandboxed apps only; this app isn't sandboxed, so they're removed,
+# along with the headers, which only the compiler needs.
+frameworks_dir="$contents_dir/Frameworks"
+sparkle_framework="$frameworks_dir/Sparkle.framework"
+rm -rf "$frameworks_dir"
+mkdir -p "$frameworks_dir"
+ditto "$sparkle_dir/Sparkle.framework" "$sparkle_framework"
+for part in XPCServices Headers PrivateHeaders Modules; do
+    rm -rf "$sparkle_framework/$part" "$sparkle_framework/Versions/B/$part"
+done
+
 # Scripts and client.py still find the client at build/bridge-client.
 rm -f "$output_dir/bridge-client"
 ln -s "$app_name.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
 
-# Default signing is ad hoc for build validation only. Use the same approved
-# identity for installed updates when testing permission-grant persistence.
-# The command-line tools are signed first, then the app around them.
-sign_identity=${EVENTKIT_SIGN_IDENTITY:--}
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents_dir/Info.plist")
 # A real identity gets a secure timestamp, which notarization requires (it
 # contacts Apple's timestamp server). Ad hoc signatures can't carry one.
@@ -98,11 +134,27 @@ if [ "$sign_identity" = "-" ]; then
 else
     timestamp="--timestamp"
 fi
+# Inside out: Sparkle's helpers, then Sparkle, then the command-line tools, then
+# the app around them all.
+for part in "$sparkle_framework/Versions/B/Autoupdate" "$sparkle_framework/Versions/B/Updater.app" \
+    "$sparkle_framework"; do
+    codesign --force --sign "$sign_identity" --options runtime "$timestamp" "$part"
+done
 for tool in bridge-mcp bridge-client; do
     codesign --force --sign "$sign_identity" --options runtime "$timestamp" \
         --identifier "$bundle_id.$tool" "$contents_dir/MacOS/$tool"
 done
+# Under the hardened runtime, the app loads only frameworks signed by its own
+# team. Ad hoc signatures have no team, so an ad hoc build (development, CI,
+# UI review) may load Sparkle without that check. A Developer ID build keeps it;
+# scripts/check_bundle.sh fails one that doesn't.
+entitlements="$project_dir/Entitlements.plist"
+if [ "$sign_identity" = "-" ]; then
+    entitlements="$output_dir/adhoc-entitlements.plist"
+    cp "$project_dir/Entitlements.plist" "$entitlements"
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$entitlements"
+fi
 codesign --force --sign "$sign_identity" --options runtime "$timestamp" \
-    --entitlements "$project_dir/Entitlements.plist" "$app_dir"
+    --entitlements "$entitlements" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 printf '%s\n' "$app_dir"

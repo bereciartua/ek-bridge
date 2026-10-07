@@ -169,6 +169,7 @@ struct BridgeServices {
     var mcp: MCPControls
     var approvals: ApprovalCenter?
     var remote: RemoteControls
+    var updater: UpdaterControls
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -229,6 +230,14 @@ final class BridgeAppModel {
     private(set) var renameNoticePending = false
     /// Set by `RenameMigration` until the checklist completes or is hidden.
     private var renameAccessRecheck = false
+    // Updates (Settings ▸ General, the menu and Overview).
+    private(set) var updaterAvailable = false
+    private(set) var automaticUpdateChecks = false
+    private(set) var lastUpdateCheck: Date?
+    /// Found by a scheduled check and not opened yet.
+    private(set) var foundUpdate: FoundUpdate?
+    /// The version whose Overview card was closed; the menu item stays.
+    private(set) var dismissedUpdateVersion: String?
     /// Set briefly when the checklist finishes, to show the success message.
     private(set) var setupJustCompletedName: String?
     private(set) var developerOutput: String?
@@ -429,6 +438,7 @@ final class BridgeAppModel {
             loginItem = services.loginItemStatus()
             isInstalledInApplications = services.isInstalledInApplications()
             commandLineTool = services.commandLineTool.state
+            refreshUpdater()
         }
         reconcileDraft()
         reconcileRoute()
@@ -1112,6 +1122,42 @@ final class BridgeAppModel {
     /// Settings and Help can bring the checklist back while steps are left.
     var canShowSetupAgain: Bool {
         !showsSetupChecklist && policyStoreAvailable && !SetupChecklist.isComplete(checklistInput)
+    }
+
+    // MARK: Updates
+
+    func refreshUpdater() {
+        updaterAvailable = services.updater.isAvailable()
+        automaticUpdateChecks = updaterAvailable && services.updater.automaticChecks()
+        lastUpdateCheck = services.updater.lastCheck()
+    }
+
+    /// Opens Sparkle's window: checks now, or shows the update it found.
+    func checkForUpdates() {
+        services.updater.checkForUpdates()
+    }
+
+    func setAutomaticUpdateChecks(_ on: Bool) {
+        services.updater.setAutomaticChecks(on)
+        refreshUpdater()
+    }
+
+    /// From a scheduled check, or nil once the user opened it.
+    func updateFound(_ update: FoundUpdate?) {
+        foundUpdate = update
+        refreshUpdater()
+    }
+
+    /// Hides the Overview card for this version; the menu item stays. A
+    /// security update's card can't be hidden.
+    func dismissFoundUpdate() {
+        guard let foundUpdate, !foundUpdate.critical else { return }
+        dismissedUpdateVersion = foundUpdate.version
+    }
+
+    var showsUpdateCard: Bool {
+        guard let foundUpdate else { return false }
+        return foundUpdate.critical || foundUpdate.version != dismissedUpdateVersion
     }
 
     func dismissRenameNotice() {

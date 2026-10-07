@@ -25,10 +25,13 @@ set -eu
 #                             an App Store Connect API key (.p8 path, key ID,
 #                             issuer ID; the issuer is empty for an individual key).
 #   EVENTKIT_SPARKLE_KEY_FILE Sparkle's EdDSA private key (from generate_keys -x)
-#                             to sign the zip and write appcast.xml. Without it
-#                             no appcast is written.
-#   EVENTKIT_SPARKLE_BIN      Folder with Sparkle's sign_update. Default:
-#                             build/vendor/Sparkle/bin, then PATH.
+#                             to sign the zip and write appcast.xml. Required
+#                             for a release once Info.plist has SUPublicEDKey:
+#                             without an appcast, installed copies wouldn't
+#                             see the release. Rehearsals may leave it out.
+#   EVENTKIT_SPARKLE_BIN      Folder with Sparkle's sign_update. Default: the
+#                             pinned Sparkle in build/vendor (downloaded by
+#                             scripts/sparkle.sh), then PATH.
 #   EVENTKIT_RELEASE_REPO     The GitHub repository. Default: GITHUB_REPOSITORY,
 #                             else bereciartua/ek-bridge.
 #   GH_TOKEN                  For gh in CI (the workflow passes github.token).
@@ -59,6 +62,7 @@ build_number=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")
 minimum_macos=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")
 app_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
 display_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$plist")
+public_key=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$plist" 2>/dev/null || true)
 tag="v$version"
 app="$build_dir/$app_name.app"
 dmg="$dist_dir/$app_name-$version.dmg"
@@ -105,11 +109,18 @@ fi
 sign_update=""
 if [ -n "${EVENTKIT_SPARKLE_KEY_FILE:-}" ]; then
     [ -f "$EVENTKIT_SPARKLE_KEY_FILE" ] || fail "EVENTKIT_SPARKLE_KEY_FILE $EVENTKIT_SPARKLE_KEY_FILE isn't a file"
+    [ -n "$public_key" ] || fail "a Sparkle key is set but Info.plist has no SUPublicEDKey for the app to check it with"
+    if [ -z "${EVENTKIT_SPARKLE_BIN:-}" ] && [ -f "$project_dir/scripts/sparkle.sh" ]; then
+        . "$project_dir/scripts/sparkle.sh"
+    fi
     for candidate in "${EVENTKIT_SPARKLE_BIN:-$project_dir/build/vendor/Sparkle/bin}/sign_update" \
             "$(command -v sign_update 2>/dev/null || true)"; do
         if [ -n "$candidate" ] && [ -x "$candidate" ]; then sign_update=$candidate; break; fi
     done
     [ -n "$sign_update" ] || fail "a Sparkle key is set but sign_update wasn't found; set EVENTKIT_SPARKLE_BIN"
+fi
+if [ "$release" = 1 ] && [ -n "$public_key" ] && [ -z "$sign_update" ]; then
+    fail "set EVENTKIT_SPARKLE_KEY_FILE: without an appcast, installed copies won't see this release"
 fi
 if [ "$release" = 1 ]; then
     command -v gh > /dev/null || fail "gh (the GitHub CLI) is needed to create the draft release"
@@ -230,6 +241,11 @@ python3 "$project_dir/scripts/release_notes.py" "$version" --repo "$repo" --form
 if [ -n "$sign_update" ]; then
     step "Signing the zip for Sparkle and writing the appcast"
     signature_line=$("$sign_update" --ed-key-file "$EVENTKIT_SPARKLE_KEY_FILE" "$zip")
+    # The check installed copies will make: the signature against SUPublicEDKey.
+    signature=$(printf '%s\n' "$signature_line" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+    xcrun swiftc -O -o "$build_dir/verify-update-signature" "$project_dir/scripts/verify_update_signature.swift"
+    "$build_dir/verify-update-signature" "$public_key" "$zip" "$signature" \
+        || fail "the Sparkle key doesn't match SUPublicEDKey in Info.plist"
     python3 "$project_dir/scripts/appcast.py" \
         --version "$version" --build "$build_number" --minimum-system-version "$minimum_macos" \
         --url "https://github.com/$repo/releases/download/$tag/$(basename "$zip")" \

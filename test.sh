@@ -316,6 +316,13 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/Updates.swift" \
+    "$project_dir/Tests/UpdateRelaunchGateTests.swift" \
+    -o "$project_dir/build/update-relaunch-gate-tests"
+"$project_dir/build/update-relaunch-gate-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
     -framework EventKit \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \

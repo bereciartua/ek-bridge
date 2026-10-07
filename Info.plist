@@ -36,5 +36,17 @@
 	<string>Access the reminder list you select for bounded local reads and edits when you enable the bridge.</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>List Reminders list names and IDs only when you request it.</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/bereciartua/ek-bridge/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>9+D318TvIzSkEG9Cjn1KdiHv8U2giPXKSRRHSOq7bng=</string>
 </dict>
 </plist>

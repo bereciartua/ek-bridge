@@ -24,6 +24,9 @@ import ServiceManagement
 //   --ui-mcp listening|off|port-in-use   the fake MCP server's state (default listening)
 //   --ui-remote                  start with Remote Access on, a tunnel address and a cloud client
 //   --ui-renamed                 the first launch after the rename (notice; use with --ui-calendar notDetermined)
+//   --ui-update-found <version>  a scheduled check found that version (menu item, Overview card)
+//   --ui-update-critical         …and it's a security update
+//   --ui-no-updater              a build that can't update itself (built from source)
 @MainActor
 final class UIReview {
     static let claudeID = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d"
@@ -47,6 +50,11 @@ final class UIReview {
     /// installed in Applications (the behavior test changes both).
     var loginItemStatus = SMAppService.Status.notRegistered
     var installedInApplications = false
+    /// The fake updater: never contacts GitHub.
+    var updaterAvailable = !CommandLine.arguments.contains("--ui-no-updater")
+    var automaticUpdateChecks = true
+    var lastUpdateCheck = Date().addingTimeInterval(-2 * 3_600)
+    private(set) var updateChecks = 0
     let many: Bool
     /// "listening", "off" or "port-in-use".
     var mcpMode: String
@@ -165,7 +173,18 @@ final class UIReview {
                 portIsFree: { $0 != 47615 },
                 setKeepAwake: { _ in },
                 onACPower: { true },
-                oauth: oauth))
+                oauth: oauth),
+            updater: UpdaterControls(
+                isAvailable: { [unowned self] in self.updaterAvailable },
+                checkForUpdates: { [unowned self] in
+                    // Sparkle's window would open here; opening it clears the reminder.
+                    self.updateChecks += 1
+                    self.lastUpdateCheck = Date()
+                    self.model?.updateFound(nil)
+                },
+                automaticChecks: { [unowned self] in self.automaticUpdateChecks },
+                setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
+                lastCheck: { [unowned self] in self.lastUpdateCheck }))
     }
 
     /// Starts a pairing request the way claude.ai would: register (DCR),
@@ -450,6 +469,9 @@ final class UIReview {
                                                                agent: "claude-code 2.4.1"))
         reportMCP()
         model.bridgeDidChange(bridgeOn ? .on : .off)
+        if let version = Self.value(arguments, "--ui-update-found") {
+            model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
+        }
         DispatchQueue.main.async { self.runMode(model: model, window: window, statusMenu: statusMenu) }
     }
 
@@ -1034,7 +1056,50 @@ final class BehaviorReview {
             self.model.refresh()
             return enabled && !self.model.canChangeStartAtLogin
         }
+        // Updates, with the fake updater (Sparkle isn't started in this build).
+        step("a found update shows a card") {
+            self.model.updateFound(FoundUpdate(version: "9.9.0", critical: false))
+            return self.model.showsUpdateCard && self.model.foundUpdate?.version == "9.9.0"
+        }
+        step("closing the card keeps the menu item") {
+            self.model.dismissFoundUpdate()
+            return !self.model.showsUpdateCard && self.model.foundUpdate != nil
+        }
+        step("a security update's card can't be closed") {
+            self.model.updateFound(FoundUpdate(version: "9.9.1", critical: true))
+            self.model.dismissFoundUpdate()
+            return self.model.showsUpdateCard
+        }
+        step("Check for Updates opens Sparkle and clears the reminder") {
+            guard let item = self.checkForUpdatesItem, let action = item.action,
+                  (NSApp.delegate as? NSMenuItemValidation)?.validateMenuItem(item) == true else { return false }
+            let before = self.review.updateChecks
+            NSApp.sendAction(action, to: item.target, from: item)
+            return self.review.updateChecks == before + 1 && self.model.foundUpdate == nil &&
+                !self.model.showsUpdateCard
+        }
+        step("automatic checks follow the switch") {
+            self.model.setAutomaticUpdateChecks(false)
+            let off = !self.model.automaticUpdateChecks && !self.review.automaticUpdateChecks
+            self.model.setAutomaticUpdateChecks(true)
+            return off && self.model.automaticUpdateChecks && self.review.automaticUpdateChecks
+        }
+        step("a copy built from source can't check") {
+            self.review.updaterAvailable = false
+            self.model.refresh()
+            let disabled = !self.model.updaterAvailable && !self.model.automaticUpdateChecks &&
+                self.checkForUpdatesItem.map { (NSApp.delegate as? NSMenuItemValidation)?.validateMenuItem($0) } == false
+            self.review.updaterAvailable = true
+            self.model.refresh()
+            return disabled && self.model.updaterAvailable
+        }
         next()
+    }
+
+    private var checkForUpdatesItem: NSMenuItem? {
+        NSApp.mainMenu?.items.first?.submenu?.items.first {
+            $0.action == #selector(BridgeAppDelegate.checkForUpdates(_:))
+        }
     }
 
     private func step(_ name: String, _ check: @escaping @MainActor () -> Bool) {
@@ -1138,6 +1203,30 @@ final class SnapshotReview {
             }
             step("overview-mcp") {
                 self.model.setShowDeveloperTools(false)
+                self.model.navigate(to: .overview)
+                return main
+            }
+            step("overview-update") {
+                self.model.updateFound(FoundUpdate(version: "0.8.1", critical: false))
+                return main
+            }
+            step("overview-update-security") {
+                self.model.updateFound(FoundUpdate(version: "0.8.2", critical: true))
+                return main
+            }
+            step("settings-updates") {
+                self.model.updateFound(nil)
+                self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-updates-source-build") {
+                self.review.updaterAvailable = false
+                self.model.refresh()
+                return main
+            }
+            step("overview-after-updates") {
+                self.review.updaterAvailable = true
+                self.model.refresh()
                 self.model.navigate(to: .overview)
                 return main
             }

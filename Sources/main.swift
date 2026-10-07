@@ -60,6 +60,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
         clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
     private let keepAwake = KeepAwake()
+    private lazy var updater = SparkleUpdater(gate: UpdateRelaunchGate(
+        pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
+        maximumWait: ApprovalCenter.timeout + 5))
     private lazy var remoteService: RemoteMCPService = {
         // A second protocol layer over the same pipeline: only credentials,
         // limits and the gate differ.
@@ -82,7 +85,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #if EVENTKIT_UI_REVIEW
         model = BridgeAppModel(services: review.services())
         #else
+        updater.start()
         model = BridgeAppModel(services: liveServices())
+        updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
         #endif
         #if !EVENTKIT_UI_REVIEW
         // Before start(), so a working setup isn't announced as just completed.
@@ -208,7 +213,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 portIsFree: { PortProbe.isFree($0) },
                 setKeepAwake: { [weak self] in self?.keepAwake.set($0) },
                 onACPower: { KeepAwake.onACPower },
-                oauth: oauth))
+                oauth: oauth),
+            updater: updater.controls)
     }
 
     private func liveCollections() -> [CollectionInfo] {
@@ -291,11 +297,12 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
+    @objc func checkForUpdates(_ sender: Any?) { model.checkForUpdates() }
     @objc func showAbout(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppIdentity.displayName,
-            .credits: NSAttributedString(string: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.\nLicensed under the Apache License 2.0. Not affiliated with Apple.")),
+            .credits: NSAttributedString(string: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.\nLicensed under the Apache License 2.0. Not affiliated with Apple.\nUpdates by Sparkle (MIT License).")),
         ])
     }
 
@@ -304,6 +311,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(newClient(_:)): model.canCreateClient
         case #selector(saveAccess(_:)), #selector(revertAccess(_:)): model.hasUnsavedChanges
         case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
+        case #selector(checkForUpdates(_:)): model.updaterAvailable
         default: true
         }
     }
@@ -317,6 +325,7 @@ enum MainMenu {
 
         let app = submenu(name, in: main)
         app.addItem(item(String(localized: "About \(name)"), #selector(BridgeAppDelegate.showAbout(_:)), target: target))
+        app.addItem(item(String(localized: "Check for Updates…"), #selector(BridgeAppDelegate.checkForUpdates(_:)), target: target))
         app.addItem(.separator())
         app.addItem(item(String(localized: "Settings…"), #selector(BridgeAppDelegate.showSettingsPane(_:)), ",", target: target))
         app.addItem(.separator())
@@ -392,8 +401,9 @@ struct EKBridgeApp {
         }
         #endif
         let app = NSApplication.shared
-        #if !EVENTKIT_UI_REVIEW
-        // Before anything reads settings or the data folder.
+        #if !EVENTKIT_UI_REVIEW && !EVENTKIT_UPDATE_TEST
+        // Before anything reads settings or the data folder. (The update test's
+        // copy has its own bundle ID and data folder, and nothing to migrate.)
         RenameMigrationLaunch.run()
         #endif
         let delegate = BridgeAppDelegate()
