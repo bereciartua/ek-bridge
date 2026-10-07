@@ -146,7 +146,10 @@ final class UIReview {
             loginItemStatus: { [unowned self] in self.loginItemStatus },
             setLoginItem: { [unowned self] on in self.loginItemStatus = on ? .enabled : .notRegistered },
             isInstalledInApplications: { [unowned self] in self.installedInApplications },
-            commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory),
+            // No Homebrew folders (this Mac's own links must not count), and the
+            // installed location in copied commands instead of the build folder.
+            commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory, packageBins: [],
+                                             displayAppURL: URL(fileURLWithPath: "/Applications/EKBridge.app")),
             testCollections: nil,
             mcp: MCPControls(
                 start: { [unowned self] _ in
@@ -856,7 +859,7 @@ final class BehaviorReview {
         step("Install Command-Line Tool links bridge-client") {
             self.model.refresh()
             guard self.model.commandLineTool == .notInstalled,
-                  self.model.cliProgram == ConnectCommand.sourceProgram else { return false }
+                  self.model.cliProgram == "/Applications/EKBridge.app/Contents/MacOS/bridge-client" else { return false }
             self.model.installCommandLineTool()
             return self.model.commandLineTool == .installed && self.model.banner?.kind == .success
         }

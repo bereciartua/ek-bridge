@@ -497,9 +497,9 @@ struct SetupStepRow: View {
             if focus?.hasMCPToken == true {
                 return String(localized: "Copy the setup for your agent, then ask it something like “What's on my calendar today?”")
             }
-            return model.commandLineTool == .installed
-                ? String(localized: "Copy the command and run it in Terminal. This step completes when the request arrives.")
-                : String(localized: "Copy the command and run it in Terminal, in the ek-bridge folder, or install the command-line tool from Settings ▸ Developer first. This step completes when the request arrives.")
+            return model.cliCommand == .source
+                ? String(localized: "Copy the command and run it in Terminal, in the ek-bridge folder. This step completes when the request arrives.")
+                : String(localized: "Copy the command and run it in Terminal. This step completes when the request arrives.")
         }
     }
 

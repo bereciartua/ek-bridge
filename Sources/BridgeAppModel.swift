@@ -190,6 +190,10 @@ final class BridgeAppModel {
     private(set) var loginItemError: String?
     private(set) var isInstalledInApplications = false
     private(set) var commandLineTool: CommandLineTool.State = .unavailable
+    /// How copied commands start (`bridge-client`, the app's own copy, or the source launcher).
+    private(set) var cliCommand: CommandLineTool.Program = .source
+    /// Homebrew linked `bridge-client` to this copy (Settings reports only its own link).
+    private(set) var cliLinkedByHomebrew = false
     private(set) var now = Date()
     private(set) var accessRequestInFlight = Set<ClientResource>()
     private(set) var accessRequestDeclined = Set<ClientResource>()
@@ -437,7 +441,7 @@ final class BridgeAppModel {
             if listed != collections { collections = listed }
             loginItem = services.loginItemStatus()
             isInstalledInApplications = services.isInstalledInApplications()
-            commandLineTool = services.commandLineTool.state
+            refreshCommandLineTool()
             refreshUpdater()
         }
         reconcileDraft()
@@ -1190,10 +1194,16 @@ final class BridgeAppModel {
         services.defaults.set(setupSkipped.map(\.rawValue), forKey: Keys.setupSkipped)
     }
 
-    /// The program copied commands start with: `bridge-client` once it's
-    /// installed from this copy of the app, else the source checkout's launcher.
-    var cliProgram: String {
-        commandLineTool == .installed ? CommandLineTool.name : ConnectCommand.sourceProgram
+    /// The program copied commands start with: `bridge-client` when a link on
+    /// the PATH (Settings' or Homebrew's) runs this copy, else this copy's own
+    /// `bridge-client` by its full path, so the command works as pasted.
+    var cliProgram: String { cliCommand.text }
+
+    private func refreshCommandLineTool() {
+        let tool = services.commandLineTool
+        commandLineTool = tool.state
+        cliCommand = tool.program
+        cliLinkedByHomebrew = tool.linkedByPackageManager
     }
 
     func installCommandLineTool() {
@@ -1218,7 +1228,7 @@ final class BridgeAppModel {
                               title: String(localized: "Couldn't install \(CommandLineTool.name)."),
                               message: reason))
         }
-        commandLineTool = tool.state
+        refreshCommandLineTool()
     }
 
     func copyTestCommand() {
