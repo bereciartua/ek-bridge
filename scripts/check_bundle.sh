@@ -5,7 +5,8 @@ set -eu
 # and the app's minimum macOS, the command-line tools are signed with the
 # hardened runtime and their own identifiers, Sparkle is embedded without its
 # XPC services and signed like the app, the app finds it through its rpath and
-# knows its feed, the license files are inside, and the whole bundle verifies.
+# knows its feed, both forms of the icon and the license files are inside, and
+# the whole bundle verifies.
 # Used by CI and the release script.
 #
 # Usage: sh scripts/check_bundle.sh APP [ARCH...]   (default: this Mac's arch)
@@ -64,6 +65,13 @@ for key in SUFeedURL SUPublicEDKey; do
     /usr/libexec/PlistBuddy -c "Print :$key" "$plist" > /dev/null 2>&1 || fail "Info.plist has no $key"
 done
 [ -s "$contents/Resources/Sparkle-LICENSE.txt" ] || fail "Resources/Sparkle-LICENSE.txt is missing"
+
+# The icon: the .icns for macOS 14 and 15, and the compiled Icon Composer
+# document for macOS 26 and later (CI and releases build with Xcode).
+[ -s "$contents/Resources/AppIcon.icns" ] || fail "Resources/AppIcon.icns is missing"
+[ -s "$contents/Resources/Assets.car" ] || fail "Resources/Assets.car is missing (build with Xcode for actool)"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$plist" 2>/dev/null)" = AppIcon ] \
+    || fail "Info.plist has no CFBundleIconName AppIcon"
 
 for file in LICENSE NOTICE; do
     [ -s "$contents/Resources/$file" ] || fail "Resources/$file is missing"

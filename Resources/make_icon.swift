@@ -1,139 +1,131 @@
-// Draws the app icon: a calendar page with a bridge arc. Run make_icon.sh to
-// regenerate Resources/AppIcon.icns. Placeholder-quality art made in code, so
-// it can be replaced by a commissioned icon without changing the build.
+// Draws the app icon: the sun's path across a day. The part of the day already
+// gone is a solid line, the rest is dotted, and the red sun is "now".
+// Run make_icon.sh to regenerate Resources/AppIcon.icns.
+//
+// Usage: make_icon <output.png> <pixels>
+// Each size is drawn at its own pixel size instead of scaled down from 1024.
+// At 32 px and below a simpler drawing is used: three big dots, no hour marks
+// and thicker lines, because the full drawing blurs into a smudge there.
 import AppKit
 import CoreGraphics
 
-let size: CGFloat = 1024
-let output = URL(fileURLWithPath: CommandLine.arguments[1])
+let arguments = CommandLine.arguments
+guard arguments.count == 3, let pixels = Int(arguments[2]), pixels > 0 else {
+    FileHandle.standardError.write("usage: make_icon <output.png> <pixels>\n".data(using: .utf8)!)
+    exit(64)
+}
+let output = URL(fileURLWithPath: arguments[1])
+let small = pixels <= 32
 
 func color(_ hex: Int, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
             blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
 }
 
-func gradient(_ colors: [CGColor]) -> CGGradient {
-    CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray,
-               locations: nil)!
+let ink = color(0x1B2A4A)
+let sunRed = color(0xFF5B4D)
+let sunRing = color(0xFFEFE0)
+
+// The drawing, in points on the 1024 canvas, measured from the top.
+struct Drawing {
+    var horizonY: CGFloat, radius: CGFloat = 300, sunAngle: CGFloat = 128
+    var sunRadius: CGFloat, ringWidth: CGFloat, pathWidth: CGFloat
+    var dotRadius: CGFloat, dotStep: CGFloat, firstDot: CGFloat
+    var horizonWidth: CGFloat, horizonLeft: CGFloat, horizonRight: CGFloat
+    var hourMarks: Int
 }
+let drawing = small
+    ? Drawing(horizonY: 660, sunRadius: 128, ringWidth: 18, pathWidth: 66, dotRadius: 31, dotStep: 34,
+              firstDot: 20, horizonWidth: 74, horizonLeft: 150, horizonRight: 874, hourMarks: 0)
+    : Drawing(horizonY: 650, sunRadius: 100, ringWidth: 14, pathWidth: 46, dotRadius: 18, dotStep: 13,
+              firstDot: 0, horizonWidth: 54, horizonLeft: 166, horizonRight: 858, hourMarks: 5)
 
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
-let context = CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8,
+let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8,
                         bytesPerRow: 0, space: space,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 context.setAllowsAntialiasing(true)
 context.interpolationQuality = .high
+let scale = CGFloat(pixels) / 1024
+context.scaleBy(x: scale, y: scale)
+
+// Core Graphics measures y from the bottom; the drawing measures it from the top.
+func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: 1024 - y) }
+func onPath(_ degrees: CGFloat) -> CGPoint {
+    let angle = degrees * .pi / 180
+    return point(512 + drawing.radius * cos(angle), drawing.horizonY - drawing.radius * sin(angle))
+}
+func fillCircle(_ center: CGPoint, _ radius: CGFloat) {
+    context.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+}
 
 // macOS icon grid: an 824 pt rounded square centered on the 1024 canvas.
 let body = CGRect(x: 100, y: 100, width: 824, height: 824)
 let shape = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, transform: nil)
 
-// Drop shadow under the page.
+// Drop shadow under the tile. Shadow sizes are in pixels, not points.
 context.saveGState()
-context.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.28))
+context.setShadow(offset: CGSize(width: 0, height: -12 * scale), blur: 28 * scale, color: color(0x000000, 0.28))
 context.addPath(shape)
-context.setFillColor(color(0xFFFFFF))
+context.setFillColor(color(0xFFF3E2))
 context.fillPath()
 context.restoreGState()
 
-// Page: white to a soft grey.
+// Dawn sky: cream at the top to peach at the bottom.
 context.saveGState()
 context.addPath(shape)
 context.clip()
-context.drawLinearGradient(gradient([color(0xFFFFFF), color(0xEEF0F4)]),
-                           start: CGPoint(x: 0, y: body.maxY), end: CGPoint(x: 0, y: body.minY),
-                           options: [])
+let dawn = CGGradient(colorsSpace: space, colors: [color(0xFFF3E2), color(0xFFD2B0)] as CFArray, locations: nil)!
+context.drawLinearGradient(dawn, start: CGPoint(x: 0, y: body.maxY), end: CGPoint(x: 0, y: body.minY), options: [])
 
-// Red header band, like a calendar page.
-let bandHeight: CGFloat = 238
-let band = CGRect(x: body.minX, y: body.maxY - bandHeight, width: body.width, height: bandHeight)
-context.saveGState()
-context.clip(to: band)
-context.drawLinearGradient(gradient([color(0xFF6B5E), color(0xE8382C)]),
-                           start: CGPoint(x: 0, y: band.maxY), end: CGPoint(x: 0, y: band.minY),
-                           options: [])
-context.restoreGState()
-// A hairline under the band.
-context.setFillColor(color(0x000000, 0.10))
-context.fill(CGRect(x: body.minX, y: band.minY - 3, width: body.width, height: 3))
-
-// Binding holes on the band.
-for x in [body.minX + 230, body.maxX - 230] {
-    let hole = CGRect(x: x - 26, y: band.minY + bandHeight * 0.5 - 26, width: 52, height: 52)
-    context.setFillColor(color(0x9E1B12, 0.35))
-    context.fillEllipse(in: hole.offsetBy(dx: 0, dy: -3))
-    context.setFillColor(color(0xFFFFFF, 0.95))
-    context.fillEllipse(in: hole)
-}
-
-// The bridge: a deck, an arch and hangers, in blue.
-let blueTop = color(0x2F8BFF)
-let blueBottom = color(0x0A5AD4)
-let deckY: CGFloat = 300
-let left: CGFloat = 220
-let right: CGFloat = 804
-let archTop: CGFloat = 590
-let bridge = CGMutablePath()
-// Arch: a quadratic curve from pier to pier.
-bridge.move(to: CGPoint(x: left, y: deckY))
-bridge.addQuadCurve(to: CGPoint(x: right, y: deckY),
-                    control: CGPoint(x: (left + right) / 2, y: archTop + (archTop - deckY)))
-let archStroke = bridge.copy(strokingWithWidth: 58, lineCap: .round, lineJoin: .round, miterLimit: 10)
-
-var shapes = [CGPath]()
-shapes.append(archStroke)
-// Deck.
-shapes.append(CGPath(roundedRect: CGRect(x: left - 70, y: deckY - 34, width: right - left + 140, height: 52),
-                      cornerWidth: 26, cornerHeight: 26, transform: nil))
-// Hangers between the arch and the deck.
-func archY(_ x: CGFloat) -> CGFloat {
-    let t = (x - left) / (right - left)
-    let control = archTop + (archTop - deckY)
-    return (1 - t) * (1 - t) * deckY + 2 * (1 - t) * t * control + t * t * deckY
-}
-for x in stride(from: left + 110, through: right - 110, by: 91) {
-    let top = archY(x) - 18
-    shapes.append(CGPath(roundedRect: CGRect(x: x - 11, y: deckY, width: 22, height: max(0, top - deckY)),
-                          cornerWidth: 11, cornerHeight: 11, transform: nil))
-}
-// Piers into the water line.
-for x in [left, right] {
-    shapes.append(CGPath(roundedRect: CGRect(x: x - 26, y: deckY - 120, width: 52, height: 120),
-                          cornerWidth: 12, cornerHeight: 12, transform: nil))
-}
-// Each part is filled on its own, so overlaps never cancel out, and the
-// shadow applies to the bridge as a whole.
-context.saveGState()
-context.setShadow(offset: CGSize(width: 0, height: -6), blur: 10, color: color(0x0A3A8C, 0.25))
-context.beginTransparencyLayer(auxiliaryInfo: nil)
-for part in shapes {
-    context.saveGState()
-    context.addPath(part)
-    context.clip()
-    context.drawLinearGradient(gradient([blueTop, blueBottom]),
-                               start: CGPoint(x: 0, y: archTop + 40), end: CGPoint(x: 0, y: deckY - 120),
-                               options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-    context.restoreGState()
-}
-context.endTransparencyLayer()
-context.restoreGState()
-
-// Water line under the bridge.
-context.setStrokeColor(color(0x0A5AD4, 0.22))
-context.setLineWidth(14)
 context.setLineCap(.round)
-context.move(to: CGPoint(x: left - 60, y: deckY - 150))
-context.addLine(to: CGPoint(x: right + 60, y: deckY - 150))
+context.setStrokeColor(ink)
+context.setFillColor(ink)
+
+// The rest of the day: evenly spaced dots from the horizon up to the sun,
+// stopping short of it.
+let clearance = (drawing.sunRadius + drawing.dotRadius + 26) / drawing.radius * 180 / .pi
+for degrees in stride(from: drawing.firstDot, to: drawing.sunAngle - clearance, by: drawing.dotStep) {
+    fillCircle(onPath(degrees), drawing.dotRadius)
+}
+
+// The part of the day already gone: a solid arc from sunrise to the sun.
+context.setLineWidth(drawing.pathWidth)
+context.addArc(center: point(512, drawing.horizonY), radius: drawing.radius, startAngle: .pi,
+               endAngle: drawing.sunAngle * .pi / 180, clockwise: true)
 context.strokePath()
+
+// The horizon.
+context.setLineWidth(drawing.horizonWidth)
+context.move(to: point(drawing.horizonLeft, drawing.horizonY))
+context.addLine(to: point(drawing.horizonRight, drawing.horizonY))
+context.strokePath()
+
+// Hour marks under the horizon.
+context.setStrokeColor(color(0x1B2A4A, 0.45))
+context.setLineWidth(26)
+for mark in 0..<drawing.hourMarks {
+    let x = 262 + CGFloat(mark) * 125
+    context.move(to: point(x, drawing.horizonY + 74))
+    context.addLine(to: point(x, drawing.horizonY + 122))
+}
+context.strokePath()
+
+// The sun, with a thin cream ring that keeps it apart from the line.
+let sun = onPath(drawing.sunAngle)
+context.setFillColor(sunRing)
+fillCircle(sun, drawing.sunRadius + drawing.ringWidth)
+context.setFillColor(sunRed)
+fillCircle(sun, drawing.sunRadius)
 context.restoreGState()
 
-// A subtle inner edge so the page reads on white backgrounds.
+// A subtle inner edge so the tile reads on white backgrounds.
 context.addPath(shape)
-context.setStrokeColor(color(0x000000, 0.08))
-context.setLineWidth(2)
+context.setStrokeColor(color(0x000000, 0.07))
+context.setLineWidth(4)
 context.strokePath()
 
 let image = context.makeImage()!
 let destination = CGImageDestinationCreateWithURL(output as CFURL, "public.png" as CFString, 1, nil)!
 CGImageDestinationAddImage(destination, image, nil)
-CGImageDestinationFinalize(destination)
+guard CGImageDestinationFinalize(destination) else { exit(1) }
