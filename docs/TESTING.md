@@ -117,7 +117,7 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 
 ## Live MCP matrix
 
-**Status: not yet run.** These are the manual checks for each release, on the development Mac with a signed, installed build, an app-created empty test calendar and list (Settings ▸ Developer), a disposable client, and the user present to approve writes. Record results here with the same redaction rules as above: no titles, IDs, tokens or raw logs.
+**Status: partly run.** A first check with four agents is recorded below; the list itself hasn't been worked through. These are the manual checks for each release, on the development Mac with a signed, installed build, an app-created empty test calendar and list (Settings ▸ Developer), a disposable client, and the user present to approve writes. Record results here with the same redaction rules as above: no titles, IDs, tokens or raw logs.
 
 - [ ] MCP Inspector (`npx @modelcontextprotocol/inspector`, Streamable HTTP with the `Authorization` header): list tools, call each read tool, check how errors render.
 - [ ] MCP conformance suite, if one covers servers for 2025-11-25 or 2026-07-28 at release time, against `build/mcp-server-test`.
@@ -132,6 +132,17 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 - [ ] Port in use (start `python3 -m http.server 47615 --bind 127.0.0.1` first): attention badge, Settings explains, **Choose Another Port…** works, and the launcher refuses to send the token to the other listener.
 - [ ] Registry upgrade from a real 0.3.0 registry: backup written once; 0.3.x fails closed on version 4; restoring the backup works.
 - [ ] Approval panel: keystrokes in Terminal never approve; VoiceOver announces new requests; the clipboard is cleared 90 seconds after **Copy Token…**; `grep -c ekb_mcp_v1_ client-registry.json` is 0.
+
+**October 7, 2026, the owner's agent check, EK Bridge 0.8.2** (installed release, development Mac, macOS 27.0.1, Apple silicon). Each agent was connected with the setup copied from its client's **Connect ▸ AI agent**, and in each one the owner read events or reminders from a granted calendar or list, made a change that the approval panel showed and the owner allowed, and saw a change denied or an ungranted collection refused. Everything behaved as expected in:
+
+| Agent | Version |
+| --- | --- |
+| Claude Code | 2.1.288 |
+| Claude Desktop | 2.26454.2 |
+| Codex CLI | 0.160.0 |
+| Cursor | 3.15.6 |
+
+This covers part of the four agents' rows above (not the token reset, grant removal or bridge-off steps, the timeouts, or the reminder recurrence and completion steps), so their boxes stay open. The README's "works with" names only these four.
 
 ## Live cloud matrix
 
