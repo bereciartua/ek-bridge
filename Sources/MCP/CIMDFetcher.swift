@@ -498,6 +498,8 @@ private final class CIMDRequest: @unchecked Sendable {
         sec_protocol_options_set_tls_server_name(security, host)
         sec_protocol_options_set_min_tls_protocol_version(security, .TLSv12)
         sec_protocol_options_add_tls_application_protocol(security, "http/1.1")
+        // Every fetch evaluates the server's certificate in full: a resumed session skips that.
+        sec_protocol_options_set_tls_resumption_enabled(security, false)
         #if EVENTKIT_MCP_TEST
         if let anchor {
             let host = host
@@ -525,9 +527,10 @@ private final class CIMDRequest: @unchecked Sendable {
             guard let remote = connection?.currentPath?.remoteEndpoint, allowed(remote) else {
                 return finish(.failure(.blockedAddress))
             }
-            connection?.send(content: request, completion: .contentProcessed { [self] error in
-                if let error { finish(.failure(.network("\(error)"))) }
-            })
+            // A send error also ends the read, which reports it. Finishing here instead would race
+            // the read: a server that replies and closes without close_notify can fail the send's
+            // completion (errSSLClosedAbort) before the reply it already sent has been read.
+            connection?.send(content: request, completion: .contentProcessed { _ in })
             sent = true
             receive()
         // Once sent, the reads report failures: a server closing without close_notify fails the
