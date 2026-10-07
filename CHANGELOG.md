@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Changed
+
+- The README opens like a product page: the icon, a one-line pitch, badges, a Download link, the Overview screenshot, three reasons to use it and the agents it has setups for. Three new sections follow the setup steps: **What you can ask** (example prompts and the tools they use), **How it works** (what's checked, the safeguards, and what it doesn't protect against) and a short **FAQ**. Nothing was removed.
+
 ## [0.8.1] - 2026-10-07
 
 The first update that installed copies of 0.8.0 get through **Check for Updates…**. Nothing changes for callers or agents, and the client registry stays at **version 4**, so going back to 0.8.0 means installing its DMG over this one.
