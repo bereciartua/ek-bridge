@@ -63,7 +63,7 @@ The ordinary source build has no persistent installation, privacy grants, login 
 
 Run it before the first public release and after any change to the bundle layout or the updater, and record the date, macOS version and architecture here.
 
-**October 6, 2026:** the owner installed the notarized 0.7.0 rehearsal DMG on a separate Mac; it opened without warnings and everything worked (steps 1–3). Step 4, installing over it, is covered by the [update test](#update-test) with Sparkle; step 5 wasn't run (no Intel Mac).
+**October 6, 2026:** the owner installed the notarized 0.7.0 rehearsal DMG on a separate Mac (an M1 Pro MacBook); it opened without warnings and everything worked (steps 1–3). Step 4, installing over it, is covered by the [update test](#update-test) with Sparkle; step 5 wasn't run (no Intel Mac).
 
 1. On a fresh macOS user account, or a macOS VM on Apple silicon (UTM or Tart), download the DMG from the draft release in Safari, so it carries the quarantine flag.
 2. Open it: no Gatekeeper warning. `spctl --assess --type open --context context:primary-signature -v EKBridge-<version>.dmg` says `source=Notarized Developer ID`. Drag the app to Applications and open it from there: no warning, and the window opens on the setup checklist.
