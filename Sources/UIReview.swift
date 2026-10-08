@@ -1618,12 +1618,29 @@ final class SnapshotReview {
             MainActor.assumeIsolated {
                 // Look the window up after layout so sheets are attached.
                 guard let window = self.target(for: name) else { return self.next() }
-                if self.external {
-                    self.waitForExternalCapture(window, name: name)
-                } else {
-                    self.capture(window, name: name)
-                    self.next()
+                self.whenSettled(window) {
+                    if self.external {
+                        self.waitForExternalCapture(window, name: name)
+                    } else {
+                        self.capture(window, name: name)
+                        self.next()
+                    }
                 }
+            }
+        }
+    }
+
+    /// Runs `ready` once the window is visible and its frame has stayed the
+    /// same for three checks 0.1 s apart (a window or sheet still opening is
+    /// animating), or after 5 s.
+    private func whenSettled(_ window: NSWindow, stable: Int = 0, last: NSRect? = nil, waited: Double = 0,
+                             _ ready: @escaping @MainActor () -> Void) {
+        let frame = window.frame
+        let steady = window.isVisible && frame == last ? stable + 1 : 0
+        if steady >= 3 || waited >= 5 { return ready() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated {
+                self.whenSettled(window, stable: steady, last: frame, waited: waited + 0.1, ready)
             }
         }
     }
