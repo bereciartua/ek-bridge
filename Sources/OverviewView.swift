@@ -410,7 +410,6 @@ struct SetupStepRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body.weight(isFinished ? .regular : .semibold))
-                    .strikethrough(state == .done, color: .secondary)
                     .foregroundStyle(isFinished ? .secondary : .primary)
                 if !isFinished, let detail {
                     Text(detail)
@@ -423,7 +422,8 @@ struct SetupStepRow: View {
             trailing
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        // Finished steps collapse to one quiet line.
+        .padding(.vertical, isFinished ? 7 : 12)
         .background(state == .current ? Color.accentColor.opacity(0.07) : Color.clear)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityText)
@@ -446,12 +446,14 @@ struct SetupStepRow: View {
         switch state {
         case .done:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 26))
+                .font(.system(size: 20))
                 .foregroundStyle(.white, .green)
+                .frame(width: 26)
         case .skipped:
             Image(systemName: "minus.circle.fill")
-                .font(.system(size: 26))
+                .font(.system(size: 20))
                 .foregroundStyle(.white, .secondary)
+                .frame(width: 26)
         case .current:
             Text("\(number)")
                 .font(.callout.weight(.semibold))
@@ -470,6 +472,31 @@ struct SetupStepRow: View {
     private var clientName: String { focus?.name ?? String(localized: "the client") }
 
     private var title: String {
+        if state == .done { return doneTitle }
+        if state == .skipped {
+            switch step {
+            case .calendarAccess: return String(localized: "Calendar access skipped")
+            case .remindersAccess: return String(localized: "Reminders access skipped")
+            default: break
+            }
+        }
+        return nextTitle
+    }
+
+    /// Finished steps read as what happened.
+    private var doneTitle: String {
+        switch step {
+        case .calendarAccess: String(localized: "Calendar access allowed")
+        case .remindersAccess: String(localized: "Reminders access allowed")
+        case .createClient: String(localized: "Client created")
+        case .chooseAccess: String(localized: "Access chosen")
+        case .turnOn: String(localized: "Bridge turned on")
+        case .mcpServer: String(localized: "MCP server turned on")
+        case .testRequest: String(localized: "Tool connected")
+        }
+    }
+
+    private var nextTitle: String {
         switch step {
         case .calendarAccess: String(localized: "Allow Calendar access")
         case .remindersAccess: String(localized: "Allow Reminders access")
