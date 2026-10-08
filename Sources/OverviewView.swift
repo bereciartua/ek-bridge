@@ -489,7 +489,9 @@ struct SetupStepRow: View {
                 return String(localized: "You chose not to allow access. You can change this in System Settings.")
             }
             if state == .optional {
-                return String(localized: "Optional. Skip it if your tools only need the other one.")
+                return step == .calendarAccess
+                    ? String(localized: "Optional. Skip it if your tools only use reminders.")
+                    : String(localized: "Optional. Skip it if your tools only use calendars.")
             }
             return AccessText.detail(resource, model.status(resource))
         case .createClient:
@@ -503,6 +505,9 @@ struct SetupStepRow: View {
         case .testRequest:
             if focus?.hasMCPToken == true {
                 return String(localized: "Copy the setup for your agent, then ask it something like “What's on my calendar today?”")
+            }
+            if focus == nil {
+                return String(localized: "Connect your agent, then ask it something like “What's on my calendar today?”")
             }
             return model.cliCommand == .source
                 ? String(localized: "Copy the command and run it in Terminal, in the ek-bridge folder. This step completes when the request arrives.")

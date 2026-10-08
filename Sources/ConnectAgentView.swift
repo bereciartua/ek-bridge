@@ -241,8 +241,9 @@ struct SnippetView: View {
             CodeBox(text: snippet.text)
             if !snippet.steps.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
+                    // A single step isn't a list, so it has no number.
                     ForEach(Array(snippet.steps.enumerated()), id: \.offset) { index, step in
-                        Text("\(index + 1). \(step)")
+                        Text(snippet.steps.count == 1 ? step : "\(index + 1). \(step)")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

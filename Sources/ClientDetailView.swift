@@ -328,24 +328,36 @@ struct ApprovalControl: View {
     let model: BridgeAppModel
     let client: ClientView
 
+    /// Whether the access being edited allows any change: the staged masks
+    /// while the table is open, so the control follows the checkboxes.
+    private var writes: Bool {
+        if let draft = model.draft, draft.clientID == client.id {
+            return draft.staged.values.contains { $0 & ~ClientGrant.read != 0 }
+        }
+        return client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
+    }
+
     var body: some View {
-        let writes = client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
         HStack(spacing: 6) {
-            if !writes {
-                Text(String(localized: "Only applies to changes."))
+            if writes {
+                Text(String(localized: "Changes:")).foregroundStyle(.secondary)
+                Picker(String(localized: "Changes"), selection: Binding(
+                    get: { client.approval }, set: { model.setApproval(client.id, $0) })) {
+                    Label(String(localized: "Ask me first"), systemImage: "hand.raised").tag(ApprovalMode.ask)
+                    Label(String(localized: "Allow without asking"), systemImage: "checkmark.shield").tag(ApprovalMode.allow)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel(String(localized: "Ask before changes"))
+            } else {
+                Text(String(localized: "Changes: none allowed. Ask me first applies once you allow a change."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            Text(String(localized: "Changes:")).foregroundStyle(.secondary)
-            Picker(String(localized: "Changes"), selection: Binding(
-                get: { client.approval }, set: { model.setApproval(client.id, $0) })) {
-                Label(String(localized: "Ask me first"), systemImage: "hand.raised").tag(ApprovalMode.ask)
-                Label(String(localized: "Allow without asking"), systemImage: "checkmark.shield").tag(ApprovalMode.allow)
-            }
-            .labelsHidden()
-            .fixedSize()
-            .disabled(!writes)
-            .accessibilityLabel(String(localized: "Ask before changes"))
         }
         .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this client. Reads never ask."))
     }
@@ -739,9 +751,6 @@ struct NewClientSheet: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
             }
-            Text(String(localized: "A new client has no access. You choose its calendars and lists next."))
-                .font(.callout)
-                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button(String(localized: "Cancel")) { model.sheet = nil }

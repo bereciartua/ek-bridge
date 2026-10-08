@@ -184,7 +184,7 @@ struct TunnelGuideRow: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(provider.steps.enumerated()), id: \.offset) { index, step in
-                    Text("\(index + 1). \(step)")
+                    Text(provider.steps.count == 1 ? step : "\(index + 1). \(step)")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -283,7 +283,7 @@ struct CloudSection: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(snippet.steps.enumerated()), id: \.offset) { index, step in
-                        Text("\(index + 1). \(step)")
+                        Text(snippet.steps.count == 1 ? step : "\(index + 1). \(step)")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
