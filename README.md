@@ -57,7 +57,7 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
 
 2. **Open the app.** It opens on a short setup checklist; later, you'll find it in the menu bar. First, allow Calendar and/or Reminders access; you need only the one your agent uses.
 3. **Add your agent.** Click **Add a Connection…**, name it after the agent and choose **Connects from ▸ AI agent (MCP)**. Then tick the calendars and lists it may use, and **Save**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
-4. **Turn on EK Bridge and the MCP server** from the checklist.
+4. **Turn on EK Bridge** from the checklist. The MCP server follows it.
 5. **Copy the setup.** On the connection's **Connect** tab, pick your agent and copy the command or config into it. The status changes to **Connected** when the agent's first request arrives.
 
 <picture>
@@ -201,7 +201,7 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 
 | Connection | When |
 | --- | --- |
-| MCP server, listening on `127.0.0.1:47615` | Only while **Settings ▸ MCP Server** is on (off by default). Loopback only: other computers can't connect. |
+| MCP server, listening on `127.0.0.1:47615` | Only while EK Bridge is on and a connection has MCP access (Settings ▸ Advanced ▸ Local MCP server turns it off). Loopback only: other computers can't connect. |
 | Remote Access, listening on `127.0.0.1:47616` | Only while **Settings ▸ Remote Access** is on (off by default). Loopback only; a tunnel you run forwards cloud agents to it. |
 | One HTTPS request to your Remote Access address | Only when you click **Test** in Settings ▸ Remote Access. |
 | One HTTPS request for a cloud agent's client metadata | Only while you pair an OAuth cloud agent (claude.ai, ChatGPT), to the address that agent gives. Private and local addresses are refused. |
@@ -216,7 +216,7 @@ What an agent reads through EK Bridge goes to that agent and its AI provider, un
 ## Security boundary
 
 - **Script keys.** EK Bridge stores each command-line connection's Ed25519 signing credential in a mode-0600 file under your Application Support directory; the registry stores only a public verifier and the grants.
-- **MCP server.** Off by default. When on, it listens only on `127.0.0.1:47615`, never on a network interface. Every request needs the connection's own 256-bit token, kept in a mode-0600 file; the registry stores only its SHA-256 hash, and the recommended agent setups read the file instead of putting the token in the agent's config. Requests with a foreign `Host`, any `Origin` (web pages), or tunnel forwarding headers are refused, and repeated failed sign-ins are locked out. See the [threat review](docs/ARCHITECTURE.md#mcp-threat-review-040).
+- **MCP server.** Runs only while EK Bridge is on and a connection has MCP access. It listens only on `127.0.0.1:47615`, never on a network interface. Every request needs the connection's own 256-bit token, kept in a mode-0600 file; the registry stores only its SHA-256 hash, and the recommended agent setups read the file instead of putting the token in the agent's config. Requests with a foreign `Host`, any `Origin` (web pages), or tunnel forwarding headers are refused, and repeated failed sign-ins are locked out. See the [threat review](docs/ARCHITECTURE.md#mcp-threat-review-040).
 - **Remote Access.** Also off by default. While on, it listens on `127.0.0.1:47616` for a tunnel you run; every path except a 128-bit secret path gets 404, and only connections with **Allow cloud access** can use it, with a separate remote token or an OAuth connection you approved on the Mac. Local tokens don't work through it, and its credentials don't work on the local port. See the [Remote Access threat review](docs/ARCHITECTURE.md#remote-access-threat-review-050).
 - **Request files** are owned by you and have restricted permissions.
 

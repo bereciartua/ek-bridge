@@ -582,14 +582,14 @@ enum RPC {
 
 enum RelayText {
     private static let app = AppIdentity.displayName
-    static let notRunning = "\(app) isn't running, or its MCP server is off. "
-        + "Open \(app) and turn on Settings ▸ MCP Server."
+    static let notRunning = "\(app) isn't running, or it's paused. "
+        + "Open \(app) and turn it on."
     static let timeout = "No response from \(app) after 60 s. If this was a change, it may have happened. "
         + "Read before retrying."
     static let lost = "\(app) closed the connection before replying. If this was a change, it may have "
         + "happened. Read before retrying."
     static let squatter = "Another program is using \(app)'s port. "
-        + "Open \(app) and check Settings ▸ MCP Server."
+        + "Open \(app) and check Settings ▸ Advanced."
     static let badEndpoint = "\(app)'s endpoint file isn't valid, so nothing was sent. "
         + "Quit and reopen \(app)."
     static let rejected = "\(app) doesn't recognize this client's token. "
@@ -817,7 +817,7 @@ final class Relay: @unchecked Sendable {
             return
         }
         Log.line(reason.map { "\(AppIdentity.displayName) isn't reachable: \($0)." }
-                 ?? "\(AppIdentity.displayName) isn't running, or its MCP server is off.")
+                 ?? "\(AppIdentity.displayName) isn't running, or it's paused.")
         finish(message, entry, RPC.error(id: message.id, code: -32000, message: RelayText.notRunning))
     }
 
@@ -985,7 +985,7 @@ enum SetupCheck {
         case .success(let read): endpoint = read
         case .failure(.missing):
             let file = LauncherPaths.display(LauncherPaths.endpointFile)
-            return fail("\(app) isn't running, or its MCP server is off (no \(file))",
+            return fail("\(app) isn't running, or it's paused (no \(file))",
                         LauncherExit.unavailable)
         case .failure(.invalid(let reason)):
             return fail("\(reason); nothing was sent", LauncherExit.unavailable)
@@ -1036,14 +1036,14 @@ enum SetupCheck {
                 let text = ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
                 if result["isError"] as? Bool == true {
                     if text.contains("(code: bridge_off)") {
-                        warn("the bridge is off: tool calls will be refused until it's turned on")
+                        warn("\(app) is paused: tool calls will be refused until it's turned on")
                     } else if text.contains("(code: client_paused)") {
                         warn("this client is paused: tool calls will be refused until it's resumed in \(app)")
                     } else {
                         warn("list_collections failed: \(text)")
                     }
                 } else {
-                    good("the bridge is on")
+                    good("\(app) is on")
                 }
             }
         }
@@ -1068,7 +1068,7 @@ enum SetupCheck {
                                    version: Wire.modernVersion)
         switch Wire.postAndWait(endpoint.url, body: body, headers: headers) {
         case .failure(.refused):
-            return .failure(Failure(text: "\(app) isn't running, or its MCP server is off "
+            return .failure(Failure(text: "\(app) isn't running, or it's paused "
                                         + "(connection refused on port \(endpoint.port))",
                                     exit: LauncherExit.unavailable))
         case .failure(.timedOut):

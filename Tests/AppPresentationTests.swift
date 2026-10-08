@@ -200,7 +200,7 @@ struct AppPresentationTests {
         precondition(SetupChecklist.isComplete(input))
         input.skipped = [.remindersAccess]
         precondition(SetupChecklist.states(input)[.remindersAccess] == .skipped)
-        // An MCP client adds "Turn on the MCP server" before "Connect your tool".
+        // The MCP server follows EK Bridge (D1): no step for it, even for an MCP connection.
         var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [
             ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
         agent.hasSigningKey = false
@@ -208,10 +208,8 @@ struct AppPresentationTests {
         var mcp = input
         mcp.clients = [agent]
         mcp.successfulClientIDs = []
-        precondition(SetupChecklist.steps(mcp).suffix(3) == [.turnOn, .mcpServer, .testRequest])
-        precondition(SetupChecklist.states(mcp)[.mcpServer] == .current)
-        mcp.mcpListening = true
-        precondition(SetupChecklist.states(mcp)[.mcpServer] == .done &&
+        precondition(SetupChecklist.steps(mcp).suffix(2) == [.turnOn, .testRequest])
+        precondition(SetupChecklist.states(mcp)[.mcpServer] == nil &&
                      SetupChecklist.states(mcp)[.testRequest] == .current)
         precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6,
                      "stored skipped steps keep their meaning")
@@ -292,6 +290,16 @@ struct AppPresentationTests {
         // Unlisted collections aren't flagged: they're unavailable, not read only.
         precondition(!AccessSummary.hasUngrantableBits(
             grants: [ClientGrant(resource: .calendar, targetID: "gone", mask: readCreate)], collections: [holidays]))
+        // The local MCP server runs only while EK Bridge is on, allowed, and used.
+        precondition(MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: false, allowed: true, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: true, allowed: false, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: false))
+        // 0.8's switch: never touched or on → allowed; off stays off only without MCP connections.
+        precondition(MCPRunPolicy.migratedAllowed(old: nil, hasMCPConnections: false))
+        precondition(MCPRunPolicy.migratedAllowed(old: true, hasMCPConnections: false))
+        precondition(MCPRunPolicy.migratedAllowed(old: false, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.migratedAllowed(old: false, hasMCPConnections: false))
         precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: true) == .on)
         precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: false) == .paused)
         precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: true) == .attention)

@@ -255,8 +255,12 @@ final class BridgeAppModel {
     private(set) var testCollectionsState: TestCollectionsState = .notCreated
     private(set) var waitingForTestRequest = false
 
-    // MCP server (Settings ▸ MCP Server) and agent connections.
-    private(set) var mcpEnabled = false
+    // The local MCP server (Settings ▸ Advanced) and agent connections. It
+    // runs while EK Bridge is on, the user allows it, and a connection has
+    // an MCP token (`mcpShouldRun`).
+    private(set) var localMCPAllowed = true
+    /// Whether the model has started `services.mcp` (and not stopped it).
+    private(set) var mcpStarted = false
     private(set) var mcpPort = MCPDefaults.port
     private(set) var mcpStatus: MCPService.Status = .off
     private(set) var mcpConnections = [String: MCPServer.Connection]()
@@ -308,7 +312,9 @@ final class BridgeAppModel {
         static let dockMode = "DockIconMode"
         static let showDeveloperTools = "ShowDeveloperTools"
         static let lastRoute = "LastPane"
+        /// 0.8.2's switch; still written, so a rollback finds a sensible value.
         static let mcpEnabled = "MCPServerEnabled"
+        static let localMCPAllowed = "LocalMCPServerAllowed"
         static let mcpPort = "MCPServerPort"
         static let approvalAgent = "ApprovalDefaultAgent"
         static let approvalCLI = "ApprovalDefaultCommandLine"
@@ -334,8 +340,7 @@ final class BridgeAppModel {
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
-        // Off by default, also after upgrading (D1).
-        mcpEnabled = defaults.bool(forKey: Keys.mcpEnabled)
+        localMCPAllowed = defaults.object(forKey: Keys.localMCPAllowed) as? Bool ?? true
         let port = defaults.integer(forKey: Keys.mcpPort)
         mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
         newAgentApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalAgent) ?? "") ?? .ask
@@ -357,6 +362,15 @@ final class BridgeAppModel {
         default: route = .overview
         }
         refresh()
+        // First launch of 0.9: the local server follows EK Bridge unless the
+        // user turned it off and no connection uses MCP.
+        if defaults.object(forKey: Keys.localMCPAllowed) == nil {
+            localMCPAllowed = MCPRunPolicy.migratedAllowed(
+                old: defaults.object(forKey: Keys.mcpEnabled) as? Bool,
+                hasMCPConnections: activeClients.contains(where: \.hasMCPToken))
+            defaults.set(localMCPAllowed, forKey: Keys.localMCPAllowed)
+            defaults.set(localMCPAllowed, forKey: Keys.mcpEnabled)
+        }
         // On the first launch with this setting, history counts as seen, so
         // only problems from now on raise the badge.
         if activityLastViewed == nil, let latest = activity.first?.at {
@@ -374,7 +388,7 @@ final class BridgeAppModel {
 
     func start() {
         started = true
-        if mcpEnabled { services.mcp.start(mcpPort) }
+        syncMCPServer()
         if remoteEnabled {
             if let offAt = remoteOffAt, offAt <= Date() {
                 applyRemoteEnabled(false)
@@ -457,6 +471,7 @@ final class BridgeAppModel {
         reconcileRoute()
         updateTestCollectionsState()
         if route == .activity && windowIsVisible() { markActivityViewed() }
+        syncMCPServer()
         checkSetupCompletion()
     }
 
@@ -1432,9 +1447,32 @@ final class BridgeAppModel {
         return nil
     }
 
-    /// Text for an enabled server that failed; nil otherwise.
+    /// Whether the local MCP server should be listening (D1): EK Bridge is
+    /// on, the user allows it, and a connection uses MCP.
+    var mcpShouldRun: Bool {
+        MCPRunPolicy.shouldRun(bridgeOn: bridge.isOn, allowed: localMCPAllowed,
+                               hasMCPConnections: activeClients.contains(where: \.hasMCPToken))
+    }
+
+    /// Starts or stops the listener when `mcpShouldRun` changes. Called on
+    /// every refresh (connections, tokens and the bridge state change there).
+    private func syncMCPServer() {
+        guard started else { return }
+        let should = mcpShouldRun
+        guard should != mcpStarted else { return }
+        mcpStarted = should
+        if should {
+            mcpStatus = .starting
+            services.mcp.start(mcpPort)
+        } else {
+            services.mcp.stop()
+            mcpStatus = .off
+        }
+    }
+
+    /// Text for a running server that failed; nil otherwise.
     var mcpFailureText: String? {
-        guard mcpEnabled, case .failed(let failure) = mcpStatus else { return nil }
+        guard mcpStarted, case .failed(let failure) = mcpStatus else { return nil }
         switch failure {
         case .portInUse(let port):
             return String(localized: "Port \(String(port)) is in use by another app.")
@@ -1444,18 +1482,21 @@ final class BridgeAppModel {
     }
 
     var mcpPortInUse: Bool {
-        if case .failed(.portInUse) = mcpStatus { return mcpEnabled }
+        if case .failed(.portInUse) = mcpStatus { return mcpStarted }
         return false
     }
 
-    /// The short line for Overview and the menu bar.
-    var mcpStatusLine: String {
-        if !mcpEnabled { return String(localized: "MCP server · Off") }
+    /// The short line for Overview and the menu bar; nil while EK Bridge is
+    /// paused (the header says so) or when no connection uses MCP.
+    var mcpStatusLine: String? {
+        guard bridge.isOn else { return nil }
+        if !localMCPAllowed { return String(localized: "Local MCP server is off (Settings ▸ Advanced)") }
+        guard mcpStarted else { return nil }
         switch mcpStatus {
-        case .listening(let port): return String(localized: "MCP server · Listening on port \(String(port))")
-        case .failed(.portInUse(let port)): return String(localized: "MCP server · Port \(String(port)) is in use")
-        case .failed: return String(localized: "MCP server · Couldn't start")
-        case .starting, .off: return String(localized: "MCP server · Starting…")
+        case .listening(let port): return String(localized: "MCP on port \(String(port))")
+        case .failed(.portInUse(let port)): return String(localized: "MCP couldn't start · port \(String(port)) is in use")
+        case .failed: return String(localized: "MCP couldn't start")
+        case .starting, .off: return String(localized: "MCP starting…")
         }
     }
 
@@ -1474,17 +1515,18 @@ final class BridgeAppModel {
         }
     }
 
-    /// `confirm: false` skips the "agents used it recently" question (UI review).
-    func setMCPServerEnabled(_ on: Bool, confirm: Bool = true) {
-        guard on != mcpEnabled else { return }
+    /// Settings ▸ Advanced ▸ Local MCP server. `confirm: false` skips the
+    /// "agents used it recently" question (UI review, live-test automation).
+    func setLocalMCPAllowed(_ on: Bool, confirm: Bool = true) {
+        guard on != localMCPAllowed else { return }
         if on || !confirm {
-            applyMCPEnabled(on)
+            applyLocalMCPAllowed(on)
             return
         }
         let recent = Set(mcpConnections.filter { now.timeIntervalSince($0.value.at) < 600 }.map(\.key))
-        guard !recent.isEmpty else { applyMCPEnabled(false); return }
+        guard !recent.isEmpty else { applyLocalMCPAllowed(false); return }
         let alert = NSAlert()
-        alert.messageText = String(localized: "Turn off the MCP server?")
+        alert.messageText = String(localized: "Turn off the local MCP server?")
         alert.informativeText = recent.count == 1
             ? String(localized: "1 agent used it in the last 10 minutes; it'll lose access until you turn it back on.")
             : String(localized: "\(recent.count) agents used it in the last 10 minutes; they'll lose access until you turn it back on.")
@@ -1492,24 +1534,20 @@ final class BridgeAppModel {
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            self?.applyMCPEnabled(false)
+            self?.applyLocalMCPAllowed(false)
         }
     }
 
-    private func applyMCPEnabled(_ on: Bool) {
-        mcpEnabled = on
+    private func applyLocalMCPAllowed(_ on: Bool) {
+        localMCPAllowed = on
+        services.defaults.set(on, forKey: Keys.localMCPAllowed)
         services.defaults.set(on, forKey: Keys.mcpEnabled)
-        if on {
-            services.mcp.start(mcpPort)
-        } else {
-            services.mcp.stop()
-            mcpStatus = .off
-        }
-        announce(on ? String(localized: "MCP server on") : String(localized: "MCP server off"))
+        syncMCPServer()
+        announce(on ? String(localized: "Local MCP server on") : String(localized: "Local MCP server off"))
     }
 
     func retryMCPServer() {
-        guard mcpEnabled else { return }
+        guard mcpStarted else { return }
         services.mcp.start(mcpPort)
     }
 
@@ -1534,7 +1572,7 @@ final class BridgeAppModel {
         guard port != mcpPort || !mcpIsListening else { return nil }
         mcpPort = port
         services.defaults.set(port, forKey: Keys.mcpPort)
-        if mcpEnabled { services.mcp.start(port) }
+        if mcpStarted { services.mcp.start(port) }
         showBanner(Banner(kind: .success, title: String(localized: "The MCP server now uses port \(String(port))."),
                           message: String(localized: "Agents set up with a direct URL need the new address. Launcher setups keep working.")))
         return nil

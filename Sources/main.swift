@@ -109,7 +109,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.mcpEnabled, !self.model.mcpIsListening else { return }
+                guard let self, self.model.mcpShouldRun, !self.model.mcpIsListening else { return }
                 self.model.retryMCPServer()
             }
         }

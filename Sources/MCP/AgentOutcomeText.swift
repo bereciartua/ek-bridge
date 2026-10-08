@@ -83,8 +83,8 @@ enum AgentOutcomeText {
             return ("Access removed", "this agent's access was removed in \(app). "
                 + "Tell the user; don't retry.")
         case "bridge_off":
-            return ("Bridge off", "\(app) is turned off. Ask the user to turn it on from the "
-                + "menu bar; don't retry until they do.")
+            return ("Paused", "\(app) is paused. Ask the user to turn it on from the menu bar; "
+                + "don't retry until they do.")
         case "client_paused":
             return ("Paused", "the user paused this agent's access in \(app). Its access isn't "
                 + "removed; ask the user to resume this connection if they want you to continue, and "

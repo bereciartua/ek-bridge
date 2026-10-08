@@ -338,7 +338,7 @@ struct MCPToolMappingTests {
               == "Error: EK Bridge returned mystery_code. Tell the user. (code: mystery_code)", "fallback")
         check(AgentOutcomeText.text(code: "bridge_off", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
-              == "Bridge off: EK Bridge is turned off. Ask the user to turn it on from the menu bar; "
+              == "Paused: EK Bridge is paused. Ask the user to turn it on from the menu bar; "
               + "don't retry until they do. (code: bridge_off)", "bridge_off")
         check(AgentOutcomeText.text(code: "client_paused", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)

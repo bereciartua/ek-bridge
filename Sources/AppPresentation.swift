@@ -450,11 +450,10 @@ enum SetupChecklist {
         }
     }
 
-    /// The MCP step is shown only when the client the checklist is about can
-    /// connect over MCP.
+    /// The MCP server follows EK Bridge (D1), so its step is never shown;
+    /// the case stays so stored skipped steps still decode.
     static func steps(_ input: Input) -> [Step] {
-        let mcp = focusClient(input)?.hasMCPToken ?? false
-        return Step.allCases.filter { $0 != .mcpServer || mcp }
+        Step.allCases.filter { $0 != .mcpServer }
     }
 
     static func states(_ input: Input) -> [Step: State] {
@@ -533,6 +532,21 @@ enum ConnectCommand {
             return "\"\(text)\""
         }
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// When the local MCP server runs (D1): only while EK Bridge is on, the
+/// user allows it (Settings ▸ Advanced) and some connection has an MCP token.
+enum MCPRunPolicy {
+    static func shouldRun(bridgeOn: Bool, allowed: Bool, hasMCPConnections: Bool) -> Bool {
+        bridgeOn && allowed && hasMCPConnections
+    }
+
+    /// The first launch of 0.9 turns 0.8's separate MCP switch into the
+    /// Advanced switch: on unless the user turned the server off and no
+    /// connection uses MCP. `old` is nil when the switch was never touched.
+    static func migratedAllowed(old: Bool?, hasMCPConnections: Bool) -> Bool {
+        old == nil || old == true || hasMCPConnections
     }
 }
 

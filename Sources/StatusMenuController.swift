@@ -105,18 +105,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let headerItem = NSMenuItem()
         headerItem.view = headerView
         menu.addItem(headerItem)
-        let mcpLine = model.mcpEnabled
-            ? (model.mcpListeningPort.map { String(localized: "MCP server · port \(String($0))") }
-                ?? (model.mcpFailureText != nil ? String(localized: "MCP server · couldn't start")
-                                                : String(localized: "MCP server · starting")))
-            : String(localized: "MCP server · off")
-        let mcpItem = item(mcpLine) { [weak self] in
-            self?.model.settingsScrollTarget = "mcp"
-            self?.model.show(.settings)
+        // Nothing while paused (the header says so) or when no connection uses MCP.
+        if let mcpLine = model.mcpStatusLine {
+            let mcpItem = item(mcpLine) { [weak self] in
+                self?.model.settingsScrollTarget = "mcp"
+                self?.model.show(.settings)
+            }
+            mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: model.mcpFailureText == nil
+                                                       ? .secondaryLabelColor : .systemOrange), mcpLine)
+            mcpItem.toolTip = String(localized: "Open Settings ▸ Advanced")
+            menu.addItem(mcpItem)
         }
-        mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: .secondaryLabelColor), mcpLine)
-        mcpItem.toolTip = String(localized: "Open Settings ▸ MCP Server")
-        menu.addItem(mcpItem)
         if model.remoteEnabled {
             let line = model.remoteMenuLine
             let remoteItem = item(line) { [weak self] in
@@ -360,6 +359,8 @@ final class StatusHeaderView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     func update() {
+        title.stringValue = model.bridge.isOn ? String(localized: "\(AppIdentity.displayName) is on")
+                                              : String(localized: "\(AppIdentity.displayName) is paused")
         subtitle.stringValue = model.statusSubtitle
         toggle.state = model.bridge.isOn ? .on : .off
         toggle.isEnabled = model.policyStoreAvailable || model.bridge.isOn

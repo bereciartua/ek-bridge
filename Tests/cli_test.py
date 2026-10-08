@@ -20,7 +20,7 @@ import time
 import uuid
 
 PRODUCT = "EK Bridge"
-NOT_RUNNING = (f"error: {PRODUCT} isn't running, or the bridge is off. "
+NOT_RUNNING = (f"error: {PRODUCT} isn't running, or it's paused. "
                "Turn it on from the menu bar.")
 SESSION_CHANGED = "error: the bridge session changed. Run the command again."
 PARAMS_INVALID = "error: params must be a JSON object under 30 KB."

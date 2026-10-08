@@ -61,6 +61,9 @@ final class UIReview {
     let many: Bool
     /// "listening", "off" or "port-in-use".
     var mcpMode: String
+    /// Calls to the fake MCP server, for the behavior test.
+    var mcpStarts = 0
+    var mcpStops = 0
     weak var model: BridgeAppModel?
     private(set) lazy var approvals = ApprovalCenter(summarize: { request in
         ApprovalSummaries.build(request, lookup: Self.fixtureLookup(request),
@@ -84,7 +87,8 @@ final class UIReview {
         bridgeOn = fresh == true ? false : !CommandLine.arguments.contains("--ui-bridge-off")
         many = CommandLine.arguments.contains("--ui-many-collections")
         mcpMode = Self.value(CommandLine.arguments, "--ui-mcp") ?? "listening"
-        if mcpMode != "off" && fresh != true { defaults.set(true, forKey: "MCPServerEnabled") }
+        // The local server follows EK Bridge; "--ui-mcp off" is the Advanced switch turned off.
+        if mcpMode == "off" { defaults.set(false, forKey: "LocalMCPServerAllowed") }
         if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if renamed ?? CommandLine.arguments.contains("--ui-renamed") {
             defaults.set(true, forKey: RenameMigration.noticeKey)
@@ -164,10 +168,14 @@ final class UIReview {
             testCollections: nil,
             mcp: MCPControls(
                 start: { [unowned self] _ in
+                    self.mcpStarts += 1
                     if self.mcpMode == "off" { self.mcpMode = "listening" }
                     DispatchQueue.main.async { self.reportMCP() }
                 },
-                stop: { [unowned self] in self.mcpMode = "off" },
+                stop: { [unowned self] in
+                    self.mcpStops += 1
+                    self.mcpMode = "off"
+                },
                 counters: { MCPTrafficCounters.Snapshot(requests: 41, byStatus: [401: 2, 421: 1],
                                                          authFailures: 2) },
                 launcherURL: URL(fileURLWithPath: "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp"),
@@ -489,7 +497,6 @@ final class UIReview {
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         model.mcpDidConnect(Self.claudeID, MCPServer.Connection(at: Date().addingTimeInterval(-120),
                                                                agent: "claude-code 2.4.1"))
-        reportMCP()
         model.bridgeDidChange(bridgeOn ? .on : .off)
         if let version = Self.value(arguments, "--ui-update-found") {
             model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
@@ -998,14 +1005,34 @@ final class BehaviorReview {
                 self.model.portIssue("70000") != nil && self.model.portIssue("47616") != nil &&
                 self.model.portIssue("47620") == nil
         }
-        step("turning the MCP server off with recent agents asks first") {
+        step("pausing EK Bridge stops MCP") {
+            let stops = self.review.mcpStops
+            self.model.setBridgeEnabled(false)
+            return !self.model.bridge.isOn && self.review.mcpStops == stops + 1 && !self.model.mcpStarted &&
+                self.model.mcpStatus == .off && self.model.mcpStatusLine == nil
+        }
+        step("turning on with an MCP connection starts MCP") {
+            let starts = self.review.mcpStarts
+            self.model.setBridgeEnabled(true)
+            return self.model.bridge.isOn && self.review.mcpStarts == starts + 1 && self.model.mcpStarted
+        }
+        step("MCP is listening again") { self.model.mcpIsListening }
+        step("turning the local MCP server off with recent agents asks first") {
             self.model.mcpDidConnect(claude, MCPServer.Connection(at: Date(), agent: "claude-code 2.4.1"))
             self.model.refresh()
-            self.model.setMCPServerEnabled(false)
+            self.model.setLocalMCPAllowed(false)
             return self.window.attachedSheet != nil
         }
         step("cancel keeps it on") {
-            self.answer(.alertSecondButtonReturn) && self.model.mcpEnabled && self.model.mcpIsListening
+            self.answer(.alertSecondButtonReturn) && self.model.localMCPAllowed && self.model.mcpIsListening
+        }
+        step("Advanced switch off keeps MCP off") {
+            self.model.setLocalMCPAllowed(false, confirm: false)
+            self.model.setBridgeEnabled(false)
+            self.model.setBridgeEnabled(true)
+            let off = !self.model.mcpStarted && self.model.mcpStatus == .off
+            self.model.setLocalMCPAllowed(true)
+            return off && self.model.mcpStarted
         }
         step("turning on Remote Access asks first") {
             self.model.setRemoteAccessEnabled(true)
@@ -1394,13 +1421,13 @@ final class SnapshotReview {
                 return main
             }
             step("client-connect-server-off") {
+                // EK Bridge paused: the Connect tab offers to turn it on.
                 self.model.navigate(to: .client(UIReview.cursorID))
-                self.review.mcpMode = "off"
-                self.model.setMCPServerEnabled(false, confirm: false)
+                self.model.setBridgeEnabled(false)
                 return main
             }
             step("settings-mcp-listening") {
-                self.model.setMCPServerEnabled(true)
+                self.model.setBridgeEnabled(true)
                 self.model.navigate(to: .settings)
                 return main
             }

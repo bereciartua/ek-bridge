@@ -14,11 +14,17 @@ struct ConnectAgentTab: View {
                 button: String(localized: "Turn On MCP Access"), prominent: true) {
                 model.turnOnMCPAccess(client.id)
             }
-        } else if !model.mcpEnabled {
+        } else if !model.bridge.isOn {
             EmptyConnectCard(
-                text: String(localized: "The MCP server is off, so agents can't connect."),
-                button: String(localized: "Turn On"), prominent: true) {
-                model.setMCPServerEnabled(true)
+                text: String(localized: "\(AppIdentity.displayName) is paused, so agents can't connect."),
+                button: String(localized: "Turn On \(AppIdentity.displayName)"), prominent: true) {
+                model.setBridgeEnabled(true)
+            }
+        } else if !model.localMCPAllowed {
+            EmptyConnectCard(
+                text: String(localized: "The local MCP server is turned off in Settings ▸ Advanced."),
+                button: String(localized: "Turn It On"), prominent: true) {
+                model.setLocalMCPAllowed(true)
             }
         } else if let failure = model.mcpFailureText {
             EmptyConnectCard(text: String(localized: "The MCP server couldn't start. \(failure)"),
@@ -106,7 +112,7 @@ struct AgentSetupCard: View {
                 ConnectRow(label: String(localized: "Server")) {
                     MonoText(text: model.mcpURL)
                 } actions: {
-                    Pill(label: String(localized: "Listening"), tone: .ok, icon: true)
+                    MCPServerPill(model: model)
                     CopyButton(text: model.mcpURL, help: String(localized: "Copy URL"))
                 }
             }
@@ -208,6 +214,19 @@ struct AgentSetupCard: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
             }
+        }
+    }
+}
+
+/// The local server's real state: Listening, Starting… or Couldn't start.
+struct MCPServerPill: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        switch model.mcpStatus {
+        case .listening: Pill(label: String(localized: "Listening"), tone: .ok, icon: true)
+        case .failed: Pill(label: String(localized: "Couldn't start"), tone: .bad, icon: true)
+        case .starting, .off: Pill(label: String(localized: "Starting…"), tone: .neutral)
         }
     }
 }

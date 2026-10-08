@@ -9,6 +9,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Changed
 
 - The app calls clients **connections** (sidebar, menus, Activity, Settings), and the master switch reads **EK Bridge is on** / **EK Bridge is paused**. The CLI, the API, file names and `--client` keep "client".
+- One switch: the local MCP server runs whenever EK Bridge is on and a connection uses MCP, and stops when you pause it. There's no MCP step in setup; **Settings ▸ Advanced ▸ Local MCP server** turns it off for a Mac where no agent should connect. Upgrading keeps it running if it was on or a connection uses MCP. Overview and the menu bar say **MCP on port 47615**, and agents, `bridge-client` and `bridge-mcp check` say EK Bridge is paused instead of off.
 
 ## [0.8.3] - 2026-10-08
 

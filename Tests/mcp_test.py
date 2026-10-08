@@ -739,7 +739,7 @@ def run_writes(h):
     h.control(cmd="bridge", on=False)
     _, body = c.call("list_collections", {})
     check("bridge_off text", text_of(body["result"]).endswith("(code: bridge_off)") and
-          "turned off" in text_of(body["result"]), body)
+          "paused" in text_of(body["result"]), body)
     _, _, body, _ = c.legacy("tools/list")
     check("list while off", "result" in body and body["result"]["tools"], body)
     check("bridge_off recorded", h.activity()[0]["outcome"] == "error:bridge_off")

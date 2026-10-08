@@ -335,10 +335,10 @@ struct MCPServerSettings: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: String(localized: "MCP Server"))
             Card {
-                SettingsRow(title: String(localized: "MCP server"),
-                            caption: String(localized: "Lets AI agents on this Mac connect. Each agent still needs a connection with access.")) {
-                    Toggle(String(localized: "MCP server"),
-                           isOn: Binding(get: { model.mcpEnabled }, set: { model.setMCPServerEnabled($0) }))
+                SettingsRow(title: String(localized: "Local MCP server"),
+                            caption: String(localized: "On while \(AppIdentity.displayName) is on. Turn it off only if no agent on this Mac should connect.")) {
+                    Toggle(String(localized: "Local MCP server"),
+                           isOn: Binding(get: { model.localMCPAllowed }, set: { model.setLocalMCPAllowed($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
@@ -417,8 +417,15 @@ struct MCPServerSettings: View {
     private var statusRow: some View {
         ValueRow(label: String(localized: "Status")) {
             HStack(spacing: 10) {
-                if !model.mcpEnabled {
+                if !model.localMCPAllowed {
                     Pill(label: String(localized: "Off"), tone: .neutral)
+                } else if !model.mcpStarted {
+                    Pill(label: String(localized: "Not running"), tone: .neutral)
+                    Text(model.bridge.isOn
+                         ? String(localized: "Starts when a connection has MCP access.")
+                         : String(localized: "\(AppIdentity.displayName) is paused."))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     switch model.mcpStatus {
                     case .listening:
@@ -436,7 +443,7 @@ struct MCPServerSettings: View {
         } actions: {
             if model.mcpIsListening {
                 CopyButton(text: model.mcpURL, help: String(localized: "Copy URL"))
-            } else if model.mcpEnabled, !model.mcpPortInUse, case .failed = model.mcpStatus {
+            } else if model.mcpStarted, !model.mcpPortInUse, case .failed = model.mcpStatus {
                 Button(String(localized: "Try Again")) { model.retryMCPServer() }
             }
         }

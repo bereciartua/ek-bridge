@@ -222,8 +222,8 @@ final class LiveTestAutomation {
             "bridge": model.bridge.isOn ? "on" : "paused",
             "calendarAccess": accessText(model.calendarAccess),
             "remindersAccess": accessText(model.remindersAccess),
-            "mcp": ["enabled": model.mcpEnabled, "listening": model.mcpIsListening,
-                    "port": model.mcpListeningPort ?? model.mcpPort, "status": model.mcpStatusLine],
+            "mcp": ["allowed": model.localMCPAllowed, "running": model.mcpStarted, "listening": model.mcpIsListening,
+                    "port": model.mcpListeningPort ?? model.mcpPort, "status": model.mcpStatusLine ?? NSNull()],
             "connections": connections,
             "pending": pending,
             "activity": activity,
@@ -497,8 +497,8 @@ final class LiveTestAutomation {
 
     private func setMCP(_ command: [String: Any]) throws -> Bool {
         guard let on = command["on"] as? Bool else { throw CommandError(message: "needs on") }
-        model.setMCPServerEnabled(on, confirm: false)
-        return model.mcpEnabled
+        model.setLocalMCPAllowed(on, confirm: false)
+        return model.localMCPAllowed
     }
 
     /// Asks macOS for Full Access, as the setup checklist's buttons do. The

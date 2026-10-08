@@ -11,13 +11,13 @@ It's listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `
 
 ## User guide
 
-### Turn on the MCP server
+### The MCP server runs by itself
 
-Open **Settings ▸ MCP Server** and turn on **MCP server**. The status changes to **Listening** with the server's URL. You can also turn it on from the setup checklist (**Turn on the MCP server**) or from the **Turn On** button on a connection's Connect ▸ AI agent tab.
+There's nothing to turn on. The local MCP server starts when EK Bridge is on and at least one connection has MCP access (every AI agent connection does), and stops when you pause EK Bridge. Overview and the menu bar show **MCP on port 47615** while it listens. It listens on `127.0.0.1` only and refuses any request without a connection's token, so running it adds no exposure.
 
-The card also shows the **Port** (47615 by default; **Change…** accepts 1024–65535 and checks that the port is free before saving), the **Launcher** path agents run, and how many agent requests arrived **Today**. If another app already uses the port, the status says so, the menu bar icon shows the attention badge, and **Choose Another Port…** opens the port sheet. The app never picks a port on its own, because agent configs contain the URL. Launcher setups keep working after a port change; direct HTTP setups need the new URL.
+**Settings ▸ Advanced ▸ Local MCP server** (on by default) turns it off for good, for a Mac where no agent should connect; turning it off when an agent used it in the last 10 minutes asks first. Upgrading from 0.8 keeps the server running if it was on or any connection uses MCP. The card also shows the **Port** (47615 by default; **Change…** accepts 1024–65535 and checks that the port is free before saving), the **Launcher** path agents run, and how many agent requests arrived **Today**. If another app already uses the port, the status says so, the menu bar icon shows the attention badge, and **Choose Another Port…** opens the port sheet. The app never picks a port on its own, because agent configs contain the URL. Launcher setups keep working after a port change; direct HTTP setups need the new URL.
 
-The **EK Bridge** switch and the **MCP server** switch are separate. With EK Bridge paused, the server keeps listening so agents stay connected, but every tool call is refused with `bridge_off` and recorded in Activity as **EK Bridge was paused**. Turning the MCP server off closes the port; if an agent used it in the last 10 minutes, the app asks first.
+Pausing EK Bridge closes the local port, so agents see "EK Bridge isn't running, or it's paused" until you turn it on again. A request that was already running, or one from a cloud agent through Remote Access, is refused with `bridge_off` and recorded in Activity as **EK Bridge was paused**.
 
 ### Add a connection for the agent
 
@@ -399,9 +399,9 @@ The check calls `list_collections` to see whether EK Bridge is on, so it adds an
 
 | Symptom or message | What to do |
 | --- | --- |
-| "EK Bridge isn't running, or its MCP server is off." | Open the app and turn on Settings ▸ MCP Server. The launcher waits up to 5 seconds for the first connection, so an agent started at login with the app usually connects. |
+| "EK Bridge isn't running, or it's paused." | Open the app and turn EK Bridge on (and check that Settings ▸ Advanced ▸ Local MCP server is on). The launcher waits up to 5 seconds for the first connection, so an agent started at login with the app usually connects. |
 | "doesn't recognize this agent's token" / "this client's token" (HTTP 401) | The token was reset or MCP access was removed. Launcher and `headersHelper` setups re-read the file; for a pasted token, **Copy Token…** again. If the connection's page says the token file is missing, **Reset…** it. |
-| "Another program is using EK Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ MCP Server and choose another port if needed. |
+| "Another program is using EK Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ Advanced and choose another port if needed. |
 | Settings says the port is in use | Quit the other app or **Choose Another Port…**. Launcher setups pick up the new port automatically; direct HTTP setups need the new URL. |
 | EK Bridge paused (`bridge_off`) | Turn on EK Bridge from the menu bar. The agent doesn't need to reconnect. |
 | Paused (`client_paused`) | The connection is paused. **Resume** it on its page. The agent doesn't need to reconnect. |

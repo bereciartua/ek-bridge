@@ -109,15 +109,17 @@ struct BridgeStatusCard: View {
     var body: some View {
         Card {
             HStack(alignment: .center, spacing: 16) {
-                tile
+                AppIconTile(dimmed: !model.bridge.isOn)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.title2.weight(.semibold))
                     Text(subtitle)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Label(model.mcpStatusLine, systemImage: "server.rack")
-                        .foregroundStyle(model.mcpFailureText == nil ? Color.secondary : Color.orange)
-                        .font(.callout)
+                    if let line = model.mcpStatusLine {
+                        Label(line, systemImage: "server.rack")
+                            .foregroundStyle(model.mcpFailureText == nil ? Color.secondary : Color.orange)
+                            .font(.callout)
+                    }
                     if let remote = model.remoteStatusLine {
                         Label(remote, systemImage: "globe")
                             .foregroundStyle(model.remoteFailureText == nil ? Color.secondary : Color.orange)
@@ -144,26 +146,9 @@ struct BridgeStatusCard: View {
         }
     }
 
-    private var tile: some View {
-        let (symbol, color): (String, Color) = switch model.bridge {
-        case .on: ("calendar.badge.checkmark", .green)
-        case .off: ("calendar", .gray)
-        case .failed: ("calendar.badge.exclamationmark", .orange)
-        }
-        return Image(systemName: symbol)
-            .font(.system(size: 24, weight: .medium))
-            .foregroundStyle(.white)
-            .frame(width: 48, height: 48)
-            .background(color.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .accessibilityHidden(true)
-    }
-
     private var title: String {
-        switch model.bridge {
-        case .on: String(localized: "\(AppIdentity.displayName) is on")
-        case .off: String(localized: "\(AppIdentity.displayName) is paused")
-        case .failed: String(localized: "\(AppIdentity.displayName) is paused")
-        }
+        model.bridge.isOn ? String(localized: "\(AppIdentity.displayName) is on")
+                          : String(localized: "\(AppIdentity.displayName) is paused")
     }
 
     private var subtitle: String {
@@ -171,18 +156,31 @@ struct BridgeStatusCard: View {
         case .on:
             let count = model.activeClients.count - model.pausedCount
             let text = count == 1
-                ? String(localized: "1 connection can use the access you've granted. Requests stay on this Mac.")
-                : String(localized: "\(count) connections can use the access you've granted. Requests stay on this Mac.")
-            switch model.pausedCount {
-            case 0: return text
-            case 1: return text + " " + String(localized: "1 is paused.")
-            default: return text + " " + String(localized: "\(model.pausedCount) are paused.")
-            }
+                ? String(localized: "1 connection can use what you've allowed.")
+                : String(localized: "\(count) connections can use what you've allowed.")
+            return model.pausedCount == 0 ? text
+                : text + " " + String(localized: "\(model.pausedCount) paused.")
         case .off:
             return String(localized: "Agents and scripts are refused until you turn it on. Their access is kept.")
         case .failed(let reason):
             return String(localized: "\(AppIdentity.displayName) couldn't start. \(reason)")
         }
+    }
+}
+
+/// The app icon as a status tile, dimmed while EK Bridge is paused.
+struct AppIconTile: View {
+    var dimmed = false
+    var size: CGFloat = 48
+
+    var body: some View {
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .saturation(dimmed ? 0 : 1)
+            .opacity(dimmed ? 0.55 : 1)
+            .accessibilityHidden(true)
     }
 }
 
@@ -582,7 +580,7 @@ struct SetupStepRow: View {
             .accessibilityLabel(String(localized: "Turn on \(AppIdentity.displayName)"))
         case .mcpServer:
             if state != .done {
-                Button(String(localized: "Turn On")) { model.setMCPServerEnabled(true) }
+                Button(String(localized: "Turn On")) { model.setLocalMCPAllowed(true) }
                     .modifier(Prominent(on: prominent))
             }
         case .testRequest:
