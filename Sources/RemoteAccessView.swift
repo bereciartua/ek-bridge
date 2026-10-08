@@ -213,31 +213,25 @@ struct CloudSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: String(localized: "Cloud"))
-            if !model.remoteEnabled {
-                EmptyConnectCard(text: String(localized: "Remote Access is off, so cloud agents can't reach this Mac."),
-                                 button: String(localized: "Open Settings")) {
-                    model.settingsScrollTarget = "remote"
-                    model.navigate(to: .settings)
+            // Shown only while Remote Access is on; the client page has a
+            // one-line note when it's off (ClientDetailView).
+            Card {
+                SettingsRow(title: String(localized: "Allow cloud access"),
+                            caption: client.cloudAccess ? model.cloudSummary(client)
+                                : String(localized: "Off: cloud agents can't use this client.")) {
+                    Toggle(String(localized: "Allow cloud access"), isOn: Binding(
+                        get: { client.cloudAccess }, set: { model.setCloudAccess(client.id, $0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                 }
-            } else {
-                Card {
-                    SettingsRow(title: String(localized: "Allow cloud access"),
-                                caption: client.cloudAccess ? model.cloudSummary(client)
-                                    : String(localized: "Off: cloud agents can't use this client.")) {
-                        Toggle(String(localized: "Allow cloud access"), isOn: Binding(
-                            get: { client.cloudAccess }, set: { model.setCloudAccess(client.id, $0) }))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-                    if client.cloudAccess { details }
-                }
-                if client.cloudAccess {
-                    Label(String(localized: "Use a separate client for each cloud agent, with only the access it needs. Turning off Remote Access cuts off every cloud agent at once."),
-                          systemImage: "info.circle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                if client.cloudAccess { details }
+            }
+            if client.cloudAccess {
+                Label(String(localized: "Use a separate client for each cloud agent, with only the access it needs. Turning off Remote Access cuts off every cloud agent at once."),
+                      systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

@@ -19,8 +19,11 @@ struct ClientDetailView: View {
                             PausedNotice(model: model, client: client)
                         }
                         ConnectSection(model: model, client: client)
-                        if model.remoteEnabled || client.cloudAccess {
+                        if model.remoteEnabled {
                             CloudSection(model: model, client: client)
+                                .id("cloud")
+                        } else if client.cloudAccess {
+                            CloudOffNote(model: model)
                                 .id("cloud")
                         }
                         AccessSection(model: model, client: client)
@@ -53,6 +56,31 @@ struct ClientDetailView: View {
             }
             model.clientScrollTarget = nil
         }
+    }
+}
+
+/// A client keeps cloud access while Remote Access is off: one line, not a
+/// whole Cloud section.
+struct CloudOffNote: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(String(localized: "Cloud access is on for this connection, but Remote Access is off, so cloud agents can't reach this Mac."))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(String(localized: "Remote Access…")) {
+                model.settingsScrollTarget = "remote"
+                model.navigate(to: .settings)
+            }
+            .buttonStyle(.link)
+            .fixedSize()
+        }
+        .font(.callout)
+        .padding(.top, -14)
     }
 }
 

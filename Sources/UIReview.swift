@@ -780,6 +780,7 @@ final class BehaviorReview {
         step("⌘F opens Activity") {
             self.key("f") && self.model.route == .activity
         }
+        step("wait for Activity to appear") { true }
         step("⌘F focuses the search field") {
             let editor = self.window.firstResponder as? NSTextView
             return editor?.isFieldEditor == true && editor?.delegate is NSSearchField
