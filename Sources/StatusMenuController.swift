@@ -66,6 +66,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // The pending count, and a globe while Remote Access is on, sit beside
         // the icon.
         let title = NSMutableAttributedString()
+        if AppIdentity.isLiveTest {
+            // The live-test copy can never be mistaken for the real one.
+            title.append(NSAttributedString(string: "TEST ", attributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .heavy)]))
+        }
         if model.remoteEnabled, let globe = NSImage(systemSymbolName: "globe",
                                                    accessibilityDescription: String(localized: "Remote Access on")) {
             let attachment = NSTextAttachment()

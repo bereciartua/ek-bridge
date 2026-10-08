@@ -41,7 +41,9 @@ struct SettingsView: View {
             SectionTitle(title: String(localized: "General"))
             Card {
                 SettingsRow(title: String(localized: "Start at login"),
-                            caption: String(localized: "The bridge also remembers whether it was on.")) {
+                            caption: AppIdentity.isLiveTest
+                                ? String(localized: "Not available in the test copy.")
+                                : String(localized: "The bridge also remembers whether it was on.")) {
                     Toggle(String(localized: "Start at login"),
                            isOn: Binding(get: { model.loginItem == .enabled },
                                          set: { model.setStartAtLogin($0) }))
@@ -49,7 +51,7 @@ struct SettingsView: View {
                         .labelsHidden()
                         .disabled(!model.canChangeStartAtLogin)
                 }
-                if !model.isInstalledInApplications {
+                if !model.isInstalledInApplications && !AppIdentity.isLiveTest {
                     RowDivider()
                     SettingsNotice(
                         text: String(localized: "Move \(AppIdentity.displayName) to your Applications folder to start it at login."),

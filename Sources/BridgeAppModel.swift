@@ -1272,7 +1272,7 @@ final class BridgeAppModel {
     /// been registered (every first install, and the first launch under a new
     /// bundle ID) reports `.notFound`, not `.notRegistered`, and `register()`
     /// works from there; a real failure shows as the row's error.
-    var canChangeStartAtLogin: Bool { isInstalledInApplications }
+    var canChangeStartAtLogin: Bool { isInstalledInApplications && !AppIdentity.isLiveTest }
 
     func setStartAtLogin(_ on: Bool) {
         loginItemError = nil
@@ -2224,15 +2224,4 @@ enum Pasteboard {
             if secretChange == count { clearSecret() }
         }
     }
-}
-
-enum MCPDefaults {
-    static let port = 47615
-    static let validPorts = 1024...65535
-}
-
-enum RemoteDefaults {
-    static let port = 47616
-    /// Turn off automatically: never, 1 hour, 8 hours, 1 day.
-    static let autoOffChoices: [TimeInterval] = [0, 3_600, 28_800, 86_400]
 }

@@ -20,6 +20,18 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/RenameMigrationTests.swift" \
     -o "$project_dir/build/rename-migration-tests"
 "$project_dir/build/rename-migration-tests"
+for flavor in production live-test; do
+    flag=""
+    [ "$flavor" = live-test ] && flag="-D EVENTKIT_LIVE_TEST"
+    xcrun swiftc -parse-as-library \
+        $flag \
+        -sdk "$sdk_dir" \
+        -module-cache-path "$cache_dir" \
+        "$project_dir/Sources/AppIdentity.swift" \
+        "$project_dir/Tests/LiveTestIsolationTests.swift" \
+        -o "$project_dir/build/live-test-isolation-$flavor"
+    "$project_dir/build/live-test-isolation-$flavor" "$project_dir/build/live-test-isolation-production.txt"
+done
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \

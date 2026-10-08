@@ -80,12 +80,18 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
     private var statusMenu: StatusMenuController!
+    #if EVENTKIT_LIVE_TEST
+    private var automation: LiveTestAutomation?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if EVENTKIT_UI_REVIEW
         model = BridgeAppModel(services: review.services())
         #else
+        #if !EVENTKIT_LIVE_TEST
+        // The live-test copy has no feed and never updates itself.
         updater.start()
+        #endif
         model = BridgeAppModel(services: liveServices())
         updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
         #endif
@@ -112,6 +118,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         review.run(model: model, window: windowController, statusMenu: statusMenu)
         #endif
         model.start()
+        #if EVENTKIT_LIVE_TEST
+        automation = LiveTestAutomation(context: .init(
+            model: model, approvals: approvals, store: store,
+            presentWindow: { [weak self] in self?.windowController.present() },
+            mainWindow: { [weak self] in self?.windowController.window },
+            panelWindow: { [weak self] in self?.approvalPanel.window }), dataFolder: Self.dataFolder)
+        automation?.start()
+        #endif
         #if !EVENTKIT_UI_REVIEW
         // A first run opens the window so the setup checklist is the first thing
         // seen; so does the first run after the rename.
@@ -186,8 +200,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             },
             collections: { [weak self] in self?.liveCollections() ?? [] },
             setBridge: { [weak self] on in self?.setBridge(on) ?? .off },
-            loginItemStatus: { SMAppService.mainApp.status },
+            loginItemStatus: { AppIdentity.isLiveTest ? .notRegistered : SMAppService.mainApp.status },
             setLoginItem: { on in
+                // The live-test copy never registers itself as a login item.
+                guard !AppIdentity.isLiveTest else { throw LiveTestUnavailable() }
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
@@ -317,6 +333,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 }
 
+/// Start at login in the live-test copy.
+struct LiveTestUnavailable: LocalizedError {
+    var errorDescription: String? { String(localized: "Not available in the test copy.") }
+}
+
 enum MainMenu {
     @MainActor
     static func build(target: BridgeAppDelegate) -> NSMenu {
@@ -401,9 +422,22 @@ struct EKBridgeApp {
         }
         #endif
         let app = NSApplication.shared
-        #if !EVENTKIT_UI_REVIEW && !EVENTKIT_UPDATE_TEST
-        // Before anything reads settings or the data folder. (The update test's
-        // copy has its own bundle ID and data folder, and nothing to migrate.)
+        #if EVENTKIT_LIVE_TEST
+        // The live-test copy refuses to run with any of the installed app's
+        // identities, so it can never share its data, transport or ports.
+        let collisions = LiveTestIsolation.collisions(.current, runningBundleID: Bundle.main.bundleIdentifier)
+        if !collisions.isEmpty {
+            NSApp.activate()
+            let alert = NSAlert()
+            alert.messageText = String(localized: "\(AppIdentity.displayName) can't start.")
+            alert.informativeText = String(localized: "Its \(collisions.joined(separator: ", ")) would be the same as EK Bridge's. Rebuild it with scripts/live_test.sh build.")
+            alert.runModal()
+            exit(1)
+        }
+        #endif
+        #if !EVENTKIT_UI_REVIEW && !EVENTKIT_UPDATE_TEST && !EVENTKIT_LIVE_TEST
+        // Before anything reads settings or the data folder. (The test copies
+        // have their own bundle ID and data folder, and nothing to migrate.)
         RenameMigrationLaunch.run()
         #endif
         let delegate = BridgeAppDelegate()
