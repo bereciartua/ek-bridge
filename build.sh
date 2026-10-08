@@ -2,10 +2,18 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build"}
+live_test=${EVENTKIT_LIVE_TEST:-0}
+if [ "$live_test" = "1" ]; then
+    output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build/live-test"}
+else
+    output_dir=${EVENTKIT_OUTPUT_DIR:-"$project_dir/build"}
+fi
 # The app and its executable are named after CFBundleExecutable (EKBridge.app).
+# The live-test copy keeps the executable's name in a bundle of its own name.
 app_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$project_dir/Info.plist")
-app_dir="$output_dir/$app_name.app"
+bundle_name=$app_name
+[ "$live_test" = "1" ] && bundle_name="EK Bridge Test"
+app_dir="$output_dir/$bundle_name.app"
 contents_dir="$app_dir/Contents"
 cache_dir="$project_dir/build/module-cache"
 . "$project_dir/scripts/sdk.sh"
@@ -24,6 +32,13 @@ if [ "${EVENTKIT_UI_REVIEW:-0}" = "1" ]; then
 fi
 if [ "${EVENTKIT_UPDATE_TEST:-0}" = "1" ]; then
     test_flag="-D EVENTKIT_UPDATE_TEST"
+fi
+# The live-test copy (scripts/live_test.sh): the app and both tools use its
+# identity, so bridge-mcp and bridge-client find its data and transport only.
+tool_flag=""
+if [ "$live_test" = "1" ]; then
+    test_flag="-D EVENTKIT_LIVE_TEST"
+    tool_flag="-D EVENTKIT_LIVE_TEST"
 fi
 
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$cache_dir"
@@ -48,6 +63,16 @@ if [ "${EVENTKIT_UPDATE_TEST:-0}" = "1" ]; then
     done
     /usr/libexec/PlistBuddy -c 'Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true' \
         "$contents_dir/Info.plist"
+fi
+if [ "$live_test" = "1" ]; then
+    # Its own bundle ID (and so its own settings and macOS permissions), and
+    # no update feed.
+    for entry in "CFBundleIdentifier io.github.bereciartua.ekbridge.livetest" \
+        "CFBundleName EK Bridge Test" "CFBundleDisplayName EK Bridge Test"; do
+        /usr/libexec/PlistBuddy -c "Set :${entry%% *} ${entry#* }" "$contents_dir/Info.plist"
+    done
+    /usr/libexec/PlistBuddy -c 'Set :SUFeedURL ""' -c 'Set :SUPublicEDKey ""' \
+        -c 'Set :SUEnableAutomaticChecks false' "$contents_dir/Info.plist"
 fi
 # The icon: AppIcon.icns for macOS 14 and 15, drawn by Resources/make_icon.swift.
 # On macOS 26 and later the system draws it from the Icon Composer document
@@ -101,6 +126,7 @@ for arch in $archs; do
 
     # The command-line client (Contents/MacOS/bridge-client): no AppKit or EventKit.
     xcrun swiftc -sdk "$sdk_dir" \
+        $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
         "$project_dir/Sources/BridgeProtocol.swift" \
@@ -112,6 +138,7 @@ for arch in $archs; do
 
     # The MCP launcher agents run (Contents/MacOS/bridge-mcp): no AppKit or EventKit.
     xcrun swiftc -parse-as-library -sdk "$sdk_dir" \
+        $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
         "$project_dir/Sources/MCPLauncher.swift" \
@@ -142,7 +169,7 @@ done
 
 # Scripts and client.py still find the client at build/bridge-client.
 rm -f "$output_dir/bridge-client"
-ln -s "$app_name.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
+ln -s "$bundle_name.app/Contents/MacOS/bridge-client" "$output_dir/bridge-client"
 
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents_dir/Info.plist")
 # A real identity gets a secure timestamp, which notarization requires (it

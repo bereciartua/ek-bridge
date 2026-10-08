@@ -57,7 +57,11 @@ struct ApprovalCenterTests {
         precondition(center.selection == 0 && center.current?.id == center.pending[0].id)
         precondition(scheduled.count == 3 && scheduled.allSatisfy { $0.delay == ApprovalCenter.timeout })
         precondition(ApprovalCenter.timeout == 45)
+        var selectionChanges = 0
+        center.selectionChanged = { selectionChanges += 1 }
         center.selection = 2
+        center.selection = 2
+        precondition(selectionChanges == 1 && queueChanges == 3, "stepping refits the panel once per change")
         let shownID = center.pending[2].id
         let firstID = center.pending[0].id
         center.deny(firstID)

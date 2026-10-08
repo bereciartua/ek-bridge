@@ -195,7 +195,9 @@ fi
 step "Building the universal app"
 rm -rf "$build_dir" "$dist_dir"
 mkdir -p "$build_dir" "$dist_dir"
-EVENTKIT_OUTPUT_DIR=$build_dir EVENTKIT_ARCHS="arm64 x86_64" sh "$project_dir/build.sh"
+# Never a test flavor, whatever the environment says.
+env -u EVENTKIT_LIVE_TEST -u EVENTKIT_UI_REVIEW -u EVENTKIT_UPDATE_TEST -u EVENTKIT_SYNTHETIC_TEST \
+    EVENTKIT_OUTPUT_DIR=$build_dir EVENTKIT_ARCHS="arm64 x86_64" sh "$project_dir/build.sh"
 sh "$project_dir/scripts/check_bundle.sh" "$app" arm64 x86_64
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$version" ] \
     || fail "the built app's version isn't $version"

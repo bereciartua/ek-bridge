@@ -275,6 +275,34 @@ struct AppPresentationTests {
             of: calendar.date(byAdding: .day, value: -1, to: now)!)!
         let lateToday = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: now)!
         precondition(RelativeTime.clock(noonYesterday, now: lateToday) == "Yesterday")
+        // Only actions a collection allows are named; the rest is flagged.
+        let holidays = CollectionInfo(resource: .calendar, id: "hol", name: "US Holidays", account: "iCloud",
+                                      writable: false, color: nil)
+        let workCalendar = CollectionInfo(resource: .calendar, id: "wrk", name: "Work", account: "iCloud",
+                                          writable: true, color: nil)
+        let readCreate = ClientGrant.read | ClientGrant.create
+        precondition(AccessSummary.segments(grants: [ClientGrant(resource: .calendar, targetID: "hol", mask: readCreate)],
+                                            collections: [holidays]) == ["US Holidays: read"])
+        precondition(AccessSummary.hasUngrantableBits(
+            grants: [ClientGrant(resource: .calendar, targetID: "hol", mask: readCreate)], collections: [holidays]))
+        precondition(AccessSummary.segments(grants: [ClientGrant(resource: .calendar, targetID: "wrk", mask: readCreate)],
+                                            collections: [workCalendar]) == ["Work: read, create"])
+        precondition(!AccessSummary.hasUngrantableBits(
+            grants: [ClientGrant(resource: .calendar, targetID: "wrk", mask: readCreate)], collections: [workCalendar]))
+        // Unlisted collections aren't flagged: they're unavailable, not read only.
+        precondition(!AccessSummary.hasUngrantableBits(
+            grants: [ClientGrant(resource: .calendar, targetID: "gone", mask: readCreate)], collections: [holidays]))
+        precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: true) == .on)
+        precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: false) == .paused)
+        precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: true) == .attention)
+        precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: false) == .attention)
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = TimeZone(identifier: "UTC")!
+        let october5 = gregorian.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9))!
+        let october8 = gregorian.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: 9))!
+        let lastYear = gregorian.date(from: DateComponents(year: 2025, month: 10, day: 5, hour: 9))!
+        precondition(!RelativeTime.clock(october5, now: october8, calendar: gregorian).contains("2026"))
+        precondition(RelativeTime.clock(lastYear, now: october8, calendar: gregorian).contains("2025"))
         precondition(RelativeTime.ago(noonYesterday, now: lateToday) == "Yesterday")
         precondition(ConnectCommand.scopeStatus(clientName: "Claude Code") ==
                      #"python3 client.py scope_status --client "Claude Code""#)

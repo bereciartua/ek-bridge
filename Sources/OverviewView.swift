@@ -270,11 +270,19 @@ struct OverviewClientRow: View {
                     }
                     Text([model.agentSubtitle(client),
                           AccessSummary.text(grants: client.grants, collections: model.collections,
-                                             hidden: model.hiddenResources)]
+                                             hidden: model.hiddenResources,
+                                             unavailableName: model.unavailableName)]
                         .compactMap { $0 }.joined(separator: " · "))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                    if AccessSummary.hasUngrantableBits(grants: client.grants, collections: model.collections) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .help(String(localized: "Some access can't apply: a calendar or list is read only. Open the connection to review it."))
+                            .accessibilityLabel(String(localized: "Some access can't apply"))
+                    }
                 }
             }
             Spacer(minLength: 12)
@@ -403,7 +411,6 @@ struct SetupStepRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body.weight(isFinished ? .regular : .semibold))
-                    .strikethrough(state == .done, color: .secondary)
                     .foregroundStyle(isFinished ? .secondary : .primary)
                 if !isFinished, let detail {
                     Text(detail)
@@ -416,7 +423,8 @@ struct SetupStepRow: View {
             trailing
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        // Finished steps collapse to one quiet line.
+        .padding(.vertical, isFinished ? 7 : 12)
         .background(state == .current ? Color.accentColor.opacity(0.07) : Color.clear)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityText)
@@ -439,12 +447,14 @@ struct SetupStepRow: View {
         switch state {
         case .done:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 26))
+                .font(.system(size: 20))
                 .foregroundStyle(.white, .green)
+                .frame(width: 26)
         case .skipped:
             Image(systemName: "minus.circle.fill")
-                .font(.system(size: 26))
+                .font(.system(size: 20))
                 .foregroundStyle(.white, .secondary)
+                .frame(width: 26)
         case .current:
             Text("\(number)")
                 .font(.callout.weight(.semibold))
@@ -463,6 +473,31 @@ struct SetupStepRow: View {
     private var clientName: String { focus?.name ?? String(localized: "the client") }
 
     private var title: String {
+        if state == .done { return doneTitle }
+        if state == .skipped {
+            switch step {
+            case .calendarAccess: return String(localized: "Calendar access skipped")
+            case .remindersAccess: return String(localized: "Reminders access skipped")
+            default: break
+            }
+        }
+        return nextTitle
+    }
+
+    /// Finished steps read as what happened.
+    private var doneTitle: String {
+        switch step {
+        case .calendarAccess: String(localized: "Calendar access allowed")
+        case .remindersAccess: String(localized: "Reminders access allowed")
+        case .createClient: String(localized: "Client created")
+        case .chooseAccess: String(localized: "Access chosen")
+        case .turnOn: String(localized: "Bridge turned on")
+        case .mcpServer: String(localized: "MCP server turned on")
+        case .testRequest: String(localized: "Tool connected")
+        }
+    }
+
+    private var nextTitle: String {
         switch step {
         case .calendarAccess: String(localized: "Allow Calendar access")
         case .remindersAccess: String(localized: "Allow Reminders access")
@@ -482,7 +517,9 @@ struct SetupStepRow: View {
                 return String(localized: "You chose not to allow access. You can change this in System Settings.")
             }
             if state == .optional {
-                return String(localized: "Optional. Skip it if your tools only need the other one.")
+                return step == .calendarAccess
+                    ? String(localized: "Optional. Skip it if your tools only use reminders.")
+                    : String(localized: "Optional. Skip it if your tools only use calendars.")
             }
             return AccessText.detail(resource, model.status(resource))
         case .createClient:
@@ -496,6 +533,9 @@ struct SetupStepRow: View {
         case .testRequest:
             if focus?.hasMCPToken == true {
                 return String(localized: "Copy the setup for your agent, then ask it something like “What's on my calendar today?”")
+            }
+            if focus == nil {
+                return String(localized: "Connect your agent, then ask it something like “What's on my calendar today?”")
             }
             return model.cliCommand == .source
                 ? String(localized: "Copy the command and run it in Terminal, in the ek-bridge folder. This step completes when the request arrives.")

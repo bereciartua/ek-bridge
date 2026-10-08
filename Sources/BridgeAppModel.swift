@@ -164,6 +164,9 @@ struct BridgeServices {
     var loginItemStatus: () -> SMAppService.Status
     var setLoginItem: (Bool) throws -> Void
     var isInstalledInApplications: () -> Bool
+    /// Move to Applications: where the app is, and the move itself (A11).
+    var installLocation: () -> InstallLocation = { .applications }
+    var moveToApplications: () -> MoveResult = { .failed("") }
     var commandLineTool: CommandLineTool
     var testCollections: TestCollections?
     var mcp: MCPControls
@@ -185,6 +188,8 @@ final class BridgeAppModel {
     private(set) var clients: [ClientView] = []
     private(set) var activity: [ActivityEntry] = []
     private(set) var collections: [CollectionInfo] = []
+    /// Last-known names of granted collections (`CollectionLabelStore`).
+    private(set) var collectionLabels = [String: CollectionLabel]()
     private(set) var policyStoreAvailable = true
     private(set) var loginItem: SMAppService.Status = .notRegistered
     private(set) var loginItemError: String?
@@ -223,6 +228,8 @@ final class BridgeAppModel {
     var activityProblemsOnly = false
     var activitySearch = ""
     var activitySelection: ActivityEntry.ID?
+    /// Incremented by ⌘F; Activity's search field takes focus on each change.
+    private(set) var activitySearchFocusRequest = 0
     private(set) var activityLastViewed: Date?
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
@@ -291,6 +298,7 @@ final class BridgeAppModel {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var observers = [NSObjectProtocol]()
     @ObservationIgnored private var bannerTimer: Timer?
+    @ObservationIgnored private lazy var labelStore = CollectionLabelStore(folder: services.dataFolder)
 
     private enum Keys {
         static let setupHidden = "SetupChecklistHidden"
@@ -439,6 +447,7 @@ final class BridgeAppModel {
         if full {
             let listed = services.collections()
             if listed != collections { collections = listed }
+            updateCollectionLabels()
             loginItem = services.loginItemStatus()
             isInstalledInApplications = services.isInstalledInApplications()
             refreshCommandLineTool()
@@ -483,6 +492,25 @@ final class BridgeAppModel {
     }
 
     // MARK: Derived state
+
+    /// Keeps the names of granted collections, so one that disappears can
+    /// still be named. Runs on every full refresh, which includes saves.
+    private func updateCollectionLabels() {
+        guard policyStoreAvailable else { return }
+        let listedResources = Set([ClientResource.calendar, .reminderList].filter { status($0) == .fullAccess })
+        let granted = Set(activeClients.flatMap { client in
+            client.grants.map { GrantKey(resource: $0.resource, targetID: $0.targetID) }
+        })
+        labelStore.update(listed: collections, listedResources: listedResources, granted: granted)
+        if labelStore.labels != collectionLabels { collectionLabels = labelStore.labels }
+    }
+
+    func collectionLabel(_ key: GrantKey) -> CollectionLabel? {
+        collectionLabels[CollectionLabelStore.key(key)]
+    }
+
+    /// "Project calendar" for an unavailable collection with a label.
+    func unavailableName(_ key: GrantKey) -> String? { collectionLabel(key)?.name }
 
     var activeClients: [ClientView] { clients.filter { !$0.revoked } }
     var revokedClients: [ClientView] { clients.filter(\.revoked) }
@@ -1088,6 +1116,16 @@ final class BridgeAppModel {
         show(.activity)
     }
 
+    /// ⌘F: shows Activity and puts the cursor in its search field.
+    func focusActivitySearch() {
+        show(.activity)
+        // After the pane exists, so its field sees the change.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.route == .activity else { return }
+            self.activitySearchFocusRequest += 1
+        }
+    }
+
     func markActivityViewed() {
         let latest = activity.first?.at ?? Date()
         guard activityLastViewed.map({ $0 < latest }) ?? true else { return }
@@ -1272,7 +1310,7 @@ final class BridgeAppModel {
     /// been registered (every first install, and the first launch under a new
     /// bundle ID) reports `.notFound`, not `.notRegistered`, and `register()`
     /// works from there; a real failure shows as the row's error.
-    var canChangeStartAtLogin: Bool { isInstalledInApplications }
+    var canChangeStartAtLogin: Bool { isInstalledInApplications && !AppIdentity.isLiveTest }
 
     func setStartAtLogin(_ on: Bool) {
         loginItemError = nil
@@ -1287,6 +1325,82 @@ final class BridgeAppModel {
 
     func revealRunningApp() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    // MARK: Move to Applications
+
+    static let moveDeclinedKey = "MoveToApplicationsDeclined"
+
+    /// The question, worded for where the app runs from.
+    private func moveAlert() -> NSAlert {
+        let place = services.installLocation().placeName(home: NSHomeDirectory())
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Move \(AppIdentity.displayName) to Applications?")
+        alert.informativeText = String(localized: "It's running from \(place). Agents start \(AppIdentity.displayName)'s launcher from this location, so setups break if it moves later.")
+        alert.addButton(withTitle: String(localized: "Move to Applications"))
+        alert.addButton(withTitle: String(localized: "Not Now"))
+        return alert
+    }
+
+    /// Move to Applications… (the notices): asks, then moves.
+    func beginMoveToApplications() {
+        confirmUnsaved { [weak self] in
+            guard let self else { return }
+            self.present(self.moveAlert()) { [weak self] response in
+                if response == .alertFirstButtonReturn { self?.performMove() }
+            }
+        }
+    }
+
+    /// At launch, outside Applications, unless the user chose Don't Ask Again.
+    func offerMoveToApplications() {
+        guard services.installLocation() != .applications,
+              !services.defaults.bool(forKey: Self.moveDeclinedKey) else { return }
+        let alert = moveAlert()
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = String(localized: "Don't ask again")
+        present(alert) { [weak self] response in
+            guard let self else { return }
+            if alert.suppressionButton?.state == .on {
+                self.services.defaults.set(true, forKey: Self.moveDeclinedKey)
+            }
+            if response == .alertFirstButtonReturn { self.performMove() }
+        }
+    }
+
+    private func performMove() {
+        clearDraft()
+        if case .failed(let problem) = services.moveToApplications() {
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't move \(AppIdentity.displayName) to Applications."),
+                              message: problem.isEmpty ? nil : problem))
+        }
+    }
+
+    /// In the relaunched copy: says it moved, then that the old copy is in
+    /// the Trash (`trashed`, once known), or offers to eject the disk image
+    /// it came from.
+    func didMove(from path: String, trashed: Bool? = nil) {
+        let volume = InstallLocation.volume(of: path)
+        let message: String? = switch (volume, trashed) {
+        case (.some, _): nil
+        case (nil, true?): String(localized: "The old copy is in the Trash.")
+        case (nil, false?): String(localized: "The old copy couldn't be moved to the Trash: \(path)")
+        case (nil, nil): nil
+        }
+        showBanner(Banner(kind: .success, title: String(localized: "\(AppIdentity.displayName) moved to Applications."),
+                          message: message,
+                          actionTitle: volume == nil ? nil : String(localized: "Eject Disk Image"),
+                          action: volume.map { volume in {
+                              [weak self] in
+                              do {
+                                  try NSWorkspace.shared.unmountAndEjectDevice(at: URL(fileURLWithPath: volume))
+                                  self?.dismissBanner()
+                              } catch {
+                                  self?.showBanner(Banner(kind: .warning,
+                                                          title: String(localized: "The disk image couldn't be ejected."),
+                                                          message: String(localized: "Eject it in Finder.")))
+                              }
+                          } }))
     }
 
     func openLoginItemsSettings() {
@@ -1542,13 +1656,16 @@ final class BridgeAppModel {
         }
     }
 
-    /// The agent subtitle on Overview and in the sidebar: "Claude Code 2.4.1 · 3 min ago".
+    /// The agent subtitle on Overview: "claude-code 2.4.1". The time is in its
+    /// own column. "Waiting for the agent…" only until the client's first
+    /// request by any transport.
     func agentSubtitle(_ client: ClientView) -> String? {
         guard client.hasMCPToken else { return nil }
         switch mcpConnection(for: client) {
-        case .waiting: return String(localized: "Waiting for the agent…")
-        case .connected(let agent, let at):
-            return [agent, RelativeTime.ago(at, now: now)].compactMap { $0 }.joined(separator: " · ")
+        case .waiting:
+            return lastRequest(for: client.id) == nil ? String(localized: "Waiting for the agent…") : nil
+        case .connected(let agent, _):
+            return agent
         case .refused(let code, _):
             return String(localized: "Refused: \(OutcomePresentation.of(code).label)")
         }
@@ -1946,7 +2063,8 @@ final class BridgeAppModel {
 
     /// "This client can read Work and add to Groceries from the internet."
     func cloudSummary(_ client: ClientView) -> String {
-        let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources)
+        let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources,
+                                      unavailableName: unavailableName)
         return client.grants.isEmpty
             ? String(localized: "This client has no access yet, so cloud agents can't use anything.")
             : String(localized: "Cloud agents can use this from the internet: \(text).")
@@ -2224,15 +2342,4 @@ enum Pasteboard {
             if secretChange == count { clearSecret() }
         }
     }
-}
-
-enum MCPDefaults {
-    static let port = 47615
-    static let validPorts = 1024...65535
-}
-
-enum RemoteDefaults {
-    static let port = 47616
-    /// Turn off automatically: never, 1 hour, 8 hours, 1 day.
-    static let autoOffChoices: [TimeInterval] = [0, 3_600, 28_800, 86_400]
 }

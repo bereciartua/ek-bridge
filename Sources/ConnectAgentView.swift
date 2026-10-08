@@ -241,8 +241,9 @@ struct SnippetView: View {
             CodeBox(text: snippet.text)
             if !snippet.steps.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
+                    // A single step isn't a list, so it has no number.
                     ForEach(Array(snippet.steps.enumerated()), id: \.offset) { index, step in
-                        Text("\(index + 1). \(step)")
+                        Text(snippet.steps.count == 1 ? step : "\(index + 1). \(step)")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -252,10 +253,13 @@ struct SnippetView: View {
             if let folder = snippet.destinationFolder,
                FileManager.default.fileExists(atPath: (folder as NSString).expandingTildeInPath) {
                 Button {
-                    NSWorkspace.shared.activateFileViewerSelecting(
-                        [URL(fileURLWithPath: (folder as NSString).expandingTildeInPath)])
+                    // The config file itself if it exists, else its folder.
+                    let file = snippet.destination.map { ($0 as NSString).expandingTildeInPath }
+                    let target = file.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+                        ?? (folder as NSString).expandingTildeInPath
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: target)])
                 } label: {
-                    Label(String(localized: "Show in Finder"), systemImage: "folder")
+                    Label(String(localized: "Show Config File in Finder"), systemImage: "folder")
                 }
             }
             ForEach(Array(snippet.extraSnippets.enumerated()), id: \.offset) { _, extra in
@@ -273,11 +277,7 @@ struct SnippetView: View {
                 warning(AgentSetup.listenerCheckCaveat)
             }
             if method == .launcher && agent != .other && !model.isInstalledInApplications {
-                HStack(alignment: .top, spacing: 8) {
-                    warning(String(localized: "Agents will run the launcher from this location. Move \(AppIdentity.displayName) to Applications first, or setups will break when you move it."))
-                    Spacer(minLength: 8)
-                    Button(String(localized: "Show in Finder")) { model.revealRunningApp() }
-                }
+                NotInApplicationsNotice(model: model, padded: false)
             }
             if let footnote = agent.footnote {
                 Label(footnote, systemImage: "info.circle")

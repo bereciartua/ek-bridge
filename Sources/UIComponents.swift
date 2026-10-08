@@ -340,6 +340,8 @@ struct SearchField: NSViewRepresentable {
     @Binding var text: String
     let prompt: String
     var accessibilityLabel: String? = nil
+    /// Each change moves keyboard focus into the field (⌘F).
+    var focusRequest = 0
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
@@ -354,13 +356,21 @@ struct SearchField: NSViewRepresentable {
 
     func updateNSView(_ field: NSSearchField, context: Context) {
         if field.stringValue != text { field.stringValue = text }
+        if focusRequest != context.coordinator.focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            DispatchQueue.main.async { field.window?.makeFirstResponder(field) }
+        }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, focusRequest: focusRequest) }
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+        var focusRequest: Int
+        init(text: Binding<String>, focusRequest: Int) {
+            self.text = text
+            self.focusRequest = focusRequest
+        }
 
         @objc func changed(_ sender: NSSearchField) { text.wrappedValue = sender.stringValue }
 

@@ -49,7 +49,7 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
 
 ## Get started
 
-1. **Install.** Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), open it and drag EK Bridge to **Applications**. Or use [Homebrew](https://brew.sh):
+1. **Install.** Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), open it and drag EK Bridge to **Applications**. If you open it from the disk image or Downloads instead, it offers to move itself there. Or use [Homebrew](https://brew.sh):
 
    ```sh
    brew install --cask bereciartua/tap/ek-bridge
@@ -208,6 +208,8 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 | `bridge-mcp` connecting to `127.0.0.1` | When an agent on your Mac starts it, to reach the MCP server. |
 | One HTTPS request to GitHub for `appcast.xml`, the list of the latest version | Once a day while **Settings ▸ General ▸ Check for updates automatically** is on (on in downloaded copies; a copy built from source never checks), and when you choose **Check for Updates…**. GitHub sees your IP address and the app's version; nothing else is sent. |
 | Downloading an update from GitHub | Only after you click **Install Update** in the update window. The app checks the download's EdDSA signature and that it's signed by the same developer before installing it. |
+
+On disk, besides clients and Activity, EK Bridge keeps the names, accounts and colours of the calendars and lists you've given access to (`collection-labels.json`), so it can still name one that becomes unavailable; it never stores item titles or contents.
 
 What an agent reads through the bridge goes to that agent and its AI provider, under their privacy terms, so grant only what each agent needs. Tunnels other than Tailscale Funnel can read Remote Access traffic at their edge.
 

@@ -18,6 +18,7 @@ struct SettingsView: View {
                     developer
                         .id("developer")
                     about
+                        .id("about")
                 }
                 .padding(24)
                 .frame(maxWidth: 860, alignment: .leading)
@@ -41,7 +42,9 @@ struct SettingsView: View {
             SectionTitle(title: String(localized: "General"))
             Card {
                 SettingsRow(title: String(localized: "Start at login"),
-                            caption: String(localized: "The bridge also remembers whether it was on.")) {
+                            caption: AppIdentity.isLiveTest
+                                ? String(localized: "Not available in the test copy.")
+                                : String(localized: "The bridge also remembers whether it was on.")) {
                     Toggle(String(localized: "Start at login"),
                            isOn: Binding(get: { model.loginItem == .enabled },
                                          set: { model.setStartAtLogin($0) }))
@@ -49,11 +52,9 @@ struct SettingsView: View {
                         .labelsHidden()
                         .disabled(!model.canChangeStartAtLogin)
                 }
-                if !model.isInstalledInApplications {
+                if !model.isInstalledInApplications && !AppIdentity.isLiveTest {
                     RowDivider()
-                    SettingsNotice(
-                        text: String(localized: "Move \(AppIdentity.displayName) to your Applications folder to start it at login."),
-                        button: String(localized: "Show in Finder"), action: model.revealRunningApp)
+                    NotInApplicationsNotice(model: model)
                 } else if model.loginItem == .requiresApproval {
                     RowDivider()
                     SettingsNotice(
@@ -233,8 +234,26 @@ struct SettingsView: View {
                     Button(String(localized: "Show Setup Checklist")) { model.showSetupAgain() }
                         .disabled(!model.canShowSetupAgain)
                 }
+                RowDivider()
+                // The Help menu's links, wrapped onto two lines when narrow.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { links(AppLinks.documentation + AppLinks.community) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 16) { links(AppLinks.documentation) }
+                        HStack(spacing: 16) { links(AppLinks.community) }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
         }
+    }
+}
+
+private func links(_ items: [AppLinks.Item]) -> some View {
+    ForEach(items, id: \.url) { link in
+        Link(link.title, destination: link.url)
+            .fixedSize()
     }
 }
 
@@ -287,6 +306,27 @@ struct SettingsNotice: View {
     }
 }
 
+/// The one warning for an app outside Applications (Settings ▸ General,
+/// Settings ▸ MCP Server, Connect), with the fix.
+struct NotInApplicationsNotice: View {
+    let model: BridgeAppModel
+    /// Inside a card row: the row's own padding.
+    var padded = true
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text(String(localized: "\(AppIdentity.displayName) isn't in Applications. Start at login and agent setups need it there."))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button(String(localized: "Move to Applications…")) { model.beginMoveToApplications() }
+        }
+        .padding(.horizontal, padded ? 16 : 0)
+        .padding(.vertical, padded ? 10 : 0)
+    }
+}
+
 /// Settings ▸ MCP Server (§13.4), with the Ask before changes defaults.
 struct MCPServerSettings: View {
     let model: BridgeAppModel
@@ -331,9 +371,7 @@ struct MCPServerSettings: View {
                 }
                 if !model.isInstalledInApplications {
                     RowDivider()
-                    SettingsNotice(
-                        text: String(localized: "Agents run the launcher from this location. Move \(AppIdentity.displayName) to Applications first, or setups will break when you move it."),
-                        button: String(localized: "Show in Finder"), action: model.revealRunningApp)
+                    NotInApplicationsNotice(model: model)
                 }
                 RowDivider()
                 ValueRow(label: String(localized: "Today")) {

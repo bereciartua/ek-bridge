@@ -80,12 +80,18 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     private var model: BridgeAppModel!
     private var windowController: MainWindowController!
     private var statusMenu: StatusMenuController!
+    #if EVENTKIT_LIVE_TEST
+    private var automation: LiveTestAutomation?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if EVENTKIT_UI_REVIEW
         model = BridgeAppModel(services: review.services())
         #else
+        #if !EVENTKIT_LIVE_TEST
+        // The live-test copy has no feed and never updates itself.
         updater.start()
+        #endif
         model = BridgeAppModel(services: liveServices())
         updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
         #endif
@@ -97,6 +103,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         statusMenu = StatusMenuController(model: model)
         #if !EVENTKIT_UI_REVIEW
         approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        approvals.selectionChanged = { [weak self] in self?.approvalPanel.update() }
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         // If the listener didn't survive sleep, start it again.
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -112,10 +119,36 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         review.run(model: model, window: windowController, statusMenu: statusMenu)
         #endif
         model.start()
+        #if EVENTKIT_LIVE_TEST
+        automation = LiveTestAutomation(context: .init(
+            model: model, approvals: approvals, store: store,
+            presentWindow: { [weak self] in self?.windowController.present() },
+            mainWindow: { [weak self] in self?.windowController.window },
+            panelWindow: { [weak self] in self?.approvalPanel.window },
+            moveToApplications: { [weak self] in
+                if case .failed(let problem) = AppMover.move(prepareToQuit: { self?.quitAfterApprovals() }) {
+                    return problem
+                }
+                return nil
+            }), dataFolder: Self.dataFolder)
+        automation?.start()
+        #endif
         #if !EVENTKIT_UI_REVIEW
         // A first run opens the window so the setup checklist is the first thing
         // seen; so does the first run after the rename.
         if model.showsSetupChecklist || model.renameNoticePending { windowController.present() }
+        if let movedFrom = AppMover.movedFrom() {
+            windowController.present()
+            model.didMove(from: movedFrom)
+            if InstallLocation.volume(of: movedFrom) == nil {
+                AppMover.cleanUpOldCopy(movedFrom) { [weak self] trashed in
+                    self?.model.didMove(from: movedFrom, trashed: trashed)
+                }
+            }
+        } else if !AppIdentity.isLiveTest || CommandLine.arguments.contains("--move-prompt") {
+            // The live-test copy is moved by its automation instead.
+            model.offerMoveToApplications()
+        }
         #endif
     }
 
@@ -186,11 +219,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             },
             collections: { [weak self] in self?.liveCollections() ?? [] },
             setBridge: { [weak self] on in self?.setBridge(on) ?? .off },
-            loginItemStatus: { SMAppService.mainApp.status },
+            loginItemStatus: { AppIdentity.isLiveTest ? .notRegistered : SMAppService.mainApp.status },
             setLoginItem: { on in
+                // The live-test copy never registers itself as a login item.
+                guard !AppIdentity.isLiveTest else { throw LiveTestUnavailable() }
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
+            installLocation: { AppMover.location },
+            moveToApplications: { [weak self] in
+                AppMover.move(prepareToQuit: { self?.quitAfterApprovals() })
+            },
             commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL,
                                              home: FileManager.default.homeDirectoryForCurrentUser),
             testCollections: testCollections,
@@ -234,11 +273,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         return result.sortedForDisplay()
     }
 
-    private static var installedLocation: Bool {
-        let path = Bundle.main.bundleURL.standardizedFileURL.path
-        let userApps = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true).path
-        return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
+    private static var installedLocation: Bool { AppMover.location == .applications }
+
+    private var quitGate: UpdateRelaunchGate?
+
+    /// After Move to Applications: quits once changes waiting in the
+    /// approval panel are answered or time out (as for updates).
+    private func quitAfterApprovals() {
+        let gate = UpdateRelaunchGate(pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
+                                      maximumWait: ApprovalCenter.timeout + 5)
+        quitGate = gate
+        if !gate.postpone({ NSApp.terminate(nil) }) { NSApp.terminate(nil) }
     }
 
     // MARK: Bridge
@@ -294,10 +339,14 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func showSettingsPane(_ sender: Any?) { model.show(.settings) }
     @objc func showOverviewPane(_ sender: Any?) { model.show(.overview) }
     @objc func showActivityPane(_ sender: Any?) { model.show(.activity) }
+    @objc func findInActivity(_ sender: Any?) { model.focusActivitySearch() }
     @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
     @objc func checkForUpdates(_ sender: Any?) { model.checkForUpdates() }
+    @objc func openLink(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL { NSWorkspace.shared.open(url) }
+    }
     @objc func showAbout(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
@@ -312,9 +361,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(saveAccess(_:)), #selector(revertAccess(_:)): model.hasUnsavedChanges
         case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
         case #selector(checkForUpdates(_:)): model.updaterAvailable
+        case #selector(findInActivity(_:)): model.windowIsVisible()
         default: true
         }
     }
+}
+
+/// Start at login in the live-test copy.
+struct LiveTestUnavailable: LocalizedError {
+    var errorDescription: String? { String(localized: "Not available in the test copy.") }
 }
 
 enum MainMenu {
@@ -355,10 +410,13 @@ enum MainMenu {
         edit.addItem(item(String(localized: "Copy"), #selector(NSText.copy(_:)), "c"))
         edit.addItem(item(String(localized: "Paste"), #selector(NSText.paste(_:)), "v"))
         edit.addItem(item(String(localized: "Select All"), #selector(NSText.selectAll(_:)), "a"))
+        edit.addItem(.separator())
+        edit.addItem(item(String(localized: "Find…"), #selector(BridgeAppDelegate.findInActivity(_:)), "f", target: target))
 
         let view = submenu(String(localized: "View"), in: main)
         view.addItem(item(String(localized: "Overview"), #selector(BridgeAppDelegate.showOverviewPane(_:)), "1", target: target))
         view.addItem(item(String(localized: "Activity"), #selector(BridgeAppDelegate.showActivityPane(_:)), "2", target: target))
+        view.addItem(item(String(localized: "Settings"), #selector(BridgeAppDelegate.showSettingsPane(_:)), "3", target: target))
 
         let window = submenu(String(localized: "Window"), in: main)
         window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"))
@@ -369,6 +427,14 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         let help = submenu(String(localized: "Help"), in: main)
+        for group in [AppLinks.documentation, AppLinks.community] {
+            for link in group {
+                let entry = item(link.title, #selector(BridgeAppDelegate.openLink(_:)), target: target)
+                entry.representedObject = link.url
+                help.addItem(entry)
+            }
+            help.addItem(.separator())
+        }
         help.addItem(item(String(localized: "Show Setup Checklist"), #selector(BridgeAppDelegate.showSetupChecklist(_:)), target: target))
         NSApp.helpMenu = help
         return main
@@ -401,9 +467,26 @@ struct EKBridgeApp {
         }
         #endif
         let app = NSApplication.shared
-        #if !EVENTKIT_UI_REVIEW && !EVENTKIT_UPDATE_TEST
-        // Before anything reads settings or the data folder. (The update test's
-        // copy has its own bundle ID and data folder, and nothing to migrate.)
+        #if !EVENTKIT_UI_REVIEW
+        // Relaunched by Move to Applications: let the old copy quit first.
+        AppMover.waitForPreviousCopy()
+        #endif
+        #if EVENTKIT_LIVE_TEST
+        // The live-test copy refuses to run with any of the installed app's
+        // identities, so it can never share its data, transport or ports.
+        let collisions = LiveTestIsolation.collisions(.current, runningBundleID: Bundle.main.bundleIdentifier)
+        if !collisions.isEmpty {
+            NSApp.activate()
+            let alert = NSAlert()
+            alert.messageText = String(localized: "\(AppIdentity.displayName) can't start.")
+            alert.informativeText = String(localized: "Its \(collisions.joined(separator: ", ")) would be the same as EK Bridge's. Rebuild it with scripts/live_test.sh build.")
+            alert.runModal()
+            exit(1)
+        }
+        #endif
+        #if !EVENTKIT_UI_REVIEW && !EVENTKIT_UPDATE_TEST && !EVENTKIT_LIVE_TEST
+        // Before anything reads settings or the data folder. (The test copies
+        // have their own bundle ID and data folder, and nothing to migrate.)
         RenameMigrationLaunch.run()
         #endif
         let delegate = BridgeAppDelegate()

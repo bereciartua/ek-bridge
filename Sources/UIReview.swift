@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import EventKit
 import ServiceManagement
+import SwiftUI
 
 // UI-review build only (EVENTKIT_UI_REVIEW=1). Uses a temporary registry, key
 // folder and defaults suite with fake clients, calendars and activity. It
@@ -50,6 +51,8 @@ final class UIReview {
     /// installed in Applications (the behavior test changes both).
     var loginItemStatus = SMAppService.Status.notRegistered
     var installedInApplications = false
+    /// Move to Applications calls (the fake never moves anything).
+    var moveCalls = 0
     /// The fake updater: never contacts GitHub.
     var updaterAvailable = !CommandLine.arguments.contains("--ui-no-updater")
     var automaticUpdateChecks = true
@@ -146,6 +149,14 @@ final class UIReview {
             loginItemStatus: { [unowned self] in self.loginItemStatus },
             setLoginItem: { [unowned self] on in self.loginItemStatus = on ? .enabled : .notRegistered },
             isInstalledInApplications: { [unowned self] in self.installedInApplications },
+            installLocation: { [unowned self] in
+                self.installedInApplications ? .applications
+                    : .elsewhere(path: NSHomeDirectory() + "/Downloads/EKBridge.app")
+            },
+            moveToApplications: { [unowned self] in
+                self.moveCalls += 1
+                return .moving
+            },
             // No Homebrew folders (this Mac's own links must not count), and the
             // installed location in copied commands instead of the build folder.
             commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory, packageBins: [],
@@ -318,6 +329,13 @@ final class UIReview {
     private func seed() {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        // A last-known name for Claude Code's signed-out calendar.
+        let october5 = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9))!
+        let labels: [String: Any] = ["version": 1, "labels": ["calendar:cal-signed-out": [
+            "name": "Project calendar", "account": "Exchange", "colorHex": "#8E8E93",
+            "lastSeen": october5.timeIntervalSince1970 - 3_600, "missingSince": october5.timeIntervalSince1970]]]
+        try? JSONSerialization.data(withJSONObject: labels)
+            .write(to: directory.appendingPathComponent(CollectionLabelStore.fileName))
         func verifier() -> (String, String) {
             let key = Curve25519.Signing.PrivateKey()
             return (key.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined(),
@@ -467,6 +485,7 @@ final class UIReview {
     func run(model: BridgeAppModel, window: MainWindowController, statusMenu: StatusMenuController) {
         self.model = model
         approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        approvals.selectionChanged = { [weak self] in self?.approvalPanel.update() }
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         model.mcpDidConnect(Self.claudeID, MCPServer.Connection(at: Date().addingTimeInterval(-120),
                                                                agent: "claude-code 2.4.1"))
@@ -474,6 +493,9 @@ final class UIReview {
         model.bridgeDidChange(bridgeOn ? .on : .off)
         if let version = Self.value(arguments, "--ui-update-found") {
             model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
+        }
+        if arguments.contains("--ui-move-prompt") {
+            DispatchQueue.main.async { model.offerMoveToApplications() }
         }
         // This build shares the app's bundle ID, so macOS's icon cache can hand
         // back an older icon; show the one this bundle carries in panels and
@@ -773,6 +795,17 @@ final class BehaviorReview {
         step("⌘2 and ⌘1 switch panes") {
             self.key("2") && self.model.route == .activity && self.key("1") && self.model.route == .overview
         }
+        step("⌘3 opens Settings") {
+            self.key("3") && self.model.route == .settings
+        }
+        step("⌘F opens Activity") {
+            self.key("f") && self.model.route == .activity
+        }
+        step("wait for Activity to appear") { true }
+        step("⌘F focuses the search field") {
+            let editor = self.window.firstResponder as? NSTextView
+            return editor?.isFieldEditor == true && editor?.delegate is NSSearchField
+        }
         step("⌘N opens New Client") {
             self.key("n") && self.model.sheet == .newClient
         }
@@ -915,6 +948,23 @@ final class BehaviorReview {
             self.queue(.deleteReminder, ["listID": "list-errands", "itemID": "x"])
             guard self.review.approvals.pending.first?.summary.isDelete == true else { return false }
             self.review.approvals.deny(self.review.approvals.pending[0].id)
+            return self.decision == .denied && self.review.approvals.pending.isEmpty
+        }
+        step("a blind delete shows the warning") {
+            self.decision = nil
+            self.queue(.deleteReminder, ["listID": "list-errands", "itemID": "x"])
+            return self.review.approvals.current?.summary.isBlindDelete == true
+        }
+        step("wait for the panel to arm") { true }
+        step("wait for the panel to arm, again") { true }
+        step("Return denies a blind delete") {
+            guard let panel = self.review.approvalPanel.window,
+                  let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                               windowNumber: panel.windowNumber, context: nil, characters: "\r",
+                                               charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)
+            else { return false }
+            panel.makeKey()
+            _ = panel.performKeyEquivalent(with: event)
             return self.decision == .denied && self.review.approvals.pending.isEmpty
         }
         step("timeout, queue limit and the 15-minute allowance (fake clock)") {
@@ -1066,6 +1116,19 @@ final class BehaviorReview {
             self.model.refresh()
             return enabled && !self.model.canChangeStartAtLogin
         }
+        step("Move to Applications… asks first") {
+            self.review.installedInApplications = false
+            self.model.refresh()
+            self.model.beginMoveToApplications()
+            return self.window.attachedSheet != nil && self.review.moveCalls == 0
+        }
+        step("moving calls the mover") {
+            self.answer(.alertFirstButtonReturn) && self.review.moveCalls == 1
+        }
+        step("Not Now doesn't move") {
+            self.model.beginMoveToApplications()
+            return self.answer(.alertSecondButtonReturn) && self.review.moveCalls == 1
+        }
         // Updates, with the fake updater (Sparkle isn't started in this build).
         step("a found update shows a card") {
             self.model.updateFound(FoundUpdate(version: "9.9.0", critical: false))
@@ -1093,6 +1156,19 @@ final class BehaviorReview {
             let off = !self.model.automaticUpdateChecks && !self.review.automaticUpdateChecks
             self.model.setAutomaticUpdateChecks(true)
             return off && self.model.automaticUpdateChecks && self.review.automaticUpdateChecks
+        }
+        step("the Help menu has the links, then the checklist") {
+            let titles = NSApp.helpMenu?.items.map { $0.isSeparatorItem ? "-" : $0.title } ?? []
+            return titles == [AppLinks.help.title, "Set Up an AI Agent", "Release Notes", "-",
+                              "Ask a Question…", "Report an Issue…", "-", "Show Setup Checklist"]
+                && NSApp.helpMenu?.items.first?.representedObject as? URL == AppLinks.help.url
+        }
+        step("activity result column fits every label") {
+            let widths = [900, 760].map {
+                ActivityColumns.widths(for: ActivityColumns.tableWidth(windowWidth: CGFloat($0)))
+            }
+            return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
+                && widths[0].request >= ActivityColumns.widestRequestLabel
         }
         step("a copy built from source can't check") {
             self.review.updaterAvailable = false
@@ -1143,6 +1219,32 @@ final class BehaviorReview {
     }
 }
 
+/// The snapshot `menu-glyphs`: each state on a strip like the menu bar.
+struct MenuGlyphPreview: View {
+    var body: some View {
+        HStack(spacing: 28) {
+            ForEach([(MenuBarGlyphState.on, "On"), (.paused, "Paused"), (.attention, "Needs attention")],
+                    id: \.1) { state, label in
+                VStack(spacing: 10) {
+                    Image(nsImage: MenuBarGlyph.image(state))
+                        .renderingMode(.template)
+                        .frame(width: 30, height: 24)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                    Image(nsImage: MenuBarGlyph.image(state))
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: 36, height: 36)
+                    Text(label).font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(width: 100)
+            }
+        }
+        .foregroundStyle(.primary)
+        .frame(width: 420, height: 190)
+        .background(.bar)
+    }
+}
+
 /// Renders each screen with fixture data, in both appearances, to PNG with
 /// cacheDisplay (no screen-recording permission needed).
 @MainActor
@@ -1172,7 +1274,15 @@ final class SnapshotReview {
             func step(_ name: String, _ setup: @escaping @MainActor () -> NSWindow?) {
                 steps.append(("\(name)-\(suffix)", setup))
             }
+            step("menu-glyphs") {
+                let window = self.glyphWindow
+                window.appearance = NSAppearance(named: appearance)
+                window.center()
+                window.orderFrontRegardless()
+                return window
+            }
             step("overview") {
+                self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
@@ -1206,7 +1316,19 @@ final class SnapshotReview {
                 self.model.activitySelection = self.model.activity.first { $0.code == "forbidden" }?.id
                 return main
             }
+            step("activity-minimum") {
+                // Rebuilt at the new size, as a window opened at it would be.
+                let selection = self.model.activitySelection
+                self.model.navigate(to: .overview)
+                main?.setContentSize(MainWindowController.minimumSize)
+                DispatchQueue.main.async {
+                    self.model.navigate(to: .activity)
+                    self.model.activitySelection = selection
+                }
+                return main
+            }
             step("settings") {
+                main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
                 self.model.navigate(to: .settings)
                 return main
@@ -1232,6 +1354,13 @@ final class SnapshotReview {
             step("settings-updates-source-build") {
                 self.review.updaterAvailable = false
                 self.model.refresh()
+                return main
+            }
+            step("settings-about") {
+                self.review.updaterAvailable = true
+                self.model.refresh()
+                self.model.navigate(to: .settings)
+                self.model.settingsScrollTarget = "about"
                 return main
             }
             step("overview-after-updates") {
@@ -1345,7 +1474,8 @@ final class SnapshotReview {
                     self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": title],
                                               agent: "claude-code 2.4.1")
                 }
-                self.review.queueApproval(.deleteReminder, ["listID": "list-errands", "itemID": "x"],
+                self.review.queueApproval(.deleteReminder, ["listID": "list-errands",
+                                                            "itemID": "x-apple-reminderkit://REMCDReminder/6C1E2B9D-55A0-4F3B-9D8E-0C7A33A14F2A"],
                                           agent: "claude-code 2.4.1")
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window
@@ -1412,6 +1542,27 @@ final class SnapshotReview {
                 self.model.sheet = .unavailableGrants(UIReview.claudeID)
                 return main?.attachedSheet ?? main
             }
+            step("sheet-move-to-applications") {
+                // The launch prompt (--ui-move-prompt), from Downloads.
+                self.model.sheet = nil
+                self.review.defaults.removeObject(forKey: BridgeAppModel.moveDeclinedKey)
+                DispatchQueue.main.async { self.model.offerMoveToApplications() }
+                return main
+            }
+            step("restore-move-prompt") {
+                if let sheet = main?.attachedSheet { main?.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+                return nil
+            }
+            step("overview-moved") {
+                // The relaunched copy after Move to Applications from a disk image.
+                self.model.navigate(to: .overview)
+                self.model.didMove(from: "/Volumes/EK Bridge")
+                return main
+            }
+            step("restore-moved") {
+                self.model.dismissBanner()
+                return nil
+            }
             step("client-access") {
                 // The README's Access picture: Claude Code's calendars, scrolled to the table.
                 self.model.sheet = nil
@@ -1467,12 +1618,29 @@ final class SnapshotReview {
             MainActor.assumeIsolated {
                 // Look the window up after layout so sheets are attached.
                 guard let window = self.target(for: name) else { return self.next() }
-                if self.external {
-                    self.waitForExternalCapture(window, name: name)
-                } else {
-                    self.capture(window, name: name)
-                    self.next()
+                self.whenSettled(window) {
+                    if self.external {
+                        self.waitForExternalCapture(window, name: name)
+                    } else {
+                        self.capture(window, name: name)
+                        self.next()
+                    }
                 }
+            }
+        }
+    }
+
+    /// Runs `ready` once the window is visible and its frame has stayed the
+    /// same for three checks 0.1 s apart (a window or sheet still opening is
+    /// animating), or after 5 s.
+    private func whenSettled(_ window: NSWindow, stable: Int = 0, last: NSRect? = nil, waited: Double = 0,
+                             _ ready: @escaping @MainActor () -> Void) {
+        let frame = window.frame
+        let steady = window.isVisible && frame == last ? stable + 1 : 0
+        if steady >= 3 || waited >= 5 { return ready() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated {
+                self.whenSettled(window, stable: steady, last: frame, waited: waited + 0.1, ready)
             }
         }
     }
@@ -1497,8 +1665,19 @@ final class SnapshotReview {
         }
     }
 
+    /// The menu bar icons in each state at 18 and 36 pt, on a bar-like strip
+    /// (the status item itself isn't captured).
+    private lazy var glyphWindow: NSWindow = {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 190),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: MenuGlyphPreview())
+        return window
+    }()
+
     private func target(for name: String) -> NSWindow? {
         if name.hasPrefix("restore") { return nil }
+        if name.hasPrefix("menu-glyphs") { return glyphWindow }
         if name.hasPrefix("approval-panel") { return review.approvalPanel.window }
         if name.hasPrefix("setup") || name.hasPrefix("overview-renamed") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }

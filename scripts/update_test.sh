@@ -90,7 +90,7 @@ open "$installed"
 cat <<EOF
 
 Now, as a user would:
-  1. Choose Check for Updates… in the menu bar menu (the calendar icon of
+  1. Choose Check for Updates… in the menu bar menu (the day-arc icon of
      "EK Bridge Update Test"). Sparkle's window shows 0.0.2. If a scheduled
      check finds it first while the app is in the background, the menu shows
      "Update Available: 0.0.2…" and Overview shows the card instead.

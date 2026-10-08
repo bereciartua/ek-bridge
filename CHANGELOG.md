@@ -6,6 +6,34 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-08
+
+A polish release: Activity's columns fit, Overview's client rows agree with themselves, a delete EK Bridge can't show is never the default, the menu bar shows the day-arc icon, the app offers to move itself to Applications, and unavailable calendars keep their names. Nothing changes for agents or scripts. The client registry stays at **version 4**, so going back to 0.8.2 means installing its DMG over this one; 0.8.2 ignores the new `collection-labels.json`.
+
+### Added
+
+- **Move to Applications.** Opened from Downloads, another folder or the disk image, EK Bridge asks once whether to move itself to Applications (with **Don't ask again**), and the "isn't in Applications" warnings, now one shared notice, offer **Move to Applications…**. It copies itself, checks the copy's signature against its own developer team, removes the quarantine flag, relaunches from Applications after any change waiting in the approval panel is answered, then moves the old copy to the Trash or offers to eject the disk image. An EK Bridge already in Applications goes to the Trash first, unless it's running.
+- **Unavailable calendars keep their names.** EK Bridge now keeps the name, account and colour of each calendar and list a client has access to (`collection-labels.json`, mode 0600, nothing else). When one stops being listed (an account signed out, say), the review sheet shows "Project calendar (Exchange)" and "Not available since Oct 5", with the ID in a tooltip and **Copy ID**; the access banner and summaries name it too. A label is removed with the last access to its calendar or list. Older versions ignore the file.
+- **Help menu links**: **EK Bridge Help**, **Set Up an AI Agent**, **Release Notes**, **Ask a Question…** (Discussions) and **Report an Issue…**, above **Show Setup Checklist**. Settings ▸ About has the same links.
+- **⌘3** opens Settings (View menu), and **Find…** (**⌘F**, Edit menu) opens Activity with the cursor in its search field.
+- **EK Bridge Test, a live-test copy for maintainers** (`sh scripts/live_test.sh`, [details](docs/TESTING.md#live-test-copy)). Built with `EVENTKIT_LIVE_TEST=1`, it has its own bundle ID, data folder, `/tmp` folder, ports (47625 and 47626) and MCP server key, refuses to start if any of them is the installed app's, and is driven through an automation channel that release builds never contain (`scripts/check_bundle.sh` checks). It creates, grants and removes only calendars and lists named "EK Bridge Test · …". Nothing changes in the released app.
+
+### Changed
+
+- **The menu bar icon is the app icon's day arc** instead of a calendar symbol, drawn as a template image in three states: on, paused (faded, with a pause sign) and needs attention (with a dot). The pending-change count, the Remote Access globe and the accessibility label are unchanged.
+
+### Fixed
+
+- **Activity's columns fit.** The Result column is as wide as the longest result ("Not approved in time"), so no result is cut off at the default or the minimum window size; Request keeps its labels whole at the default size ("List calendars" and "macOS access" are shorter in the table, the full name is in the tooltip); Client and Calendar or list share the rest and end in "…" with the full name in the tooltip. Times from earlier this year read "Oct 5" instead of "Oct 5, 2026", and at the minimum window size the filters move under the title instead of pushing the table out of the window.
+- **Overview's client rows agree with themselves.** Each row shows its last request once (the agent's name and version no longer repeat the time), "Waiting for the agent…" shows only until the client's first request by any transport, and the access summary names only actions a calendar or list allows: a read-only calendar saved with Create reads "US Holidays: read", with an orange warning whose tooltip says some access can't apply.
+- **A delete EK Bridge can't show is no longer the default.** When the item an agent wants to delete doesn't load, the approval panel says "EK Bridge can't show what will be deleted." with the item's ID (shortened, the full one in the tooltip), **Deny** is the default button (Return and Escape both deny), and deleting takes a click on **Delete Anyway**, after the same half-second arming.
+- The approval panel fits its height to each change as you step through the queue; a taller change could cut off its buttons.
+- A client with cloud access no longer shows a whole Cloud card while Remote Access is off: one line says cloud agents can't reach this Mac, with a **Remote Access…** link.
+- Finished setup steps are no longer struck through: they collapse to one quiet line that says what happened ("Calendar access allowed", "Client created"), with a smaller check mark and their value on the right.
+- Claude Desktop's setup had two **Show in Finder** buttons with different targets. The config one is now **Show Config File in Finder** and selects the file itself when it exists; the one under the Applications warning reads **Show EK Bridge in Finder**.
+- Clearer words: the New Client sheet no longer repeats that a new client has no access; the setup checklist's optional access steps say "Skip it if your tools only use reminders" (or calendars); its last step, before any client exists, says to connect your agent and ask it something; a setup with a single step isn't numbered "1."; and a client without write access shows "Changes: none allowed. Ask me first applies once you allow a change." instead of a disabled picker, following the access you're editing.
+- `ui_snapshots.sh` waits until each window has stopped moving before capturing it, and fails if any capture is under 400 pixels wide; its first captures used to catch the window still opening.
+
 ## [0.8.2] - 2026-10-07
 
 Copied command-line commands now work as pasted in a downloaded copy, and every release also ships its disk image as `EKBridge.dmg`, so [one link](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg) always downloads the newest version. Nothing changes for agents or for existing scripts, and the client registry stays at **version 4**, so going back to 0.8.1 means installing its DMG over this one.

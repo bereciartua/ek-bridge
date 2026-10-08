@@ -91,7 +91,8 @@ enum ApprovalSummaries {
             break
         }
         return ApprovalSummary(title: title, subtitle: subtitle, rows: rows, isDelete: destructive,
-                               lookupFailed: lookupFailed, collectionColor: collection?.color)
+                               lookupFailed: lookupFailed, collectionColor: collection?.color,
+                               itemIDForDisplay: destructive ? request.parameters["itemID"] as? String : nil)
     }
 
     static func verb(_ command: BridgeCommand) -> String {

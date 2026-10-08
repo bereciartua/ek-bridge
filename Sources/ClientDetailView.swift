@@ -19,8 +19,11 @@ struct ClientDetailView: View {
                             PausedNotice(model: model, client: client)
                         }
                         ConnectSection(model: model, client: client)
-                        if model.remoteEnabled || client.cloudAccess {
+                        if model.remoteEnabled {
                             CloudSection(model: model, client: client)
+                                .id("cloud")
+                        } else if client.cloudAccess {
+                            CloudOffNote(model: model)
                                 .id("cloud")
                         }
                         AccessSection(model: model, client: client)
@@ -53,6 +56,31 @@ struct ClientDetailView: View {
             }
             model.clientScrollTarget = nil
         }
+    }
+}
+
+/// A client keeps cloud access while Remote Access is off: one line, not a
+/// whole Cloud section.
+struct CloudOffNote: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(String(localized: "Cloud access is on for this connection, but Remote Access is off, so cloud agents can't reach this Mac."))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(String(localized: "Remote Access…")) {
+                model.settingsScrollTarget = "remote"
+                model.navigate(to: .settings)
+            }
+            .buttonStyle(.link)
+            .fixedSize()
+        }
+        .font(.callout)
+        .padding(.top, -14)
     }
 }
 
@@ -328,24 +356,36 @@ struct ApprovalControl: View {
     let model: BridgeAppModel
     let client: ClientView
 
+    /// Whether the access being edited allows any change: the staged masks
+    /// while the table is open, so the control follows the checkboxes.
+    private var writes: Bool {
+        if let draft = model.draft, draft.clientID == client.id {
+            return draft.staged.values.contains { $0 & ~ClientGrant.read != 0 }
+        }
+        return client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
+    }
+
     var body: some View {
-        let writes = client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
         HStack(spacing: 6) {
-            if !writes {
-                Text(String(localized: "Only applies to changes."))
+            if writes {
+                Text(String(localized: "Changes:")).foregroundStyle(.secondary)
+                Picker(String(localized: "Changes"), selection: Binding(
+                    get: { client.approval }, set: { model.setApproval(client.id, $0) })) {
+                    Label(String(localized: "Ask me first"), systemImage: "hand.raised").tag(ApprovalMode.ask)
+                    Label(String(localized: "Allow without asking"), systemImage: "checkmark.shield").tag(ApprovalMode.allow)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel(String(localized: "Ask before changes"))
+            } else {
+                Text(String(localized: "Changes: none allowed. Ask me first applies once you allow a change."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            Text(String(localized: "Changes:")).foregroundStyle(.secondary)
-            Picker(String(localized: "Changes"), selection: Binding(
-                get: { client.approval }, set: { model.setApproval(client.id, $0) })) {
-                Label(String(localized: "Ask me first"), systemImage: "hand.raised").tag(ApprovalMode.ask)
-                Label(String(localized: "Allow without asking"), systemImage: "checkmark.shield").tag(ApprovalMode.allow)
-            }
-            .labelsHidden()
-            .fixedSize()
-            .disabled(!writes)
-            .accessibilityLabel(String(localized: "Ask before changes"))
         }
         .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this client. Reads never ask."))
     }
@@ -401,7 +441,9 @@ struct AccessSection: View {
                 if !unavailable.isEmpty {
                     BannerView(banner: Banner(
                         kind: .warning,
-                        title: tab == .calendar
+                        title: unavailable.count == 1 && model.unavailableName(unavailable[0]) != nil
+                            ? String(localized: "\(model.unavailableName(unavailable[0]) ?? "") isn't available right now.")
+                            : tab == .calendar
                             ? (unavailable.count == 1 ? String(localized: "1 calendar isn't available right now.")
                                : String(localized: "\(unavailable.count) calendars aren't available right now."))
                             : (unavailable.count == 1 ? String(localized: "1 list isn't available right now.")
@@ -739,9 +781,6 @@ struct NewClientSheet: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
             }
-            Text(String(localized: "A new client has no access. You choose its calendars and lists next."))
-                .font(.callout)
-                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button(String(localized: "Cancel")) { model.sheet = nil }
@@ -906,14 +945,32 @@ struct UnavailableGrantsSheet: View {
                     let mask = model.draft?.mask(key) ?? 0
                     let saved = model.draft?.savedMask(key) ?? 0
                     HStack(spacing: 10) {
-                        Image(systemName: key.resource == .calendar ? "calendar" : "list.bullet")
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            MonoText(text: key.targetID)
-                            Text(AccessWords.words(saved).capitalizingFirstLetter)
-                                .font(.callout)
+                        if let label = model.collectionLabel(key) {
+                            // The last-known name, with the ID in a tooltip.
+                            ColorDot(color: label.color, size: 10)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(label.name) (\(label.account))")
+                                    .help(String(localized: "ID: \(key.targetID)"))
+                                Text([label.missingSince.map {
+                                        String(localized: "Not available since \(UnavailableGrantsSheet.day(Date(timeIntervalSince1970: $0)))")
+                                      }, AccessWords.words(saved).capitalizingFirstLetter]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                            CopyButton(text: key.targetID, title: String(localized: "Copy ID"),
+                                       help: String(localized: "Copy the ID"))
+                        } else {
+                            Image(systemName: key.resource == .calendar ? "calendar" : "list.bullet")
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                MonoText(text: key.targetID)
+                                Text(AccessWords.words(saved).capitalizingFirstLetter)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if mask == 0 {
@@ -937,6 +994,16 @@ struct UnavailableGrantsSheet: View {
         }
         .padding(20)
         .frame(width: 540)
+    }
+}
+
+extension UnavailableGrantsSheet {
+    /// "Oct 5", or "Oct 5, 2025" in another year.
+    static func day(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        return calendar.component(.year, from: date) == calendar.component(.year, from: now)
+            ? date.formatted(.dateTime.month(.abbreviated).day())
+            : date.formatted(date: .abbreviated, time: .omitted)
     }
 }
 

@@ -11,7 +11,8 @@ struct CollectionColor: Hashable {
 }
 
 /// A calendar or reminder list as EventKit lists it right now. Names are
-/// resolved at display time and never stored.
+/// resolved at display time; only granted ones' names are kept, in
+/// `CollectionLabelStore`, to name them once they're unavailable.
 struct CollectionInfo: Identifiable, Hashable {
     let resource: ClientResource
     let id: String
@@ -60,9 +61,12 @@ enum AccessWords {
 
 enum AccessSummary {
     /// "Work: read, create, edit · Home: read". Collections with an identical
-    /// mask are grouped. Unlisted grants read "1 unavailable calendar".
+    /// mask are grouped. Unlisted grants read "1 unavailable calendar". Only
+    /// actions a listed collection allows are named: a read-only calendar
+    /// saved with Create reads "read" (see `hasUngrantableBits`).
     static func segments(grants: [ClientGrant], collections: [CollectionInfo],
-                         hidden: Set<ClientResource> = []) -> [String] {
+                         hidden: Set<ClientResource> = [],
+                         unavailableName: (GrantKey) -> String? = { _ in nil }) -> [String] {
         let sorted = collections.sortedForDisplay()
         var groups = [(resource: ClientResource, mask: Int, names: [String], unavailable: Int)]()
         func add(_ resource: ClientResource, _ mask: Int, name: String?) {
@@ -83,12 +87,16 @@ enum AccessSummary {
             }
             for collection in sorted where collection.resource == resource {
                 if let grant = typed.first(where: { $0.targetID == collection.id }) {
-                    add(resource, grant.mask, name: collection.name)
+                    let mask = grant.mask & ClientGrantEditing.allowedMask(resource: resource,
+                                                                           writable: collection.writable)
+                    if mask > 0 { add(resource, mask, name: collection.name) }
                 }
             }
             for grant in typed where sorted.named(GrantKey(resource: resource,
                                                          targetID: grant.targetID)) == nil {
-                add(resource, grant.mask, name: nil)
+                // Named from its last-known label when there is one.
+                let name = unavailableName(GrantKey(resource: resource, targetID: grant.targetID))
+                add(resource, grant.mask, name: name.map { String(localized: "\($0) (unavailable)") })
             }
         }
         return groups.map { group in
@@ -98,6 +106,18 @@ enum AccessSummary {
             }
             return "\(parts.joined(separator: ", ")): \(AccessWords.words(group.mask))"
         } + hiddenSegments
+    }
+
+    /// True when a grant holds actions its listed collection can't allow
+    /// (Create on a read-only calendar, say). They never apply; the client
+    /// page offers to remove them.
+    static func hasUngrantableBits(grants: [ClientGrant], collections: [CollectionInfo]) -> Bool {
+        grants.contains { grant in
+            guard let collection = collections.named(GrantKey(resource: grant.resource,
+                                                              targetID: grant.targetID)) else { return false }
+            let allowed = ClientGrantEditing.allowedMask(resource: grant.resource, writable: collection.writable)
+            return grant.mask & ~allowed != 0
+        }
     }
 
     static func hiddenText(_ resource: ClientResource, count: Int) -> String {
@@ -119,8 +139,10 @@ enum AccessSummary {
     }
 
     static func text(grants: [ClientGrant], collections: [CollectionInfo],
-                     hidden: Set<ClientResource> = [], maxGroups: Int = 4) -> String {
-        let all = segments(grants: grants, collections: collections, hidden: hidden)
+                     hidden: Set<ClientResource> = [], maxGroups: Int = 4,
+                     unavailableName: (GrantKey) -> String? = { _ in nil }) -> String {
+        let all = segments(grants: grants, collections: collections, hidden: hidden,
+                           unavailableName: unavailableName)
         guard !all.isEmpty else { return String(localized: "No access yet") }
         guard all.count > maxGroups else { return all.joined(separator: " · ") }
         return all.prefix(maxGroups).joined(separator: " · ") +
@@ -195,6 +217,13 @@ enum RelativeTime {
             return date.formatted(date: .omitted, time: .shortened)
         }
         if calendar.isDateInYesterday(date, relativeTo: now) { return String(localized: "Yesterday") }
+        // "Oct 5" this year, so Activity's Time column stays narrow.
+        if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return date.formatted(style)
+        }
         return date.formatted(date: .abbreviated, time: .omitted)
     }
 
@@ -504,5 +533,15 @@ enum ConnectCommand {
             return "\"\(text)\""
         }
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// Which menu bar icon shows (`MenuBarGlyph`): attention wins, then on or
+/// paused.
+enum MenuBarGlyphState: Equatable, CaseIterable {
+    case on, paused, attention
+
+    static func `for`(needsAttention: Bool, bridgeOn: Bool) -> MenuBarGlyphState {
+        needsAttention ? .attention : bridgeOn ? .on : .paused
     }
 }

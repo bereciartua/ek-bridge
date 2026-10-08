@@ -33,6 +33,12 @@ struct OutcomePresentation: Equatable {
                                    why: entry.why, fix: entry.fix)
     }
 
+    /// Every label a row can show, for sizing Activity's Result column.
+    static var allLabels: [String] {
+        Array(Set(entries.values.map(\.label) + [notSaved.label, reviewNeeded.label, unsupported.label,
+                                                  String(localized: "Error")])).sorted()
+    }
+
     static func isKnown(_ code: String) -> Bool {
         entries[normalize(code)] != nil || prefixEntry(normalize(code)) != nil
     }
@@ -56,6 +62,10 @@ struct OutcomePresentation: Equatable {
         label: String(localized: "Needs review"), tone: .bad,
         why: String(localized: "The bridge can't confirm whether the write happened."),
         fix: String(localized: "Check the item before retrying, and reuse the same idempotency key. See docs/TESTING.md › Troubleshooting."))
+    private static let notSaved = Entry(
+        label: String(localized: "Not saved"), tone: .warn,
+        why: String(localized: "The saved item didn't match the request, so the bridge undid the change."),
+        fix: String(localized: "The account may not support that value."))
     private static let unsupported = Entry(
         label: String(localized: "Not supported"), tone: .warn,
         why: String(localized: "The bridge doesn't change items of this shape, to avoid damaging them."),
@@ -198,9 +208,7 @@ struct OutcomePresentation: Equatable {
         // `<field>_readback_failed_<outcome>` (plan 03 §14).
         if code.contains("_readback_failed_") {
             if code.hasSuffix("_rolled_back") || code.hasSuffix("_restored") {
-                return Entry(label: String(localized: "Not saved"), tone: .warn,
-                             why: String(localized: "The saved item didn't match the request, so the bridge undid the change."),
-                             fix: String(localized: "The account may not support that value."))
+                return notSaved
             }
             if code.hasSuffix("_cleanup_needed") || code.hasSuffix("_restore_failed") {
                 return reviewNeeded
@@ -234,6 +242,21 @@ enum CommandPresentation {
         case .completeReminder: return String(localized: "Complete reminder")
         case .deleteReminder: return String(localized: "Delete reminder")
         }
+    }
+
+    /// The label in Activity's Request column and the menu, where space is
+    /// short: the same as `label`, shortened where it wouldn't fit.
+    static func shortLabel(_ command: String) -> String {
+        switch BridgeCommand(rawValue: command) {
+        case .listCollections: String(localized: "List calendars")
+        case .authorizationStatus: String(localized: "macOS access")
+        default: label(command)
+        }
+    }
+
+    /// Every command label Activity can show.
+    static var allShortLabels: [String] {
+        (BridgeCommand.allCases.map(\.rawValue) + ["mcp"]).map(shortLabel)
     }
 
     /// The access a command needs, as shown in the access table ("Read", "Create"…).
