@@ -275,6 +275,13 @@ struct OverviewClientRow: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                    if AccessSummary.hasUngrantableBits(grants: client.grants, collections: model.collections) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .help(String(localized: "Some access can't apply: a calendar or list is read only. Open the connection to review it."))
+                            .accessibilityLabel(String(localized: "Some access can't apply"))
+                    }
                 }
             }
             Spacer(minLength: 12)

@@ -1542,13 +1542,16 @@ final class BridgeAppModel {
         }
     }
 
-    /// The agent subtitle on Overview and in the sidebar: "Claude Code 2.4.1 · 3 min ago".
+    /// The agent subtitle on Overview: "claude-code 2.4.1". The time is in its
+    /// own column. "Waiting for the agent…" only until the client's first
+    /// request by any transport.
     func agentSubtitle(_ client: ClientView) -> String? {
         guard client.hasMCPToken else { return nil }
         switch mcpConnection(for: client) {
-        case .waiting: return String(localized: "Waiting for the agent…")
-        case .connected(let agent, let at):
-            return [agent, RelativeTime.ago(at, now: now)].compactMap { $0 }.joined(separator: " · ")
+        case .waiting:
+            return lastRequest(for: client.id) == nil ? String(localized: "Waiting for the agent…") : nil
+        case .connected(let agent, _):
+            return agent
         case .refused(let code, _):
             return String(localized: "Refused: \(OutcomePresentation.of(code).label)")
         }

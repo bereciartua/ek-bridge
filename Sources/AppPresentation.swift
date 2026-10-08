@@ -60,7 +60,9 @@ enum AccessWords {
 
 enum AccessSummary {
     /// "Work: read, create, edit · Home: read". Collections with an identical
-    /// mask are grouped. Unlisted grants read "1 unavailable calendar".
+    /// mask are grouped. Unlisted grants read "1 unavailable calendar". Only
+    /// actions a listed collection allows are named: a read-only calendar
+    /// saved with Create reads "read" (see `hasUngrantableBits`).
     static func segments(grants: [ClientGrant], collections: [CollectionInfo],
                          hidden: Set<ClientResource> = []) -> [String] {
         let sorted = collections.sortedForDisplay()
@@ -83,7 +85,9 @@ enum AccessSummary {
             }
             for collection in sorted where collection.resource == resource {
                 if let grant = typed.first(where: { $0.targetID == collection.id }) {
-                    add(resource, grant.mask, name: collection.name)
+                    let mask = grant.mask & ClientGrantEditing.allowedMask(resource: resource,
+                                                                           writable: collection.writable)
+                    if mask > 0 { add(resource, mask, name: collection.name) }
                 }
             }
             for grant in typed where sorted.named(GrantKey(resource: resource,
@@ -98,6 +102,18 @@ enum AccessSummary {
             }
             return "\(parts.joined(separator: ", ")): \(AccessWords.words(group.mask))"
         } + hiddenSegments
+    }
+
+    /// True when a grant holds actions its listed collection can't allow
+    /// (Create on a read-only calendar, say). They never apply; the client
+    /// page offers to remove them.
+    static func hasUngrantableBits(grants: [ClientGrant], collections: [CollectionInfo]) -> Bool {
+        grants.contains { grant in
+            guard let collection = collections.named(GrantKey(resource: grant.resource,
+                                                              targetID: grant.targetID)) else { return false }
+            let allowed = ClientGrantEditing.allowedMask(resource: grant.resource, writable: collection.writable)
+            return grant.mask & ~allowed != 0
+        }
     }
 
     static func hiddenText(_ resource: ClientResource, count: Int) -> String {

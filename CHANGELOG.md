@@ -12,6 +12,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Fixed
 
+- **Overview's client rows agree with themselves.** Each row shows its last request once (the agent's name and version no longer repeat the time), "Waiting for the agent…" shows only until the client's first request by any transport, and the access summary names only actions a calendar or list allows: a read-only calendar saved with Create reads "US Holidays: read", with an orange warning whose tooltip says some access can't apply.
 - **Activity's columns fit.** The Result column is as wide as the longest result ("Not approved in time"), so no result is cut off at the default or the minimum window size; Request keeps its labels whole at the default size ("List calendars" and "macOS access" are shorter in the table, the full name is in the tooltip); Client and Calendar or list share the rest and end in "…" with the full name in the tooltip. Times from earlier this year read "Oct 5" instead of "Oct 5, 2026", and at the minimum window size the filters move under the title instead of pushing the table out of the window.
 
 ## [0.8.2] - 2026-10-07
