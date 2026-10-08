@@ -102,3 +102,42 @@ struct GrantDraft: Equatable {
         return grants
     }
 }
+
+/// The Add a Connection sheet's Starting access (B05). Grants cover the
+/// calendars and lists listed now; later ones aren't included.
+enum StartingAccess: Equatable {
+    /// Read on every listed calendar and list.
+    case readAll
+    /// Read on every one, plus everything `allowedMask` permits on one.
+    case readAllPlusOne(GrantKey)
+    /// No access; the user chooses next.
+    case nothing
+
+    /// A new connection may hold one grant fewer than the registry's 100.
+    static let maxGrants = 99
+
+    /// The grants to save, from `listed` in display order (`writable` for each),
+    /// and whether the cap left some out. The chosen collection always gets its
+    /// grant, even past the cap.
+    static func grants(_ choice: StartingAccess,
+                       listed: [(key: GrantKey, writable: Bool)]) -> (grants: [ClientGrant], capped: Bool) {
+        let chosen: GrantKey?
+        switch choice {
+        case .nothing: return ([], false)
+        case .readAll: chosen = nil
+        case .readAllPlusOne(let key): chosen = key
+        }
+        var grants = [ClientGrant]()
+        if let chosen, let row = listed.first(where: { $0.key == chosen }) {
+            grants.append(ClientGrant(resource: chosen.resource, targetID: chosen.targetID,
+                                      mask: ClientGrantEditing.allowedMask(resource: chosen.resource,
+                                                                           writable: row.writable)))
+        }
+        let others = listed.filter { $0.key != chosen }
+        for row in others.prefix(maxGrants - grants.count) {
+            grants.append(ClientGrant(resource: row.key.resource, targetID: row.key.targetID,
+                                      mask: ClientGrant.read))
+        }
+        return (grants, grants.count < listed.count)
+    }
+}

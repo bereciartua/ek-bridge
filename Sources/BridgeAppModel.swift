@@ -883,12 +883,28 @@ final class BridgeAppModel {
 
     // MARK: Clients
 
-    func beginNewClient() {
+    /// The tile Add a Connection opens with (setup's "Add a command-line connection…").
+    var newConnectionPreset: AddConnectionTile?
+    /// The starting access the sheet opens with (UI review snapshots).
+    var newConnectionAccessPreset: StartingAccessChoice?
+
+    func beginNewClient(preset: AddConnectionTile? = nil) {
         guard policyStoreAvailable, activeClients.count < ClientRegistry.maxActiveClients else { return }
         confirmUnsaved { [weak self] in
             self?.showWindow()
+            self?.newConnectionPreset = preset
             self?.sheet = .newClient
         }
+    }
+
+    /// "Claude Code", or "Claude Code 2", "Claude Code 3"… when taken.
+    func suggestedName(_ base: String) -> String {
+        if nameIssue(base) == nil { return base }
+        for number in 2...99 {
+            let candidate = "\(base) \(number)"
+            if nameIssue(candidate) == nil { return candidate }
+        }
+        return base
     }
 
     var canCreateClient: Bool {
@@ -904,10 +920,12 @@ final class BridgeAppModel {
         kind == .cli ? newCLIApproval : newAgentApproval
     }
 
-    /// Creates a client and its credential files. Returns an issue only for
-    /// name problems the sheet shows inline; every other outcome closes it.
-    func createClient(name: String, kind: ClientKind = .agent,
-                      askBeforeChanges: Bool? = nil) -> ClientNameIssue? {
+    /// Creates a connection, its credential files and its starting access
+    /// (B05). Returns an issue only for name problems the sheet shows inline;
+    /// every other outcome closes it. `cloud` opens Connect at From the cloud.
+    func createClient(name: String, kind: ClientKind = .agent, askBeforeChanges: Bool? = nil,
+                      startingAccess: StartingAccess = .nothing, agent: AgentKind? = nil,
+                      cloud: Bool = false) -> ClientNameIssue? {
         if let issue = nameIssue(name) { return issue }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let approval = askBeforeChanges.map { $0 ? ApprovalMode.ask : .allow } ?? defaultApproval(for: kind)
@@ -936,13 +954,32 @@ final class BridgeAppModel {
                 return nil
             }
             refresh()
+            if let agent { setAgent(agent, for: issued.id) }
+            let listed = collections.sortedForDisplay().map { (key: $0.key, writable: $0.writable) }
+            let starting = StartingAccess.grants(startingAccess, listed: listed)
+            var saveFailure: ClientRegistryError?
+            if !starting.grants.isEmpty,
+               case .failure(let error) = services.registry.replaceGrants(clientID: issued.id, grants: starting.grants) {
+                saveFailure = error
+            }
+            refresh()
             go(.client(issued.id))
-            clientScrollTarget = "access"
             connectTab[issued.id] = kind == .cli ? .cli : .agent
-            showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
-                              message: kind == .cli
-                                ? String(localized: "It has no access yet. Choose calendars and lists below, then Save.")
-                                : String(localized: "Choose what it can use below, then Save. Then connect your agent from Connect ▸ AI agent.")))
+            if let saveFailure {
+                clientScrollTarget = "access"
+                showBanner(Banner(kind: .error, title: String(localized: "\(trimmed) was added, but its starting access couldn't be saved."),
+                                  message: String(localized: "Choose what it can use, then Save."),
+                                  code: saveFailure.rawValue))
+            } else if startingAccess == .nothing || starting.grants.isEmpty {
+                clientScrollTarget = "access"
+                showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
+                                  message: String(localized: "Choose what it can use, then Save.")))
+            } else if starting.capped {
+                showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
+                                  message: String(localized: "Read access was given to \(starting.grants.count) of \(listed.count) calendars and lists; choose the rest in Access.")))
+            } else if cloud {
+                clientScrollTarget = "cloud"
+            }
         case .failure(.duplicateName):
             return .duplicate(trimmed)
         case .failure(.invalidName):

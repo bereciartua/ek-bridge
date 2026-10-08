@@ -839,6 +839,36 @@ final class BehaviorReview {
                 self.model.activity.contains { $0.clientID == claude } &&
                 self.model.rename(UIReview.obsidianID, to: "CLAUDE CODE (LAPTOP)") == .duplicate("claude code (laptop)")
         }
+        step("Claude Code tile: an MCP connection that reads everything") {
+            let name = self.model.suggestedName(AddConnectionTile.agent(.claudeCode).suggestedName)
+            // The fixture's Claude Code was renamed above, so the name is free.
+            guard name == "Claude Code",
+                  self.model.createClient(name: name, kind: .agent, askBeforeChanges: true,
+                                          startingAccess: .readAll, agent: .claudeCode) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == name }) else { return false }
+            let listed = self.model.collections.count
+            return created.hasMCPToken && !created.hasSigningKey && created.grants.count == listed &&
+                created.grants.allSatisfy { $0.mask == ClientGrant.read } && created.approval == .ask &&
+                self.model.agent(for: created.id) == .claudeCode && self.model.route == .client(created.id)
+        }
+        step("the next one is numbered") {
+            self.model.suggestedName("Claude Code") == "Claude Code 2"
+        }
+        step("read all plus one: full access on the chosen list only") {
+            let groceries = GrantKey(resource: .reminderList, targetID: "list-groceries")
+            guard self.model.createClient(name: "Cursor 2", kind: .agent, startingAccess: .readAllPlusOne(groceries),
+                                          agent: .cursor) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == "Cursor 2" }) else { return false }
+            return created.grants.first { $0.targetID == "list-groceries" }?.mask == 31 &&
+                created.grants.filter { $0.targetID != "list-groceries" }.allSatisfy { $0.mask == ClientGrant.read }
+        }
+        step("Script tile: a command-line connection with no access") {
+            let name = self.model.suggestedName(AddConnectionTile.script.suggestedName)
+            guard self.model.createClient(name: name, kind: AddConnectionTile.script.kind) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == name }) else { return false }
+            return created.hasSigningKey && !created.hasMCPToken && created.grants.isEmpty &&
+                self.model.banner?.message == "Choose what it can use, then Save."
+        }
         step("create client") {
             guard self.model.createClient(name: "Shortcuts") == nil,
                   let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }
@@ -1578,20 +1608,54 @@ final class SnapshotReview {
                                             redirectURI: CloudAgentKind.geminiEnterprise.preRegisteredRedirectURI!)
                 return main?.attachedSheet ?? main
             }
-            step("new-client-sheet-mcp") {
+            step("sheet-new-client-cloud") {
+                // Remote Access is on here, so the sheet offers a Cloud agent tile.
                 self.model.oauthClientDetails = nil
                 self.model.sheet = nil
-                self.model.applyRemoteEnabled(false)
                 self.review.approvals.withdrawAll()
                 self.model.navigate(to: .overview)
-                self.model.sheet = .newClient
-                return main?.attachedSheet ?? main
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
             }
             step("sheet-new-client") {
+                self.model.sheet = nil
+                self.model.applyRemoteEnabled(false)
                 self.model.setShowDeveloperTools(false)
                 self.model.navigate(to: .overview)
-                self.model.sheet = .newClient
-                return main?.attachedSheet ?? main
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-write") {
+                self.model.sheet = nil
+                self.model.newConnectionAccessPreset = .readAllPlusOne
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-script") {
+                self.model.sheet = nil
+                self.model.newConnectionPreset = .script
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-no-access") {
+                self.model.sheet = nil
+                self.review.calendarStatus = .notDetermined
+                self.review.remindersStatus = .notDetermined
+                self.model.refresh()
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("restore-access") {
+                self.model.sheet = nil
+                self.review.calendarStatus = .fullAccess
+                self.review.remindersStatus = .fullAccess
+                self.model.refresh()
+                return nil
             }
             step("sheet-rename") {
                 self.model.sheet = nil

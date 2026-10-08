@@ -15,7 +15,7 @@ struct MainView: View {
         }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
-            case .newClient: NewClientSheet(model: model)
+            case .newClient: AddConnectionSheet(model: model)
             case .rename(let id): RenameClientSheet(model: model, clientID: id)
             case .unavailableGrants(let id): UnavailableGrantsSheet(model: model, clientID: id)
             case .collectionIDs: CollectionIDsSheet(model: model)

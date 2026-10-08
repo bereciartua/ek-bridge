@@ -21,11 +21,10 @@ Pausing EK Bridge closes the local port, so agents see "EK Bridge isn't running,
 
 ### Add a connection for the agent
 
-1. Choose **Add a Connection…** and name it after the agent, for example "Claude Code".
-2. Under **Connects from**, choose **AI agent (MCP)** (the default). **Command line** creates a key for `client.py`; **Both** creates both credentials.
+1. Choose **Add a Connection…** and click your agent's tile (agents found on this Mac are marked **Installed**). The name is filled in from it.
+2. Choose its **Starting access**: **Read all calendars and lists** (the default), **Read all; add and change in one…**, or **Nothing yet; I'll choose next**. You can change any of it later in **Access**.
 3. **Ask me before each change** is preset from your defaults (on for AI agents). You can untick it here or change it later.
-4. **Create.** The new connection has **no access**. Choose its calendars and lists and the actions it may use (Read, Create, Edit, Delete, Complete) in **Access**, then **Save**.
-5. Open **Connect ▸ AI agent**, pick your agent, and copy the setup (below).
+4. **Add and Connect** opens the connection's **Connect** tab with that agent chosen; copy the setup (below).
 
 The **Status** line on that tab changes from **Waiting for the agent…** to **Connected** with the agent's name (as reported) and the time of its last request. If the last request was refused, it says why, with **Show in Activity**.
 

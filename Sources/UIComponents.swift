@@ -327,6 +327,30 @@ struct AccessStatusControls: View {
     }
 }
 
+/// An ⓘ button whose popover holds explanation that doesn't need to be on
+/// screen all the time (B13). Up to three short paragraphs, separated by "\n\n".
+struct InfoButton: View {
+    let text: String
+    @State private var shown = false
+
+    var body: some View {
+        Button { shown.toggle() } label: {
+            Image(systemName: "info.circle")
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(text)
+        .accessibilityLabel(String(localized: "More information"))
+        .accessibilityHint(text)
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 280, alignment: .leading)
+                .padding(14)
+        }
+    }
+}
+
 struct Prominent: ViewModifier {
     let on: Bool
 

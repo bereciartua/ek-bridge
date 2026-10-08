@@ -56,7 +56,7 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
    ```
 
 2. **Open the app.** It opens on a short setup checklist; later, you'll find it in the menu bar. First, allow Calendar and/or Reminders access; you need only the one your agent uses.
-3. **Add your agent.** Click **Add a Connection…**, name it after the agent and choose **Connects from ▸ AI agent (MCP)**. Then tick the calendars and lists it may use, and **Save**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
+3. **Add your agent.** Click **Add a Connection…**, pick your agent's tile and its starting access (for example **Read all calendars and lists**), then **Add and Connect**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
 4. **Turn on EK Bridge** from the checklist. The MCP server follows it.
 5. **Copy the setup.** On the connection's **Connect** tab, pick your agent and copy the command or config into it. The status changes to **Connected** when the agent's first request arrives.
 

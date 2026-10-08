@@ -18,13 +18,13 @@ On first launch the window opens on a setup checklist. The steps can be done in 
 
 ## Connections and access
 
-Choose **Add a Connection…** (⌘N, the **+** in the sidebar, or Overview). The name must be unique among active connections; it's shown in Activity and the menu bar. Under **Connects from**, choose:
+Choose **Add a Connection…** (⌘N, the **+** in the sidebar, or Overview). The sheet shows a tile per agent: the ones found on this Mac come first, marked **Installed** (EK Bridge looks for their apps and config folders, such as `Claude.app`, `Cursor.app` and `~/.claude`), then the other common ones, **Script or command line**, and **More agents…**; while Remote Access is on, also **Cloud agent**. An agent tile creates a connection with an MCP token file (what the agent reads is sent to its AI provider); **Script or command line** creates a key file for `bridge-client` (or `client.py`). A connection can get the other credential later from its **⋯** menu.
 
-- **AI agent (MCP)** (the default): the app writes an MCP token file. What the agent reads is sent to its AI provider.
-- **Command line**: the app writes a key file for `bridge-client` (or `client.py`).
-- **Both**: both credentials.
+- **Name** is filled in from the tile ("Claude Code", then "Claude Code 2") and can be changed. It must be unique among active connections; it's shown in Activity and the menu bar.
+- **Starting access:** **Read all calendars and lists** (the default for agents), **Read all; add and change in one…** (then pick the calendar or list it may change), or **Nothing yet; I'll choose next** (the default for scripts). It covers the calendars and lists you have now, not ones added later, and only types with Full Access. With more than 99 calendars and lists, the first 99 get Read and a banner says so.
+- **Ask me before each change** is preset from Settings (on for agents, off for scripts).
 
-**Ask me before each change** is preset from Settings for the chosen kind (on for agents, off for the command line). The app selects the new connection. **A new connection has no access.**
+**Add and Connect** saves the connection with that access and opens its Connect tab with the agent already chosen; with **Nothing yet** it opens Access instead. Nothing is granted until you click it. EK Bridge remembers each connection's agent (in its settings, not in the registry).
 
 A connection's page has these parts:
 

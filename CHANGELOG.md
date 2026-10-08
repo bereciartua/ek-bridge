@@ -9,6 +9,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Added
 
 - **Pause EK Bridge ▸ For 1 Hour / Until Tomorrow / Until I Turn It On** in the menu bar. A timed pause turns EK Bridge back on by itself (8:00 the next morning for Until Tomorrow), and Overview and the menu say until when.
+- **Add a Connection** sheet: a tile per agent (agents found on this Mac first, marked **Installed**), a name filled in from it, and a **Starting access** (read everything, read everything and change one calendar or list, or nothing yet), so a new agent doesn't start from a blank grid. It replaces New Client and its Connects from choice.
 
 ### Changed
 
