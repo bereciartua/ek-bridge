@@ -83,6 +83,31 @@ enum AppIdentity {
     }
 }
 
+/// Help menu and Settings ▸ About links, in their menu order. The
+/// separators fall after `releaseNotes` and `reportIssue`.
+enum AppLinks {
+    struct Item: Equatable {
+        let title: String
+        let url: URL
+    }
+
+    private static let repository = "https://github.com/bereciartua/ek-bridge"
+
+    static let help = Item(title: String(localized: "\(AppIdentity.displayName) Help"),
+                           url: URL(string: repository + "/blob/main/docs/USAGE.md")!)
+    static let setUpAgent = Item(title: String(localized: "Set Up an AI Agent"),
+                                 url: URL(string: repository + "/blob/main/docs/MCP.md")!)
+    static let releaseNotes = Item(title: String(localized: "Release Notes"),
+                                   url: URL(string: repository + "/releases")!)
+    static let askQuestion = Item(title: String(localized: "Ask a Question…"),
+                                  url: URL(string: repository + "/discussions")!)
+    static let reportIssue = Item(title: String(localized: "Report an Issue…"),
+                                  url: URL(string: repository + "/issues/new/choose")!)
+
+    static let documentation = [help, setUpAgent, releaseNotes]
+    static let community = [askQuestion, reportIssue]
+}
+
 /// The installed app's values. Every test copy must differ from each of them
 /// (`LiveTestIsolation`, Tests/LiveTestIsolationTests.swift).
 enum ProductionIdentity {

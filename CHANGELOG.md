@@ -9,6 +9,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Added
 
 - **EK Bridge Test, a live-test copy for maintainers** (`sh scripts/live_test.sh`, [details](docs/TESTING.md#live-test-copy)). Built with `EVENTKIT_LIVE_TEST=1`, it has its own bundle ID, data folder, `/tmp` folder, ports (47625 and 47626) and MCP server key, refuses to start if any of them is the installed app's, and is driven through an automation channel that release builds never contain (`scripts/check_bundle.sh` checks). It creates, grants and removes only calendars and lists named "EK Bridge Test · …". Nothing changes in the released app.
+- **Help menu links**: **EK Bridge Help**, **Set Up an AI Agent**, **Release Notes**, **Ask a Question…** (Discussions) and **Report an Issue…**, above **Show Setup Checklist**. Settings ▸ About has the same links.
 
 ### Fixed
 

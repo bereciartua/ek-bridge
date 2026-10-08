@@ -18,6 +18,7 @@ struct SettingsView: View {
                     developer
                         .id("developer")
                     about
+                        .id("about")
                 }
                 .padding(24)
                 .frame(maxWidth: 860, alignment: .leading)
@@ -235,8 +236,26 @@ struct SettingsView: View {
                     Button(String(localized: "Show Setup Checklist")) { model.showSetupAgain() }
                         .disabled(!model.canShowSetupAgain)
                 }
+                RowDivider()
+                // The Help menu's links, wrapped onto two lines when narrow.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { links(AppLinks.documentation + AppLinks.community) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 16) { links(AppLinks.documentation) }
+                        HStack(spacing: 16) { links(AppLinks.community) }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
         }
+    }
+}
+
+private func links(_ items: [AppLinks.Item]) -> some View {
+    ForEach(items, id: \.url) { link in
+        Link(link.title, destination: link.url)
+            .fixedSize()
     }
 }
 

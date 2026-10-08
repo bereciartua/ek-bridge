@@ -1112,6 +1112,12 @@ final class BehaviorReview {
             self.model.setAutomaticUpdateChecks(true)
             return off && self.model.automaticUpdateChecks && self.review.automaticUpdateChecks
         }
+        step("the Help menu has the links, then the checklist") {
+            let titles = NSApp.helpMenu?.items.map { $0.isSeparatorItem ? "-" : $0.title } ?? []
+            return titles == [AppLinks.help.title, "Set Up an AI Agent", "Release Notes", "-",
+                              "Ask a Question…", "Report an Issue…", "-", "Show Setup Checklist"]
+                && NSApp.helpMenu?.items.first?.representedObject as? URL == AppLinks.help.url
+        }
         step("activity result column fits every label") {
             let widths = [900, 760].map {
                 ActivityColumns.widths(for: ActivityColumns.tableWidth(windowWidth: CGFloat($0)))
@@ -1269,6 +1275,13 @@ final class SnapshotReview {
             step("settings-updates-source-build") {
                 self.review.updaterAvailable = false
                 self.model.refresh()
+                return main
+            }
+            step("settings-about") {
+                self.review.updaterAvailable = true
+                self.model.refresh()
+                self.model.navigate(to: .settings)
+                self.model.settingsScrollTarget = "about"
                 return main
             }
             step("overview-after-updates") {

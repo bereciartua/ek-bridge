@@ -315,6 +315,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
     @objc func checkForUpdates(_ sender: Any?) { model.checkForUpdates() }
+    @objc func openLink(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL { NSWorkspace.shared.open(url) }
+    }
     @objc func showAbout(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
@@ -391,6 +394,14 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         let help = submenu(String(localized: "Help"), in: main)
+        for group in [AppLinks.documentation, AppLinks.community] {
+            for link in group {
+                let entry = item(link.title, #selector(BridgeAppDelegate.openLink(_:)), target: target)
+                entry.representedObject = link.url
+                help.addItem(entry)
+            }
+            help.addItem(.separator())
+        }
         help.addItem(item(String(localized: "Show Setup Checklist"), #selector(BridgeAppDelegate.showSetupChecklist(_:)), target: target))
         NSApp.helpMenu = help
         return main
