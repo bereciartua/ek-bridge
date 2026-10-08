@@ -188,6 +188,8 @@ final class BridgeAppModel {
     private(set) var clients: [ClientView] = []
     private(set) var activity: [ActivityEntry] = []
     private(set) var collections: [CollectionInfo] = []
+    /// Last-known names of granted collections (`CollectionLabelStore`).
+    private(set) var collectionLabels = [String: CollectionLabel]()
     private(set) var policyStoreAvailable = true
     private(set) var loginItem: SMAppService.Status = .notRegistered
     private(set) var loginItemError: String?
@@ -296,6 +298,7 @@ final class BridgeAppModel {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var observers = [NSObjectProtocol]()
     @ObservationIgnored private var bannerTimer: Timer?
+    @ObservationIgnored private lazy var labelStore = CollectionLabelStore(folder: services.dataFolder)
 
     private enum Keys {
         static let setupHidden = "SetupChecklistHidden"
@@ -444,6 +447,7 @@ final class BridgeAppModel {
         if full {
             let listed = services.collections()
             if listed != collections { collections = listed }
+            updateCollectionLabels()
             loginItem = services.loginItemStatus()
             isInstalledInApplications = services.isInstalledInApplications()
             refreshCommandLineTool()
@@ -488,6 +492,25 @@ final class BridgeAppModel {
     }
 
     // MARK: Derived state
+
+    /// Keeps the names of granted collections, so one that disappears can
+    /// still be named. Runs on every full refresh, which includes saves.
+    private func updateCollectionLabels() {
+        guard policyStoreAvailable else { return }
+        let listedResources = Set([ClientResource.calendar, .reminderList].filter { status($0) == .fullAccess })
+        let granted = Set(activeClients.flatMap { client in
+            client.grants.map { GrantKey(resource: $0.resource, targetID: $0.targetID) }
+        })
+        labelStore.update(listed: collections, listedResources: listedResources, granted: granted)
+        if labelStore.labels != collectionLabels { collectionLabels = labelStore.labels }
+    }
+
+    func collectionLabel(_ key: GrantKey) -> CollectionLabel? {
+        collectionLabels[CollectionLabelStore.key(key)]
+    }
+
+    /// "Project calendar" for an unavailable collection with a label.
+    func unavailableName(_ key: GrantKey) -> String? { collectionLabel(key)?.name }
 
     var activeClients: [ClientView] { clients.filter { !$0.revoked } }
     var revokedClients: [ClientView] { clients.filter(\.revoked) }
@@ -2040,7 +2063,8 @@ final class BridgeAppModel {
 
     /// "This client can read Work and add to Groceries from the internet."
     func cloudSummary(_ client: ClientView) -> String {
-        let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources)
+        let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources,
+                                      unavailableName: unavailableName)
         return client.grants.isEmpty
             ? String(localized: "This client has no access yet, so cloud agents can't use anything.")
             : String(localized: "Cloud agents can use this from the internet: \(text).")

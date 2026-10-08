@@ -11,7 +11,8 @@ struct CollectionColor: Hashable {
 }
 
 /// A calendar or reminder list as EventKit lists it right now. Names are
-/// resolved at display time and never stored.
+/// resolved at display time; only granted ones' names are kept, in
+/// `CollectionLabelStore`, to name them once they're unavailable.
 struct CollectionInfo: Identifiable, Hashable {
     let resource: ClientResource
     let id: String
@@ -64,7 +65,8 @@ enum AccessSummary {
     /// actions a listed collection allows are named: a read-only calendar
     /// saved with Create reads "read" (see `hasUngrantableBits`).
     static func segments(grants: [ClientGrant], collections: [CollectionInfo],
-                         hidden: Set<ClientResource> = []) -> [String] {
+                         hidden: Set<ClientResource> = [],
+                         unavailableName: (GrantKey) -> String? = { _ in nil }) -> [String] {
         let sorted = collections.sortedForDisplay()
         var groups = [(resource: ClientResource, mask: Int, names: [String], unavailable: Int)]()
         func add(_ resource: ClientResource, _ mask: Int, name: String?) {
@@ -92,7 +94,9 @@ enum AccessSummary {
             }
             for grant in typed where sorted.named(GrantKey(resource: resource,
                                                          targetID: grant.targetID)) == nil {
-                add(resource, grant.mask, name: nil)
+                // Named from its last-known label when there is one.
+                let name = unavailableName(GrantKey(resource: resource, targetID: grant.targetID))
+                add(resource, grant.mask, name: name.map { String(localized: "\($0) (unavailable)") })
             }
         }
         return groups.map { group in
@@ -135,8 +139,10 @@ enum AccessSummary {
     }
 
     static func text(grants: [ClientGrant], collections: [CollectionInfo],
-                     hidden: Set<ClientResource> = [], maxGroups: Int = 4) -> String {
-        let all = segments(grants: grants, collections: collections, hidden: hidden)
+                     hidden: Set<ClientResource> = [], maxGroups: Int = 4,
+                     unavailableName: (GrantKey) -> String? = { _ in nil }) -> String {
+        let all = segments(grants: grants, collections: collections, hidden: hidden,
+                           unavailableName: unavailableName)
         guard !all.isEmpty else { return String(localized: "No access yet") }
         guard all.count > maxGroups else { return all.joined(separator: " · ") }
         return all.prefix(maxGroups).joined(separator: " · ") +

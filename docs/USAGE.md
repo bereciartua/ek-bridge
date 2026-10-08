@@ -75,7 +75,7 @@ Prompts are always your choice. Change them per client with **Changes:** on its 
 
 Requests refused because the bridge was off (**Bridge was off**) or because a client sent too many (**Too many requests**) are recorded too, so you can see that something tried. Failed MCP sign-ins appear as unauthorized rows with no client, at most one every 10 seconds for the MCP port and one for Remote Access.
 
-Activity stores the time, client ID, command, result, the target calendar or list **ID**, how the request came in (`cli`, `mcp` or `remote`), the agent's reported name, and the approval answer. It never stores titles, parameters, item content, keys or tokens; calendar names are looked up when shown.
+Activity stores the time, client ID, command, result, the target calendar or list **ID**, how the request came in (`cli`, `mcp` or `remote`), the agent's reported name, and the approval answer. It never stores titles, parameters, item content, keys or tokens; calendar names are looked up when shown. Separately, the names, accounts and colours of calendars and lists that a client has access to are kept in `collection-labels.json`, so EK Bridge can name one that becomes unavailable ("Project calendar (Exchange) · Not available since Oct 5"). A label goes when no client has access to its calendar or list any more.
 
 ## Settings
 

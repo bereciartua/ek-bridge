@@ -270,7 +270,8 @@ struct OverviewClientRow: View {
                     }
                     Text([model.agentSubtitle(client),
                           AccessSummary.text(grants: client.grants, collections: model.collections,
-                                             hidden: model.hiddenResources)]
+                                             hidden: model.hiddenResources,
+                                             unavailableName: model.unavailableName)]
                         .compactMap { $0 }.joined(separator: " · "))
                         .font(.callout)
                         .foregroundStyle(.secondary)

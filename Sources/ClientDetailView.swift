@@ -441,7 +441,9 @@ struct AccessSection: View {
                 if !unavailable.isEmpty {
                     BannerView(banner: Banner(
                         kind: .warning,
-                        title: tab == .calendar
+                        title: unavailable.count == 1 && model.unavailableName(unavailable[0]) != nil
+                            ? String(localized: "\(model.unavailableName(unavailable[0]) ?? "") isn't available right now.")
+                            : tab == .calendar
                             ? (unavailable.count == 1 ? String(localized: "1 calendar isn't available right now.")
                                : String(localized: "\(unavailable.count) calendars aren't available right now."))
                             : (unavailable.count == 1 ? String(localized: "1 list isn't available right now.")
@@ -943,14 +945,32 @@ struct UnavailableGrantsSheet: View {
                     let mask = model.draft?.mask(key) ?? 0
                     let saved = model.draft?.savedMask(key) ?? 0
                     HStack(spacing: 10) {
-                        Image(systemName: key.resource == .calendar ? "calendar" : "list.bullet")
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            MonoText(text: key.targetID)
-                            Text(AccessWords.words(saved).capitalizingFirstLetter)
-                                .font(.callout)
+                        if let label = model.collectionLabel(key) {
+                            // The last-known name, with the ID in a tooltip.
+                            ColorDot(color: label.color, size: 10)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(label.name) (\(label.account))")
+                                    .help(String(localized: "ID: \(key.targetID)"))
+                                Text([label.missingSince.map {
+                                        String(localized: "Not available since \(UnavailableGrantsSheet.day(Date(timeIntervalSince1970: $0)))")
+                                      }, AccessWords.words(saved).capitalizingFirstLetter]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                            CopyButton(text: key.targetID, title: String(localized: "Copy ID"),
+                                       help: String(localized: "Copy the ID"))
+                        } else {
+                            Image(systemName: key.resource == .calendar ? "calendar" : "list.bullet")
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                MonoText(text: key.targetID)
+                                Text(AccessWords.words(saved).capitalizingFirstLetter)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if mask == 0 {
@@ -974,6 +994,16 @@ struct UnavailableGrantsSheet: View {
         }
         .padding(20)
         .frame(width: 540)
+    }
+}
+
+extension UnavailableGrantsSheet {
+    /// "Oct 5", or "Oct 5, 2025" in another year.
+    static func day(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        return calendar.component(.year, from: date) == calendar.component(.year, from: now)
+            ? date.formatted(.dateTime.month(.abbreviated).day())
+            : date.formatted(date: .abbreviated, time: .omitted)
     }
 }
 

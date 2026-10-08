@@ -329,6 +329,13 @@ final class UIReview {
     private func seed() {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        // A last-known name for Claude Code's signed-out calendar.
+        let october5 = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9))!
+        let labels: [String: Any] = ["version": 1, "labels": ["calendar:cal-signed-out": [
+            "name": "Project calendar", "account": "Exchange", "colorHex": "#8E8E93",
+            "lastSeen": october5.timeIntervalSince1970 - 3_600, "missingSince": october5.timeIntervalSince1970]]]
+        try? JSONSerialization.data(withJSONObject: labels)
+            .write(to: directory.appendingPathComponent(CollectionLabelStore.fileName))
         func verifier() -> (String, String) {
             let key = Curve25519.Signing.PrivateKey()
             return (key.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined(),
