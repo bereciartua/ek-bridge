@@ -253,10 +253,13 @@ struct SnippetView: View {
             if let folder = snippet.destinationFolder,
                FileManager.default.fileExists(atPath: (folder as NSString).expandingTildeInPath) {
                 Button {
-                    NSWorkspace.shared.activateFileViewerSelecting(
-                        [URL(fileURLWithPath: (folder as NSString).expandingTildeInPath)])
+                    // The config file itself if it exists, else its folder.
+                    let file = snippet.destination.map { ($0 as NSString).expandingTildeInPath }
+                    let target = file.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+                        ?? (folder as NSString).expandingTildeInPath
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: target)])
                 } label: {
-                    Label(String(localized: "Show in Finder"), systemImage: "folder")
+                    Label(String(localized: "Show Config File in Finder"), systemImage: "folder")
                 }
             }
             ForEach(Array(snippet.extraSnippets.enumerated()), id: \.offset) { _, extra in
@@ -277,7 +280,7 @@ struct SnippetView: View {
                 HStack(alignment: .top, spacing: 8) {
                     warning(String(localized: "Agents will run the launcher from this location. Move \(AppIdentity.displayName) to Applications first, or setups will break when you move it."))
                     Spacer(minLength: 8)
-                    Button(String(localized: "Show in Finder")) { model.revealRunningApp() }
+                    Button(String(localized: "Show \(AppIdentity.displayName) in Finder")) { model.revealRunningApp() }
                 }
             }
             if let footnote = agent.footnote {
