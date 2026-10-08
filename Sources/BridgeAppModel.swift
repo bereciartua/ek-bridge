@@ -223,6 +223,8 @@ final class BridgeAppModel {
     var activityProblemsOnly = false
     var activitySearch = ""
     var activitySelection: ActivityEntry.ID?
+    /// Incremented by ⌘F; Activity's search field takes focus on each change.
+    private(set) var activitySearchFocusRequest = 0
     private(set) var activityLastViewed: Date?
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
@@ -1086,6 +1088,16 @@ final class BridgeAppModel {
         activityClientFilter = client.map { .client($0) } ?? .all
         activitySelection = id
         show(.activity)
+    }
+
+    /// ⌘F: shows Activity and puts the cursor in its search field.
+    func focusActivitySearch() {
+        show(.activity)
+        // After the pane exists, so its field sees the change.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.route == .activity else { return }
+            self.activitySearchFocusRequest += 1
+        }
     }
 
     func markActivityViewed() {

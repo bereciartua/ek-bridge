@@ -88,6 +88,10 @@ Activity stores the time, client ID, command, result, the target calendar or lis
 - **Developer:** **Install Command-Line Tool** links the app's `bridge-client` into `~/.local/bin` (no administrator password; add that folder to your `PATH` if your shell can't find it), and once installed the app's copied commands use `bridge-client`. **Show developer tools** (off by default) shows the app's test calendar and list tools, every calendar and list ID EventKit can see, MCP traffic counts since launch, both ports together (requests, errors by status, failed authentications; never contents), and the data folder.
 - **About:** the version, **Show Setup Checklist**, and links to the help pages, release notes, Discussions and the issue tracker (also in the **Help** menu: **EK Bridge Help**, **Set Up an AI Agent**, **Release Notes**, **Ask a Question…**, **Report an Issue…**).
 
+## Keyboard shortcuts
+
+**⌘1** Overview, **⌘2** Activity, **⌘3** Settings (**⌘,** works too), **⌘F** Activity's search, **⌘N** a new client, **⌘S** and **Revert Access** for access edits, **⌘O** opens the window.
+
 ## Local key and token files
 
 The app writes each client's key file, MCP token file and, for a client with cloud access, remote token file to the following paths, using the lower-case client UUID shown on its page:

@@ -311,6 +311,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func showSettingsPane(_ sender: Any?) { model.show(.settings) }
     @objc func showOverviewPane(_ sender: Any?) { model.show(.overview) }
     @objc func showActivityPane(_ sender: Any?) { model.show(.activity) }
+    @objc func findInActivity(_ sender: Any?) { model.focusActivitySearch() }
     @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
@@ -332,6 +333,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(saveAccess(_:)), #selector(revertAccess(_:)): model.hasUnsavedChanges
         case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
         case #selector(checkForUpdates(_:)): model.updaterAvailable
+        case #selector(findInActivity(_:)): model.windowIsVisible()
         default: true
         }
     }
@@ -380,10 +382,13 @@ enum MainMenu {
         edit.addItem(item(String(localized: "Copy"), #selector(NSText.copy(_:)), "c"))
         edit.addItem(item(String(localized: "Paste"), #selector(NSText.paste(_:)), "v"))
         edit.addItem(item(String(localized: "Select All"), #selector(NSText.selectAll(_:)), "a"))
+        edit.addItem(.separator())
+        edit.addItem(item(String(localized: "Find…"), #selector(BridgeAppDelegate.findInActivity(_:)), "f", target: target))
 
         let view = submenu(String(localized: "View"), in: main)
         view.addItem(item(String(localized: "Overview"), #selector(BridgeAppDelegate.showOverviewPane(_:)), "1", target: target))
         view.addItem(item(String(localized: "Activity"), #selector(BridgeAppDelegate.showActivityPane(_:)), "2", target: target))
+        view.addItem(item(String(localized: "Settings"), #selector(BridgeAppDelegate.showSettingsPane(_:)), "3", target: target))
 
         let window = submenu(String(localized: "Window"), in: main)
         window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"))

@@ -774,6 +774,16 @@ final class BehaviorReview {
         step("⌘2 and ⌘1 switch panes") {
             self.key("2") && self.model.route == .activity && self.key("1") && self.model.route == .overview
         }
+        step("⌘3 opens Settings") {
+            self.key("3") && self.model.route == .settings
+        }
+        step("⌘F opens Activity") {
+            self.key("f") && self.model.route == .activity
+        }
+        step("⌘F focuses the search field") {
+            let editor = self.window.firstResponder as? NSTextView
+            return editor?.isFieldEditor == true && editor?.delegate is NSSearchField
+        }
         step("⌘N opens New Client") {
             self.key("n") && self.model.sheet == .newClient
         }

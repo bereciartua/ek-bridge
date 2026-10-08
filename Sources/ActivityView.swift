@@ -95,7 +95,8 @@ struct ActivityView: View {
         .fixedSize()
         .accessibilityLabel(String(localized: "Show"))
         SearchField(text: $model.activitySearch, prompt: String(localized: "Search"),
-                    accessibilityLabel: String(localized: "Search activity"))
+                    accessibilityLabel: String(localized: "Search activity"),
+                    focusRequest: model.activitySearchFocusRequest)
             .frame(minWidth: 110, idealWidth: 180, maxWidth: 180)
     }
 
