@@ -257,6 +257,8 @@ struct ActivityEntry: Identifiable, Equatable {
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
     var isMCP: Bool { via == "mcp" }
+    /// A create, update, complete, delete or move, whatever its outcome.
+    var isWrite: Bool { BridgeCommand(rawValue: command)?.isWrite == true }
     var isProblem: Bool { outcome.tone.isProblem }
 
     static func entries(from activity: [ClientActivity]) -> [ActivityEntry] {
@@ -547,6 +549,45 @@ enum MCPRunPolicy {
     /// connection uses MCP. `old` is nil when the switch was never touched.
     static func migratedAllowed(old: Bool?, hasMCPConnections: Bool) -> Bool {
         old == nil || old == true || hasMCPConnections
+    }
+}
+
+/// Pause EK Bridge ▸ … in the menu bar.
+enum PauseChoice: CaseIterable {
+    case oneHour, untilTomorrow, untilTurnedOn
+}
+
+enum PauseSchedule {
+    /// When a pause ends: in an hour, at 8:00 the next local morning, or
+    /// never (nil). DST-safe: 8:00 is set on the next calendar day.
+    static func resumeDate(_ choice: PauseChoice, now: Date, calendar: Calendar = .current) -> Date? {
+        switch choice {
+        case .oneHour:
+            return now.addingTimeInterval(3_600)
+        case .untilTomorrow:
+            let today = calendar.startOfDay(for: now)
+            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
+            return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow)
+        case .untilTurnedOn:
+            return nil
+        }
+    }
+
+    /// "until 3:40 PM" today, "until tomorrow at 8:00 AM", else "until Oct 10 at 8:00 AM".
+    static func untilText(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        var time = Date.FormatStyle(date: .omitted, time: .shortened)
+        time.calendar = calendar
+        time.timeZone = calendar.timeZone
+        let clock = date.formatted(time)
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "until \(clock)") }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(date, inSameDayAs: tomorrow) {
+            return String(localized: "until tomorrow at \(clock)")
+        }
+        var day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        day.calendar = calendar
+        day.timeZone = calendar.timeZone
+        return String(localized: "until \(date.formatted(day)) at \(clock)")
     }
 }
 

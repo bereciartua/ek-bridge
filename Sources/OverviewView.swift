@@ -146,10 +146,7 @@ struct BridgeStatusCard: View {
         }
     }
 
-    private var title: String {
-        model.bridge.isOn ? String(localized: "\(AppIdentity.displayName) is on")
-                          : String(localized: "\(AppIdentity.displayName) is paused")
-    }
+    private var title: String { model.bridgeTitle }
 
     private var subtitle: String {
         switch model.bridge {

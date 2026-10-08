@@ -290,6 +290,29 @@ struct AppPresentationTests {
         // Unlisted collections aren't flagged: they're unavailable, not read only.
         precondition(!AccessSummary.hasUngrantableBits(
             grants: [ClientGrant(resource: .calendar, targetID: "gone", mask: readCreate)], collections: [holidays]))
+        // Pause for…: an hour, 8:00 the next local morning (across DST changes), or open-ended.
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let utc = ISO8601DateFormatter()
+        let fallEve = utc.date(from: "2026-11-01T02:00:00Z")!  // Oct 31, 22:00 EDT
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: fallEve, calendar: newYork)
+                     == utc.date(from: "2026-11-01T13:00:00Z")!, "Nov 1, 8:00 EST")
+        let springEve = utc.date(from: "2026-03-08T03:00:00Z")!  // Mar 7, 22:00 EST
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: springEve, calendar: newYork)
+                     == utc.date(from: "2026-03-08T12:00:00Z")!, "Mar 8, 8:00 EDT")
+        let earlyMorning = utc.date(from: "2026-10-08T06:30:00Z")!  // 2:30 EDT: still the next day
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: earlyMorning, calendar: newYork)
+                     == utc.date(from: "2026-10-09T12:00:00Z")!)
+        precondition(PauseSchedule.resumeDate(.oneHour, now: fallEve, calendar: newYork)
+                     == fallEve.addingTimeInterval(3_600))
+        precondition(PauseSchedule.resumeDate(.untilTurnedOn, now: fallEve, calendar: newYork) == nil)
+        let afternoon = utc.date(from: "2026-10-08T18:00:00Z")!
+        precondition(PauseSchedule.untilText(afternoon.addingTimeInterval(3_600), now: afternoon, calendar: newYork)
+                     .hasPrefix("until ") &&
+                     !PauseSchedule.untilText(afternoon.addingTimeInterval(3_600), now: afternoon,
+                                              calendar: newYork).contains("tomorrow"))
+        precondition(PauseSchedule.untilText(utc.date(from: "2026-10-09T12:00:00Z")!, now: afternoon,
+                                             calendar: newYork).hasPrefix("until tomorrow at "))
         // The local MCP server runs only while EK Bridge is on, allowed, and used.
         precondition(MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: true))
         precondition(!MCPRunPolicy.shouldRun(bridgeOn: false, allowed: true, hasMCPConnections: true))

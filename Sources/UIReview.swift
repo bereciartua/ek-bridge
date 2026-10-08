@@ -1026,6 +1026,23 @@ final class BehaviorReview {
         step("cancel keeps it on") {
             self.answer(.alertSecondButtonReturn) && self.model.localMCPAllowed && self.model.mcpIsListening
         }
+        step("pause for an hour sets resumeAt and turns off") {
+            self.model.pause(for: .oneHour)
+            guard let resume = self.model.resumeAt else { return false }
+            return !self.model.bridge.isOn && abs(resume.timeIntervalSinceNow - 3_600) < 5 &&
+                self.model.bridgeTitle.hasPrefix("\(AppIdentity.displayName) is paused until")
+        }
+        step("tick after resumeAt turns on") {
+            self.model.pause(until: Date().addingTimeInterval(-1))
+            self.model.tick()
+            return self.model.bridge.isOn && self.model.resumeAt == nil && self.model.banner?.kind == .info
+        }
+        step("manual turn on clears resumeAt") {
+            self.model.pause(for: .untilTomorrow)
+            guard self.model.resumeAt != nil, !self.model.bridge.isOn else { return false }
+            self.model.setBridgeEnabled(true)
+            return self.model.bridge.isOn && self.model.resumeAt == nil
+        }
         step("Advanced switch off keeps MCP off") {
             self.model.setLocalMCPAllowed(false, confirm: false)
             self.model.setBridgeEnabled(false)
@@ -1364,6 +1381,14 @@ final class SnapshotReview {
                 self.model.setShowDeveloperTools(false)
                 self.model.navigate(to: .overview)
                 return main
+            }
+            step("overview-paused-until") {
+                self.model.pause(for: .oneHour)
+                return main
+            }
+            step("restore-paused") {
+                self.model.setBridgeEnabled(true)
+                return nil
             }
             step("overview-update") {
                 self.model.updateFound(FoundUpdate(version: "0.8.1", critical: false))

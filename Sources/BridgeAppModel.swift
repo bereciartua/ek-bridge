@@ -275,6 +275,8 @@ final class BridgeAppModel {
     private(set) var remoteTest = RemoteTestState.notTested
     private(set) var remoteAutoOff: TimeInterval = 0
     private(set) var remoteOffAt: Date?
+    /// Pause EK Bridge ▸ For 1 Hour / Until Tomorrow: when it turns back on.
+    private(set) var resumeAt: Date?
     private(set) var keepAwake = false
     private(set) var remoteNotes = [RemoteRequestNote]()
     private(set) var remoteConnections = [String: MCPServer.Connection]()
@@ -325,6 +327,7 @@ final class BridgeAppModel {
         static let remoteAutoOff = "RemoteAccessAutoOff"
         static let remoteOffAt = "RemoteAccessOffAt"
         static let keepAwake = "RemoteAccessKeepAwake"
+        static let resumeAt = "BridgeResumeAt"
     }
 
     init(services: BridgeServices) {
@@ -356,6 +359,8 @@ final class BridgeAppModel {
         let offAt = defaults.double(forKey: Keys.remoteOffAt)
         remoteOffAt = offAt > 0 ? Date(timeIntervalSinceReferenceDate: offAt) : nil
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
+        let resume = defaults.double(forKey: Keys.resumeAt)
+        resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
         switch defaults.string(forKey: Keys.lastRoute) {
         case "activity": route = .activity
         case "settings": route = .settings
@@ -475,7 +480,8 @@ final class BridgeAppModel {
         checkSetupCompletion()
     }
 
-    private func tick() {
+    /// Every 2 s (internal for the behavior test).
+    func tick() {
         let before = (calendarAccess, remindersAccess)
         updateAccess()
         if before.0 != calendarAccess || before.1 != remindersAccess {
@@ -484,6 +490,7 @@ final class BridgeAppModel {
             now = Date()
         }
         if let saved = savedToastAt, Date().timeIntervalSince(saved) > 2.5 { savedToastAt = nil }
+        if let resume = resumeAt, resume <= Date() { resumeAsScheduled() }
         if remoteEnabled, let offAt = remoteOffAt, offAt <= Date() {
             applyRemoteEnabled(false)
             showBanner(Banner(kind: .info, title: String(localized: "Remote Access turned off, as scheduled.")))
@@ -554,6 +561,21 @@ final class BridgeAppModel {
 
     var needsAttention: Bool { !problems.isEmpty }
 
+    /// The fix for a problem, shared by the menu bar and Overview's Needs you.
+    func fix(_ problem: AttentionProblem) {
+        switch problem {
+        case .calendarAccess: openPrivacySettings(.calendar)
+        case .remindersAccess: openPrivacySettings(.reminderList)
+        case .policyStoreUnavailable, .bridgeFailed: show(.overview)
+        case .mcpServerFailed:
+            settingsScrollTarget = "mcp"
+            show(.settings)
+        case .remoteAccessFailed:
+            settingsScrollTarget = "remote"
+            show(.settings)
+        }
+    }
+
     func lastRequest(for clientID: String) -> Date? {
         ActivityStats.lastRequest(for: clientID, in: activity)
     }
@@ -592,7 +614,9 @@ final class BridgeAppModel {
         if !policyStoreAvailable { return String(localized: "Connection settings can't be read") }
         switch bridge {
         case .failed: return String(localized: "Paused · \(AppIdentity.displayName) couldn't start")
-        case .off: return String(localized: "Paused · agents and scripts are refused")
+        case .off:
+            guard let resumeAt else { return String(localized: "Paused · agents and scripts are refused") }
+            return String(localized: "Paused \(PauseSchedule.untilText(resumeAt, now: now)) · agents and scripts are refused")
         case .on:
             let failing = problems.compactMap { problem -> String? in
                 switch problem {
@@ -743,14 +767,55 @@ final class BridgeAppModel {
 
     // MARK: Bridge
 
+    /// The switch and Turn On EK Bridge. Any manual change ends a scheduled pause.
     func setBridgeEnabled(_ on: Bool) {
         confirmUnsaved { [weak self] in
             guard let self else { return }
+            self.setResumeAt(nil)
             let state = self.services.setBridge(on)
             // Changes waiting for approval are refused when the bridge goes off.
             if !state.isOn { self.services.approvals?.withdrawAll() }
             self.bridgeDidChange(state)
         }
+    }
+
+    /// Pause EK Bridge ▸ For 1 Hour, Until Tomorrow (8:00) or Until I Turn
+    /// It On (`date` nil).
+    func pause(until date: Date?) {
+        confirmUnsaved { [weak self] in
+            guard let self else { return }
+            let state = self.services.setBridge(false)
+            if !state.isOn { self.services.approvals?.withdrawAll() }
+            self.setResumeAt(date)
+            self.bridgeDidChange(state)
+        }
+    }
+
+    func pause(for choice: PauseChoice) {
+        pause(until: PauseSchedule.resumeDate(choice, now: Date()))
+    }
+
+    private func setResumeAt(_ date: Date?) {
+        resumeAt = date
+        services.defaults.set(date?.timeIntervalSinceReferenceDate ?? 0, forKey: Keys.resumeAt)
+    }
+
+    /// The scheduled end of a pause. Turning on needs no unsaved-edits guard.
+    private func resumeAsScheduled() {
+        setResumeAt(nil)
+        guard !bridge.isOn else { return }
+        let state = services.setBridge(true)
+        bridgeDidChange(state)
+        if state.isOn {
+            showBanner(Banner(kind: .info, title: String(localized: "\(AppIdentity.displayName) turned back on, as scheduled.")))
+        }
+    }
+
+    /// "EK Bridge is on", "EK Bridge is paused" or "EK Bridge is paused until 3:40 PM".
+    var bridgeTitle: String {
+        if bridge.isOn { return String(localized: "\(AppIdentity.displayName) is on") }
+        guard let resumeAt else { return String(localized: "\(AppIdentity.displayName) is paused") }
+        return String(localized: "\(AppIdentity.displayName) is paused \(PauseSchedule.untilText(resumeAt, now: now))")
     }
 
     // MARK: macOS access

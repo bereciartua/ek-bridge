@@ -6,10 +6,15 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Added
+
+- **Pause EK Bridge ▸ For 1 Hour / Until Tomorrow / Until I Turn It On** in the menu bar. A timed pause turns EK Bridge back on by itself (8:00 the next morning for Until Tomorrow), and Overview and the menu say until when.
+
 ### Changed
 
 - The app calls clients **connections** (sidebar, menus, Activity, Settings), and the master switch reads **EK Bridge is on** / **EK Bridge is paused**. The CLI, the API, file names and `--client` keep "client".
 - One switch: the local MCP server runs whenever EK Bridge is on and a connection uses MCP, and stops when you pause it. There's no MCP step in setup; **Settings ▸ Advanced ▸ Local MCP server** turns it off for a Mac where no agent should connect. Upgrading keeps it running if it was on or a connection uses MCP. Overview and the menu bar say **MCP on port 47615**, and agents, `bridge-client` and `bridge-mcp check` say EK Bridge is paused instead of off.
+- The menu bar menu is reordered: the switch and Pause, the MCP and Remote Access lines, **Needs you** (approvals, problems, an update), then **Recent changes**, which lists only adds, edits, completions and deletes.
 
 ## [0.8.3] - 2026-10-08
 
