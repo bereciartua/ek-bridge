@@ -275,6 +275,13 @@ struct AppPresentationTests {
             of: calendar.date(byAdding: .day, value: -1, to: now)!)!
         let lateToday = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: now)!
         precondition(RelativeTime.clock(noonYesterday, now: lateToday) == "Yesterday")
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = TimeZone(identifier: "UTC")!
+        let october5 = gregorian.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9))!
+        let october8 = gregorian.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: 9))!
+        let lastYear = gregorian.date(from: DateComponents(year: 2025, month: 10, day: 5, hour: 9))!
+        precondition(!RelativeTime.clock(october5, now: october8, calendar: gregorian).contains("2026"))
+        precondition(RelativeTime.clock(lastYear, now: october8, calendar: gregorian).contains("2025"))
         precondition(RelativeTime.ago(noonYesterday, now: lateToday) == "Yesterday")
         precondition(ConnectCommand.scopeStatus(clientName: "Claude Code") ==
                      #"python3 client.py scope_status --client "Claude Code""#)

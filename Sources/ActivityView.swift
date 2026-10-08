@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Activity (§10): a filterable table with an inspector that explains each
@@ -9,23 +10,18 @@ struct ActivityView: View {
         let scoped = clientScoped
         let rows = filtered(scoped)
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                PaneTitle(title: String(localized: "Activity"))
-                    .fixedSize()
-                    .layoutPriority(1)
-                Spacer(minLength: 12)
-                ActivityFilterMenu(model: model)
-                Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
-                    Text(String(localized: "All")).tag(false)
-                    Text(String(localized: "Problems \(scoped.filter(\.isProblem).count)")).tag(true)
+            // The filters move under the title when the pane is too narrow
+            // for one row (the minimum window size).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    title
+                    Spacer(minLength: 12)
+                    filters(scoped)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel(String(localized: "Show"))
-                SearchField(text: $model.activitySearch, prompt: String(localized: "Search"),
-                            accessibilityLabel: String(localized: "Search activity"))
-                    .frame(minWidth: 110, maxWidth: 180)
+                VStack(alignment: .leading, spacing: 10) {
+                    title
+                    HStack(spacing: 12) { filters(scoped) }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 20)
@@ -81,6 +77,28 @@ struct ActivityView: View {
         .onAppear { model.markActivityViewed() }
     }
 
+    private var title: some View {
+        PaneTitle(title: String(localized: "Activity"))
+            .fixedSize()
+            .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private func filters(_ scoped: [ActivityEntry]) -> some View {
+        ActivityFilterMenu(model: model)
+        Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
+            Text(String(localized: "All")).tag(false)
+            Text(String(localized: "Problems \(scoped.filter(\.isProblem).count)")).tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel(String(localized: "Show"))
+        SearchField(text: $model.activitySearch, prompt: String(localized: "Search"),
+                    accessibilityLabel: String(localized: "Search activity"))
+            .frame(minWidth: 110, idealWidth: 180, maxWidth: 180)
+    }
+
     private var clientScoped: [ActivityEntry] {
         model.activity.filter { entry in
             let client = switch model.activityClientFilter {
@@ -124,6 +142,76 @@ extension ActivityEntry {
     }
 }
 
+/// Activity's column widths. The Result column always fits the widest
+/// outcome label, and Request keeps its labels whole while Client and
+/// Calendar or list still get room; those two share the rest and truncate
+/// at the tail.
+enum ActivityColumns {
+    struct Widths: Equatable {
+        var time, via, client, request, target, result: CGFloat
+    }
+
+    /// Inset style margins, column spacing and the scroller.
+    static let overhead: CGFloat = 104
+    /// What Client and Calendar or list keep before Request gives way.
+    static let namesMinimum: CGFloat = 120
+
+    static func widths(for tableWidth: CGFloat) -> Widths {
+        let usable = max(tableWidth - overhead, 320)
+        let time = max(widestTime, usable * 0.12)
+        let result = max(widestResultLabel, usable * 0.2)
+        let via: CGFloat = 22
+        let rest = max(usable - time - result - via, 0)
+        let request = max(rest * 0.34, min(widestRequestLabel, rest - namesMinimum))
+        let names = rest - request
+        return Widths(time: time, via: via, client: names / 2, request: request, target: names / 2,
+                      result: result)
+    }
+
+    /// The table's width in a main window this wide, with the sidebar at its
+    /// ideal width and no inspector beside the table (for tests).
+    static func tableWidth(windowWidth: CGFloat) -> CGFloat {
+        windowWidth - 230 - 2 * 24
+    }
+
+    /// The widest Result pill: `Pill`'s callout medium font, its 8 pt
+    /// padding on each side, and a little room for the cell.
+    static let widestResultLabel: CGFloat = {
+        let font = NSFont.systemFont(ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
+                                     weight: .medium)
+        return width(OutcomePresentation.allLabels, font) + 16 + 4
+    }()
+
+    /// The widest Time cell this year (`RelativeTime.clock`: "10:58 PM"
+    /// today, "Yesterday", "Dec 28" before) in monospaced digits, with room
+    /// for the cell. Earlier years truncate, with the full date in the tooltip.
+    static let widestTime: CGFloat = {
+        let calendar = Calendar.current
+        let now = Date()
+        let year = calendar.component(.year, from: now)
+        var samples = [10, 22].compactMap {
+            calendar.date(bySettingHour: $0, minute: 58, second: 0, of: now)
+                .map { RelativeTime.clock($0, now: $0, calendar: calendar) }
+        }
+        samples.append(String(localized: "Yesterday"))
+        for month in [5, 9, 12] {
+            if let day = calendar.date(from: DateComponents(year: year, month: month, day: 28)) {
+                samples.append(RelativeTime.clock(day, now: day.addingTimeInterval(2 * 86_400), calendar: calendar))
+            }
+        }
+        return width(samples, NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)) + 4
+    }()
+
+    /// The widest Request label in the body font, with room for the cell.
+    static let widestRequestLabel: CGFloat = {
+        width(CommandPresentation.allShortLabels, NSFont.systemFont(ofSize: NSFont.systemFontSize)) + 4
+    }()
+
+    private static func width(_ labels: [String], _ font: NSFont) -> CGFloat {
+        labels.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
+    }
+}
+
 struct ActivityTable: View {
     @Bindable var model: BridgeAppModel
     let rows: [ActivityEntry]
@@ -131,12 +219,7 @@ struct ActivityTable: View {
     let width: CGFloat
 
     var body: some View {
-        // Inset style margins, column spacing and the scroller take about 84 pt.
-        let usable = max(width - 84, 320)
-        let time = max(62, usable * 0.14)
-        let result = max(128, usable * 0.2)
-        let via: CGFloat = 22
-        let rest = usable - time - result - via
+        let columns = ActivityColumns.widths(for: width)
         ScrollViewReader { proxy in
         Table(rows, selection: $model.activitySelection) {
             TableColumn(String(localized: "Time")) { entry in
@@ -145,29 +228,34 @@ struct ActivityTable: View {
                     .foregroundStyle(.secondary)
                     .help(RelativeTime.full(entry.at))
             }
-            .width(time)
+            .width(min: columns.time, ideal: columns.time, max: columns.time)
             TableColumn(String(localized: "Via")) { entry in
                 ViaIcon(via: entry.via)
             }
-            .width(via)
+            .width(min: columns.via, ideal: columns.via, max: columns.via)
             TableColumn(String(localized: "Client")) { entry in
                 Text(model.clientName(entry.clientID))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .foregroundStyle(entry.clientID == nil ? .secondary : .primary)
                     .help(model.clientName(entry.clientID))
             }
-            .width(rest * 0.31)
+            // The one flexible column: it takes whatever the others leave.
+            .width(min: columns.client, ideal: columns.client)
             TableColumn(String(localized: "Request")) { entry in
-                Text(CommandPresentation.label(entry.command))
+                Text(CommandPresentation.shortLabel(entry.command))
+                    .lineLimit(1)
+                    .help(CommandPresentation.label(entry.command))
             }
-            .width(rest * 0.36)
+            .width(min: columns.request, ideal: columns.request, max: columns.request)
             TableColumn(String(localized: "Calendar or list")) { entry in
                 ActivityTargetCell(model: model, entry: entry)
             }
-            .width(rest * 0.33)
+            .width(min: columns.target, ideal: columns.target, max: columns.target)
             TableColumn(String(localized: "Result")) { entry in
                 Pill(label: entry.outcome.label, tone: entry.outcome.tone)
             }
-            .width(result)
+            .width(min: columns.result, ideal: columns.result, max: columns.result)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
         .scrollContentBackground(.hidden)
@@ -193,9 +281,9 @@ struct ActivityTargetCell: View {
             if let collection = model.collection(key) {
                 HStack(spacing: 6) {
                     ColorDot(color: collection.color, size: 8)
-                    Text(collection.name).lineLimit(1)
+                    Text(collection.name).lineLimit(1).truncationMode(.tail)
                 }
-                .help(String(localized: "ID: \(key.targetID)"))
+                .help("\(collection.name)\n" + String(localized: "ID: \(key.targetID)"))
             } else {
                 Text(String(localized: "Unavailable"))
                     .foregroundStyle(.secondary)

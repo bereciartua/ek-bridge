@@ -1094,6 +1094,13 @@ final class BehaviorReview {
             self.model.setAutomaticUpdateChecks(true)
             return off && self.model.automaticUpdateChecks && self.review.automaticUpdateChecks
         }
+        step("activity result column fits every label") {
+            let widths = [900, 760].map {
+                ActivityColumns.widths(for: ActivityColumns.tableWidth(windowWidth: CGFloat($0)))
+            }
+            return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
+                && widths[0].request >= ActivityColumns.widestRequestLabel
+        }
         step("a copy built from source can't check") {
             self.review.updaterAvailable = false
             self.model.refresh()
@@ -1206,7 +1213,19 @@ final class SnapshotReview {
                 self.model.activitySelection = self.model.activity.first { $0.code == "forbidden" }?.id
                 return main
             }
+            step("activity-minimum") {
+                // Rebuilt at the new size, as a window opened at it would be.
+                let selection = self.model.activitySelection
+                self.model.navigate(to: .overview)
+                main?.setContentSize(MainWindowController.minimumSize)
+                DispatchQueue.main.async {
+                    self.model.navigate(to: .activity)
+                    self.model.activitySelection = selection
+                }
+                return main
+            }
             step("settings") {
+                main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
                 self.model.navigate(to: .settings)
                 return main

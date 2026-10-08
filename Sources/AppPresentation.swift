@@ -195,6 +195,13 @@ enum RelativeTime {
             return date.formatted(date: .omitted, time: .shortened)
         }
         if calendar.isDateInYesterday(date, relativeTo: now) { return String(localized: "Yesterday") }
+        // "Oct 5" this year, so Activity's Time column stays narrow.
+        if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return date.formatted(style)
+        }
         return date.formatted(date: .abbreviated, time: .omitted)
     }
 

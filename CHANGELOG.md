@@ -10,6 +10,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 - **EK Bridge Test, a live-test copy for maintainers** (`sh scripts/live_test.sh`, [details](docs/TESTING.md#live-test-copy)). Built with `EVENTKIT_LIVE_TEST=1`, it has its own bundle ID, data folder, `/tmp` folder, ports (47625 and 47626) and MCP server key, refuses to start if any of them is the installed app's, and is driven through an automation channel that release builds never contain (`scripts/check_bundle.sh` checks). It creates, grants and removes only calendars and lists named "EK Bridge Test · …". Nothing changes in the released app.
 
+### Fixed
+
+- **Activity's columns fit.** The Result column is as wide as the longest result ("Not approved in time"), so no result is cut off at the default or the minimum window size; Request keeps its labels whole at the default size ("List calendars" and "macOS access" are shorter in the table, the full name is in the tooltip); Client and Calendar or list share the rest and end in "…" with the full name in the tooltip. Times from earlier this year read "Oct 5" instead of "Oct 5, 2026", and at the minimum window size the filters move under the title instead of pushing the table out of the window.
+
 ## [0.8.2] - 2026-10-07
 
 Copied command-line commands now work as pasted in a downloaded copy, and every release also ships its disk image as `EKBridge.dmg`, so [one link](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg) always downloads the newest version. Nothing changes for agents or for existing scripts, and the client registry stays at **version 4**, so going back to 0.8.1 means installing its DMG over this one.
