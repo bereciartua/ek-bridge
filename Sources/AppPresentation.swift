@@ -529,3 +529,13 @@ enum ConnectCommand {
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
+
+/// Which menu bar icon shows (`MenuBarGlyph`): attention wins, then on or
+/// paused.
+enum MenuBarGlyphState: Equatable, CaseIterable {
+    case on, paused, attention
+
+    static func `for`(needsAttention: Bool, bridgeOn: Bool) -> MenuBarGlyphState {
+        needsAttention ? .attention : bridgeOn ? .on : .paused
+    }
+}

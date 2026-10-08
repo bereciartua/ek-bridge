@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import EventKit
 import ServiceManagement
+import SwiftUI
 
 // UI-review build only (EVENTKIT_UI_REVIEW=1). Uses a temporary registry, key
 // folder and defaults suite with fake clients, calendars and activity. It
@@ -1185,6 +1186,32 @@ final class BehaviorReview {
     }
 }
 
+/// The snapshot `menu-glyphs`: each state on a strip like the menu bar.
+struct MenuGlyphPreview: View {
+    var body: some View {
+        HStack(spacing: 28) {
+            ForEach([(MenuBarGlyphState.on, "On"), (.paused, "Paused"), (.attention, "Needs attention")],
+                    id: \.1) { state, label in
+                VStack(spacing: 10) {
+                    Image(nsImage: MenuBarGlyph.image(state))
+                        .renderingMode(.template)
+                        .frame(width: 30, height: 24)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                    Image(nsImage: MenuBarGlyph.image(state))
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: 36, height: 36)
+                    Text(label).font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(width: 100)
+            }
+        }
+        .foregroundStyle(.primary)
+        .frame(width: 420, height: 190)
+        .background(.bar)
+    }
+}
+
 /// Renders each screen with fixture data, in both appearances, to PNG with
 /// cacheDisplay (no screen-recording permission needed).
 @MainActor
@@ -1214,7 +1241,15 @@ final class SnapshotReview {
             func step(_ name: String, _ setup: @escaping @MainActor () -> NSWindow?) {
                 steps.append(("\(name)-\(suffix)", setup))
             }
+            step("menu-glyphs") {
+                let window = self.glyphWindow
+                window.appearance = NSAppearance(named: appearance)
+                window.center()
+                window.orderFrontRegardless()
+                return window
+            }
             step("overview") {
+                self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
@@ -1559,8 +1594,19 @@ final class SnapshotReview {
         }
     }
 
+    /// The menu bar icons in each state at 18 and 36 pt, on a bar-like strip
+    /// (the status item itself isn't captured).
+    private lazy var glyphWindow: NSWindow = {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 190),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: MenuGlyphPreview())
+        return window
+    }()
+
     private func target(for name: String) -> NSWindow? {
         if name.hasPrefix("restore") { return nil }
+        if name.hasPrefix("menu-glyphs") { return glyphWindow }
         if name.hasPrefix("approval-panel") { return review.approvalPanel.window }
         if name.hasPrefix("setup") || name.hasPrefix("overview-renamed") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }

@@ -41,17 +41,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        let symbol: String
-        let state: String
-        if model.needsAttention {
-            symbol = "calendar.badge.exclamationmark"
-            state = String(localized: "needs attention")
-        } else if model.bridge.isOn {
-            symbol = "calendar.badge.checkmark"
-            state = String(localized: "on")
-        } else {
-            symbol = "calendar"
-            state = String(localized: "off")
+        let glyph = MenuBarGlyphState.for(needsAttention: model.needsAttention, bridgeOn: model.bridge.isOn)
+        let state = switch glyph {
+        case .attention: String(localized: "needs attention")
+        case .on: String(localized: "on")
+        case .paused: String(localized: "off")
         }
         let pending = model.pendingApprovalCount
         var label = String(localized: "\(AppIdentity.displayName), \(state)")
@@ -59,9 +53,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             label += ", " + (pending == 1 ? String(localized: "1 change waiting for approval")
                                           : String(localized: "\(pending) changes waiting for approval"))
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular))
-        image?.isTemplate = true
+        let image = MenuBarGlyph.image(glyph)
+        image.accessibilityDescription = label
         button.image = image
         // The pending count, and a globe while Remote Access is on, sit beside
         // the icon.

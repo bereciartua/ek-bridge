@@ -12,6 +12,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - **⌘3** opens Settings (View menu), and **Find…** (**⌘F**, Edit menu) opens Activity with the cursor in its search field.
 - **Help menu links**: **EK Bridge Help**, **Set Up an AI Agent**, **Release Notes**, **Ask a Question…** (Discussions) and **Report an Issue…**, above **Show Setup Checklist**. Settings ▸ About has the same links.
 
+### Changed
+
+- **The menu bar icon is the app icon's day arc** instead of a calendar symbol, drawn as a template image in three states: on, paused (faded, with a pause sign) and needs attention (with a dot). The pending-change count, the Remote Access globe and the accessibility label are unchanged.
+
 ### Fixed
 
 - **A delete EK Bridge can't show is no longer the default.** When the item an agent wants to delete doesn't load, the approval panel says "EK Bridge can't show what will be deleted." with the item's ID (shortened, the full one in the tooltip), **Deny** is the default button (Return and Escape both deny), and deleting takes a click on **Delete Anyway**, after the same half-second arming.

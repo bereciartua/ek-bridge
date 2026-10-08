@@ -292,6 +292,10 @@ struct AppPresentationTests {
         // Unlisted collections aren't flagged: they're unavailable, not read only.
         precondition(!AccessSummary.hasUngrantableBits(
             grants: [ClientGrant(resource: .calendar, targetID: "gone", mask: readCreate)], collections: [holidays]))
+        precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: true) == .on)
+        precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: false) == .paused)
+        precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: true) == .attention)
+        precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: false) == .attention)
         var gregorian = Calendar(identifier: .gregorian)
         gregorian.timeZone = TimeZone(identifier: "UTC")!
         let october5 = gregorian.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9))!
