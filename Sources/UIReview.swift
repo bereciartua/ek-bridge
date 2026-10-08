@@ -1546,6 +1546,16 @@ final class SnapshotReview {
                 if let sheet = main?.attachedSheet { main?.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
                 return nil
             }
+            step("overview-moved") {
+                // The relaunched copy after Move to Applications from a disk image.
+                self.model.navigate(to: .overview)
+                self.model.didMove(from: "/Volumes/EK Bridge")
+                return main
+            }
+            step("restore-moved") {
+                self.model.dismissBanner()
+                return nil
+            }
             step("client-access") {
                 // The README's Access picture: Claude Code's calendars, scrolled to the table.
                 self.model.sheet = nil
