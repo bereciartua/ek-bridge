@@ -66,7 +66,7 @@ struct AgentSetupCard: View {
     let model: BridgeAppModel
     let client: ClientView
 
-    private var agent: AgentKind { model.agentChoice[client.id] ?? .claudeCode }
+    private var agent: AgentKind { model.agent(for: client.id) }
     private var methodKey: String { "\(client.id)|\(agent.rawValue)" }
     private var method: SetupMethod {
         let chosen = model.methodChoice[methodKey] ?? agent.recommended
@@ -83,7 +83,7 @@ struct AgentSetupCard: View {
                     FlowLayout(spacing: 6) {
                         ForEach(AgentKind.allCases) { kind in
                             AgentChip(title: kind.displayName, selected: kind == agent) {
-                                model.agentChoice[client.id] = kind
+                                model.setAgent(kind, for: client.id)
                             }
                         }
                     }

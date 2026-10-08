@@ -462,6 +462,10 @@ final class LiveTestAutomation {
         }
         let created = try client(name)
         try saveGrants(created.id, grants)
+        if let raw = command["agent"] as? String {
+            guard let agent = AgentKind(rawValue: raw) else { throw CommandError(message: "unknown agent \(raw)") }
+            model.setAgent(agent, for: created.id)
+        }
         return ["id": created.id, "name": created.name]
     }
 

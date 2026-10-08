@@ -96,6 +96,7 @@ final class UIReview {
         }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
             seed()
+            ConnectionAgentKinds.save([Self.claudeID: .claudeCode, Self.cursorID: .cursor], defaults)
             // Requests from the last day and a half count as unseen.
             defaults.set(Date().addingTimeInterval(-129_600).timeIntervalSinceReferenceDate,
                          forKey: "ActivityLastViewed")
@@ -206,7 +207,8 @@ final class UIReview {
                 },
                 automaticChecks: { [unowned self] in self.automaticUpdateChecks },
                 setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
-                lastCheck: { [unowned self] in self.lastUpdateCheck }))
+                lastCheck: { [unowned self] in self.lastUpdateCheck }),
+            installedAgents: { [.claudeCode, .claudeDesktop, .cursor] })
     }
 
     /// Starts a pairing request the way claude.ai would: register (DCR),
@@ -879,6 +881,13 @@ final class BehaviorReview {
                 self.model.tokenFileStatus(created.id) == .missing && created.approval == .allow &&
                 self.model.connectTab[created.id] == .cli
         }
+        step("a connection's agent is remembered") {
+            let stored = self.model.agent(for: UIReview.cursorID) == .cursor
+            self.model.setAgent(.claudeDesktop, for: UIReview.cursorID)
+            let saved = ConnectionAgentKinds.load(self.review.defaults)[UIReview.cursorID] == .claudeDesktop
+            self.model.setAgent(.cursor, for: UIReview.cursorID)
+            return stored && saved && self.model.installedAgents.contains(.claudeDesktop)
+        }
         step("switch Connect tabs") {
             self.model.navigate(to: .client(claude))
             self.model.connectTab[claude] = .cli
@@ -892,7 +901,7 @@ final class BehaviorReview {
             let context = SetupContext(url: self.model.mcpURL, launcherPath: self.model.launcherPath,
                                        clientID: claude, tokenPath: url.path)
             for agent in AgentKind.allCases {
-                self.model.agentChoice[claude] = agent
+                self.model.setAgent(agent, for: claude)
                 for method in agent.methods {
                     self.model.methodChoice["\(claude)|\(agent.rawValue)"] = method
                     let snippet = agent.snippet(method, context)
@@ -900,7 +909,7 @@ final class BehaviorReview {
                     if texts.contains(where: { $0.contains(token) || $0.contains("ekb_mcp_v1_") }) { return false }
                 }
             }
-            self.model.agentChoice[claude] = .claudeCode
+            self.model.setAgent(.claudeCode, for: claude)
             return true
         }
         step("Install Command-Line Tool links bridge-client") {

@@ -253,8 +253,15 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 setKeepAwake: { [weak self] in self?.keepAwake.set($0) },
                 onACPower: { KeepAwake.onACPower },
                 oauth: oauth),
-            updater: updater.controls)
+            updater: updater.controls,
+            installedAgents: { [weak self] in self?.installedAgents.current() ?? [] })
     }
+
+    private lazy var installedAgents: InstalledAgentsCache = {
+        let cache = InstalledAgentsCache()
+        cache.changed = { [weak self] in self?.model.scheduleRefresh(collections: true) }
+        return cache
+    }()
 
     private func liveCollections() -> [CollectionInfo] {
         var result = [CollectionInfo]()
@@ -364,6 +371,39 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(findInActivity(_:)): model.windowIsVisible()
         default: true
         }
+    }
+}
+
+/// Finds installed agents (B04) off the main thread, at most once a minute;
+/// the model reads the last answer on each full refresh.
+@MainActor
+final class InstalledAgentsCache {
+    private var value = Set<AgentKind>()
+    private var checkedAt: Date?
+    private var running = false
+    var changed: () -> Void = {}
+
+    func current() -> Set<AgentKind> {
+        if !running, checkedAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
+            running = true
+            DispatchQueue.global(qos: .utility).async {
+                let probe = AgentProbe(
+                    appURL: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) },
+                    fileExists: { FileManager.default.fileExists(atPath: $0) },
+                    home: NSHomeDirectory())
+                let found = AgentDetection.installed(probe)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        self.running = false
+                        self.checkedAt = Date()
+                        guard found != self.value else { return }
+                        self.value = found
+                        self.changed()
+                    }
+                }
+            }
+        }
+        return value
     }
 }
 

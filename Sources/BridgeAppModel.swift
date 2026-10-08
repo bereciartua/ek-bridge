@@ -173,6 +173,9 @@ struct BridgeServices {
     var approvals: ApprovalCenter?
     var remote: RemoteControls
     var updater: UpdaterControls
+    /// Agents found on this Mac (B04). The live version answers from a cache
+    /// refreshed in the background; the UI-review build returns fixed ones.
+    var installedAgents: () -> Set<AgentKind> = { [] }
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -285,7 +288,13 @@ final class BridgeAppModel {
     var tunnelChoice = TunnelProvider.tailscaleFunnel
     var cloudAgentChoice = [String: CloudAgentKind]()
     var connectTab = [String: ConnectTab]()
+    /// The agent picked on a Connect tab this session; falls back to the
+    /// stored kind (`connectionAgents`), then Claude Code.
     var agentChoice = [String: AgentKind]()
+    /// Each connection's agent, saved in UserDefaults `ConnectionAgentKinds` (B04).
+    private(set) var connectionAgents = [String: AgentKind]()
+    /// Agents found on this Mac, for the Add a Connection sheet and setup.
+    private(set) var installedAgents = Set<AgentKind>()
     /// Keyed by "clientID|agent".
     var methodChoice = [String: SetupMethod]()
 
@@ -359,6 +368,7 @@ final class BridgeAppModel {
         let offAt = defaults.double(forKey: Keys.remoteOffAt)
         remoteOffAt = offAt > 0 ? Date(timeIntervalSinceReferenceDate: offAt) : nil
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
+        connectionAgents = ConnectionAgentKinds.load(defaults)
         let resume = defaults.double(forKey: Keys.resumeAt)
         resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
         switch defaults.string(forKey: Keys.lastRoute) {
@@ -458,6 +468,7 @@ final class BridgeAppModel {
             if clients != current { clients = current }
             let entries = ActivityEntry.entries(from: services.registry.activity() ?? [])
             if entries != activity { activity = entries }
+            pruneConnectionAgents()
         } else {
             policyStoreAvailable = false
             clients = []
@@ -471,6 +482,8 @@ final class BridgeAppModel {
             isInstalledInApplications = services.isInstalledInApplications()
             refreshCommandLineTool()
             refreshUpdater()
+            let agents = services.installedAgents()
+            if agents != installedAgents { installedAgents = agents }
         }
         reconcileDraft()
         reconcileRoute()
@@ -511,6 +524,30 @@ final class BridgeAppModel {
     func bridgeDidChange(_ state: BridgeRunState) {
         if bridge != state { bridge = state }
         refresh()
+    }
+
+    // MARK: Agents (B04)
+
+    /// The agent a connection's Connect tab sets up.
+    func agent(for clientID: String) -> AgentKind {
+        agentChoice[clientID] ?? connectionAgents[clientID] ?? .claudeCode
+    }
+
+    /// Remembers a connection's agent: when it's added, and when the user
+    /// picks another agent in Connect.
+    func setAgent(_ kind: AgentKind, for clientID: String) {
+        agentChoice[clientID] = kind
+        guard connectionAgents[clientID] != kind else { return }
+        connectionAgents[clientID] = kind
+        ConnectionAgentKinds.save(connectionAgents, services.defaults)
+    }
+
+    /// Removed connections forget their agent.
+    private func pruneConnectionAgents() {
+        let kept = ConnectionAgentKinds.pruned(connectionAgents, activeIDs: Set(activeClients.map(\.id)))
+        guard kept != connectionAgents else { return }
+        connectionAgents = kept
+        ConnectionAgentKinds.save(kept, services.defaults)
     }
 
     // MARK: Derived state
