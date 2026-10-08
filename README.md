@@ -49,7 +49,7 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
 
 ## Get started
 
-1. **Install.** Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), open it and drag EK Bridge to **Applications**. Or use [Homebrew](https://brew.sh):
+1. **Install.** Download [`EKBridge.dmg`](https://github.com/bereciartua/ek-bridge/releases/latest/download/EKBridge.dmg), open it and drag EK Bridge to **Applications**. If you open it from the disk image or Downloads instead, it offers to move itself there. Or use [Homebrew](https://brew.sh):
 
    ```sh
    brew install --cask bereciartua/tap/ek-bridge

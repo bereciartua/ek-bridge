@@ -35,6 +35,13 @@ done
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/InstallLocation.swift" \
+    "$project_dir/Tests/InstallLocationTests.swift" \
+    -o "$project_dir/build/install-location-tests"
+"$project_dir/build/install-location-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/CommandPolicy.swift" \

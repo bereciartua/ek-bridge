@@ -19,6 +19,8 @@ set -eu
 #                                               "@list:NAME" and "@calendar:NAME" in
 #                                               JSON become those test collections' IDs
 #        sh scripts/live_test.sh cli ARGS       run its own bridge-client
+#        sh scripts/live_test.sh trash PATH     move a copy of the test app (Move to Applications
+#                                               tests) to the Trash; nothing else is accepted
 #        sh scripts/live_test.sh cleanup        remove test collections, quit, check none remain
 #        sh scripts/live_test.sh reset          cleanup, then delete its data and settings
 #
@@ -169,6 +171,17 @@ case "$command" in
         python3 "$project_dir/scripts/live_mcp_client.py" "$app/Contents/MacOS/bridge-mcp" "$id" "$tool" "$arguments"
         ;;
     cli) "$app/Contents/MacOS/bridge-client" "$@" ;;
+    trash)
+        [ "$#" -eq 1 ] || fail "usage: live_test.sh trash PATH"
+        target=$1
+        [ "$(basename "$target")" = "EK Bridge Test.app" ] || fail "only copies named EK Bridge Test.app"
+        [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$target/Contents/Info.plist" 2>/dev/null)" \
+            = "$bundle_id" ] || fail "$target isn't the live-test copy"
+        xcrun swift -e 'import Foundation
+try FileManager.default.trashItem(at: URL(fileURLWithPath: CommandLine.arguments[1]), resultingItemURL: nil)' \
+            "$target" || fail "couldn't move $target to the Trash"
+        printf 'live_test: moved %s to the Trash\n' "$target"
+        ;;
     cleanup) cleanup ;;
     reset)
         cleanup

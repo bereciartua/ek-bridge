@@ -277,11 +277,7 @@ struct SnippetView: View {
                 warning(AgentSetup.listenerCheckCaveat)
             }
             if method == .launcher && agent != .other && !model.isInstalledInApplications {
-                HStack(alignment: .top, spacing: 8) {
-                    warning(String(localized: "Agents will run the launcher from this location. Move \(AppIdentity.displayName) to Applications first, or setups will break when you move it."))
-                    Spacer(minLength: 8)
-                    Button(String(localized: "Show \(AppIdentity.displayName) in Finder")) { model.revealRunningApp() }
-                }
+                NotInApplicationsNotice(model: model, padded: false)
             }
             if let footnote = agent.footnote {
                 Label(footnote, systemImage: "info.circle")

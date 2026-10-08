@@ -45,6 +45,9 @@ final class LiveTestAutomation {
     private var timer: Timer?
     /// When automation first saw each pending approval, for the arming delay.
     private var firstSeen = [UUID: Date]()
+    /// Commands already answered, by an earlier copy before a relaunch
+    /// (Move to Applications): never run twice.
+    private var answered = Set<String>()
 
     init(context: Context, dataFolder: URL) {
         self.context = context
@@ -54,6 +57,12 @@ final class LiveTestAutomation {
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        if let data = try? String(contentsOf: responsesURL, encoding: .utf8) {
+            for line in data.split(separator: "\n") {
+                if let reply = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                   let id = reply["id"] as? String { answered.insert(id) }
+            }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
@@ -78,6 +87,7 @@ final class LiveTestAutomation {
             partial = Data(partial[partial.index(after: newline)...])
             guard !line.isEmpty else { continue }
             if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
+                if let id = object["id"] as? String, answered.contains(id) { continue }
                 queue.append(object)
             } else {
                 respond(["id": NSNull(), "ok": false, "error": "not a JSON object"])
@@ -138,6 +148,10 @@ final class LiveTestAutomation {
             case "requestAccess": completion(.success(try requestAccess(command)))
             case "answerPanel": try answerPanel(command, completion: completion)
             case "capture": completion(.success(try capture(command)))
+            case "bannerAction":
+                guard let action = model.banner?.action else { throw CommandError(message: "no banner action") }
+                action()
+                completion(.success(model.banner?.title ?? "dismissed"))
             case "moveToApplications":
                 guard let move = context.moveToApplications else {
                     throw CommandError(message: "moveToApplications isn't available in this build")
@@ -202,6 +216,9 @@ final class LiveTestAutomation {
             "bundleID": Bundle.main.bundleIdentifier ?? "",
             "route": route,
             "sheet": model.sheet?.id ?? NSNull(),
+            "banner": model.banner.map { banner -> [String: Any] in
+                ["title": banner.title, "action": banner.actionTitle ?? NSNull()]
+            } ?? NSNull(),
             "bridge": model.bridge.isOn ? "on" : "paused",
             "calendarAccess": accessText(model.calendarAccess),
             "remindersAccess": accessText(model.remindersAccess),

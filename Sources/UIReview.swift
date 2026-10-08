@@ -51,6 +51,8 @@ final class UIReview {
     /// installed in Applications (the behavior test changes both).
     var loginItemStatus = SMAppService.Status.notRegistered
     var installedInApplications = false
+    /// Move to Applications calls (the fake never moves anything).
+    var moveCalls = 0
     /// The fake updater: never contacts GitHub.
     var updaterAvailable = !CommandLine.arguments.contains("--ui-no-updater")
     var automaticUpdateChecks = true
@@ -147,6 +149,14 @@ final class UIReview {
             loginItemStatus: { [unowned self] in self.loginItemStatus },
             setLoginItem: { [unowned self] on in self.loginItemStatus = on ? .enabled : .notRegistered },
             isInstalledInApplications: { [unowned self] in self.installedInApplications },
+            installLocation: { [unowned self] in
+                self.installedInApplications ? .applications
+                    : .elsewhere(path: NSHomeDirectory() + "/Downloads/EKBridge.app")
+            },
+            moveToApplications: { [unowned self] in
+                self.moveCalls += 1
+                return .moving
+            },
             // No Homebrew folders (this Mac's own links must not count), and the
             // installed location in copied commands instead of the build folder.
             commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL, home: directory, packageBins: [],
@@ -476,6 +486,9 @@ final class UIReview {
         model.bridgeDidChange(bridgeOn ? .on : .off)
         if let version = Self.value(arguments, "--ui-update-found") {
             model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
+        }
+        if arguments.contains("--ui-move-prompt") {
+            DispatchQueue.main.async { model.offerMoveToApplications() }
         }
         // This build shares the app's bundle ID, so macOS's icon cache can hand
         // back an older icon; show the one this bundle carries in panels and
@@ -1096,6 +1109,19 @@ final class BehaviorReview {
             self.model.refresh()
             return enabled && !self.model.canChangeStartAtLogin
         }
+        step("Move to Applications… asks first") {
+            self.review.installedInApplications = false
+            self.model.refresh()
+            self.model.beginMoveToApplications()
+            return self.window.attachedSheet != nil && self.review.moveCalls == 0
+        }
+        step("moving calls the mover") {
+            self.answer(.alertFirstButtonReturn) && self.review.moveCalls == 1
+        }
+        step("Not Now doesn't move") {
+            self.model.beginMoveToApplications()
+            return self.answer(.alertSecondButtonReturn) && self.review.moveCalls == 1
+        }
         // Updates, with the fake updater (Sparkle isn't started in this build).
         step("a found update shows a card") {
             self.model.updateFound(FoundUpdate(version: "9.9.0", critical: false))
@@ -1508,6 +1534,17 @@ final class SnapshotReview {
             step("sheet-unavailable") {
                 self.model.sheet = .unavailableGrants(UIReview.claudeID)
                 return main?.attachedSheet ?? main
+            }
+            step("sheet-move-to-applications") {
+                // The launch prompt (--ui-move-prompt), from Downloads.
+                self.model.sheet = nil
+                self.review.defaults.removeObject(forKey: BridgeAppModel.moveDeclinedKey)
+                DispatchQueue.main.async { self.model.offerMoveToApplications() }
+                return main
+            }
+            step("restore-move-prompt") {
+                if let sheet = main?.attachedSheet { main?.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+                return nil
             }
             step("client-access") {
                 // The README's Access picture: Claude Code's calendars, scrolled to the table.

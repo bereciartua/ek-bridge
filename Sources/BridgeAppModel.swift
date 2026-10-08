@@ -164,6 +164,9 @@ struct BridgeServices {
     var loginItemStatus: () -> SMAppService.Status
     var setLoginItem: (Bool) throws -> Void
     var isInstalledInApplications: () -> Bool
+    /// Move to Applications: where the app is, and the move itself (A11).
+    var installLocation: () -> InstallLocation = { .applications }
+    var moveToApplications: () -> MoveResult = { .failed("") }
     var commandLineTool: CommandLineTool
     var testCollections: TestCollections?
     var mcp: MCPControls
@@ -1299,6 +1302,82 @@ final class BridgeAppModel {
 
     func revealRunningApp() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    // MARK: Move to Applications
+
+    static let moveDeclinedKey = "MoveToApplicationsDeclined"
+
+    /// The question, worded for where the app runs from.
+    private func moveAlert() -> NSAlert {
+        let place = services.installLocation().placeName(home: NSHomeDirectory())
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Move \(AppIdentity.displayName) to Applications?")
+        alert.informativeText = String(localized: "It's running from \(place). Agents start \(AppIdentity.displayName)'s launcher from this location, so setups break if it moves later.")
+        alert.addButton(withTitle: String(localized: "Move to Applications"))
+        alert.addButton(withTitle: String(localized: "Not Now"))
+        return alert
+    }
+
+    /// Move to Applications… (the notices): asks, then moves.
+    func beginMoveToApplications() {
+        confirmUnsaved { [weak self] in
+            guard let self else { return }
+            self.present(self.moveAlert()) { [weak self] response in
+                if response == .alertFirstButtonReturn { self?.performMove() }
+            }
+        }
+    }
+
+    /// At launch, outside Applications, unless the user chose Don't Ask Again.
+    func offerMoveToApplications() {
+        guard services.installLocation() != .applications,
+              !services.defaults.bool(forKey: Self.moveDeclinedKey) else { return }
+        let alert = moveAlert()
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = String(localized: "Don't ask again")
+        present(alert) { [weak self] response in
+            guard let self else { return }
+            if alert.suppressionButton?.state == .on {
+                self.services.defaults.set(true, forKey: Self.moveDeclinedKey)
+            }
+            if response == .alertFirstButtonReturn { self.performMove() }
+        }
+    }
+
+    private func performMove() {
+        clearDraft()
+        if case .failed(let problem) = services.moveToApplications() {
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't move \(AppIdentity.displayName) to Applications."),
+                              message: problem.isEmpty ? nil : problem))
+        }
+    }
+
+    /// In the relaunched copy: says it moved, then that the old copy is in
+    /// the Trash (`trashed`, once known), or offers to eject the disk image
+    /// it came from.
+    func didMove(from path: String, trashed: Bool? = nil) {
+        let volume = InstallLocation.volume(of: path)
+        let message: String? = switch (volume, trashed) {
+        case (.some, _): nil
+        case (nil, true?): String(localized: "The old copy is in the Trash.")
+        case (nil, false?): String(localized: "The old copy couldn't be moved to the Trash: \(path)")
+        case (nil, nil): nil
+        }
+        showBanner(Banner(kind: .success, title: String(localized: "\(AppIdentity.displayName) moved to Applications."),
+                          message: message,
+                          actionTitle: volume == nil ? nil : String(localized: "Eject Disk Image"),
+                          action: volume.map { volume in {
+                              [weak self] in
+                              do {
+                                  try NSWorkspace.shared.unmountAndEjectDevice(at: URL(fileURLWithPath: volume))
+                                  self?.dismissBanner()
+                              } catch {
+                                  self?.showBanner(Banner(kind: .warning,
+                                                          title: String(localized: "The disk image couldn't be ejected."),
+                                                          message: String(localized: "Eject it in Finder.")))
+                              }
+                          } }))
     }
 
     func openLoginItemsSettings() {

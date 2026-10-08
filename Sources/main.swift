@@ -124,13 +124,31 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             model: model, approvals: approvals, store: store,
             presentWindow: { [weak self] in self?.windowController.present() },
             mainWindow: { [weak self] in self?.windowController.window },
-            panelWindow: { [weak self] in self?.approvalPanel.window }), dataFolder: Self.dataFolder)
+            panelWindow: { [weak self] in self?.approvalPanel.window },
+            moveToApplications: { [weak self] in
+                if case .failed(let problem) = AppMover.move(prepareToQuit: { self?.quitAfterApprovals() }) {
+                    return problem
+                }
+                return nil
+            }), dataFolder: Self.dataFolder)
         automation?.start()
         #endif
         #if !EVENTKIT_UI_REVIEW
         // A first run opens the window so the setup checklist is the first thing
         // seen; so does the first run after the rename.
         if model.showsSetupChecklist || model.renameNoticePending { windowController.present() }
+        if let movedFrom = AppMover.movedFrom() {
+            windowController.present()
+            model.didMove(from: movedFrom)
+            if InstallLocation.volume(of: movedFrom) == nil {
+                AppMover.cleanUpOldCopy(movedFrom) { [weak self] trashed in
+                    self?.model.didMove(from: movedFrom, trashed: trashed)
+                }
+            }
+        } else if !AppIdentity.isLiveTest || CommandLine.arguments.contains("--move-prompt") {
+            // The live-test copy is moved by its automation instead.
+            model.offerMoveToApplications()
+        }
         #endif
     }
 
@@ -208,6 +226,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             },
             isInstalledInApplications: { Self.installedLocation },
+            installLocation: { AppMover.location },
+            moveToApplications: { [weak self] in
+                AppMover.move(prepareToQuit: { self?.quitAfterApprovals() })
+            },
             commandLineTool: CommandLineTool(appURL: Bundle.main.bundleURL,
                                              home: FileManager.default.homeDirectoryForCurrentUser),
             testCollections: testCollections,
@@ -251,11 +273,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         return result.sortedForDisplay()
     }
 
-    private static var installedLocation: Bool {
-        let path = Bundle.main.bundleURL.standardizedFileURL.path
-        let userApps = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true).path
-        return path.hasPrefix("/Applications/") || path.hasPrefix(userApps + "/")
+    private static var installedLocation: Bool { AppMover.location == .applications }
+
+    private var quitGate: UpdateRelaunchGate?
+
+    /// After Move to Applications: quits once changes waiting in the
+    /// approval panel are answered or time out (as for updates).
+    private func quitAfterApprovals() {
+        let gate = UpdateRelaunchGate(pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
+                                      maximumWait: ApprovalCenter.timeout + 5)
+        quitGate = gate
+        if !gate.postpone({ NSApp.terminate(nil) }) { NSApp.terminate(nil) }
     }
 
     // MARK: Bridge
@@ -439,6 +467,10 @@ struct EKBridgeApp {
         }
         #endif
         let app = NSApplication.shared
+        #if !EVENTKIT_UI_REVIEW
+        // Relaunched by Move to Applications: let the old copy quit first.
+        AppMover.waitForPreviousCopy()
+        #endif
         #if EVENTKIT_LIVE_TEST
         // The live-test copy refuses to run with any of the installed app's
         // identities, so it can never share its data, transport or ports.
