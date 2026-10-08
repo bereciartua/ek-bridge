@@ -167,7 +167,9 @@ case "$command" in
         [ "$#" -ge 2 ] || fail "usage: live_test.sh mcp CONNECTION TOOL ['JSON']"
         id=$(connection_id "$1")
         tool=$2
-        arguments=$(test_ids "${3:-{\}}")
+        arguments=${3:-}
+        [ -n "$arguments" ] || arguments='{}'
+        arguments=$(test_ids "$arguments")
         python3 "$project_dir/scripts/live_mcp_client.py" "$app/Contents/MacOS/bridge-mcp" "$id" "$tool" "$arguments"
         ;;
     cli) "$app/Contents/MacOS/bridge-client" "$@" ;;
