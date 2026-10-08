@@ -467,6 +467,7 @@ final class UIReview {
     func run(model: BridgeAppModel, window: MainWindowController, statusMenu: StatusMenuController) {
         self.model = model
         approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        approvals.selectionChanged = { [weak self] in self?.approvalPanel.update() }
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         model.mcpDidConnect(Self.claudeID, MCPServer.Connection(at: Date().addingTimeInterval(-120),
                                                                agent: "claude-code 2.4.1"))
@@ -917,6 +918,23 @@ final class BehaviorReview {
             self.review.approvals.deny(self.review.approvals.pending[0].id)
             return self.decision == .denied && self.review.approvals.pending.isEmpty
         }
+        step("a blind delete shows the warning") {
+            self.decision = nil
+            self.queue(.deleteReminder, ["listID": "list-errands", "itemID": "x"])
+            return self.review.approvals.current?.summary.isBlindDelete == true
+        }
+        step("wait for the panel to arm") { true }
+        step("wait for the panel to arm, again") { true }
+        step("Return denies a blind delete") {
+            guard let panel = self.review.approvalPanel.window,
+                  let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                               windowNumber: panel.windowNumber, context: nil, characters: "\r",
+                                               charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)
+            else { return false }
+            panel.makeKey()
+            _ = panel.performKeyEquivalent(with: event)
+            return self.decision == .denied && self.review.approvals.pending.isEmpty
+        }
         step("timeout, queue limit and the 15-minute allowance (fake clock)") {
             var clock = Date()
             var timers = [@MainActor () -> Void]()
@@ -1364,7 +1382,8 @@ final class SnapshotReview {
                     self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": title],
                                               agent: "claude-code 2.4.1")
                 }
-                self.review.queueApproval(.deleteReminder, ["listID": "list-errands", "itemID": "x"],
+                self.review.queueApproval(.deleteReminder, ["listID": "list-errands",
+                                                            "itemID": "x-apple-reminderkit://REMCDReminder/6C1E2B9D-55A0-4F3B-9D8E-0C7A33A14F2A"],
                                           agent: "claude-code 2.4.1")
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window

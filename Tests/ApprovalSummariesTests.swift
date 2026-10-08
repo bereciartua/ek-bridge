@@ -111,6 +111,14 @@ struct ApprovalSummariesTests {
         let unknown = summary(.updateEvent, ["calendarID": "CAL", "itemID": "E", "expectedVersion": "1",
                                              "title": "x", "idempotencyKey": "k"])
         check(unknown.lookupFailed && row(unknown, "Event")!.value == "x", "lookup failed, rows still shown")
+        check(!unknown.isBlindDelete && unknown.itemIDForDisplay == nil, "only deletes carry the ID")
+        let longID = "x-apple-reminderkit://REMCDReminder/6C1E2B9D-55A0-4F3B-9D8E-0C7A33A14F2A"
+        let blind = summary(.deleteEvent, ["calendarID": "CAL", "itemID": longID, "expectedVersion": "1",
+                                           "idempotencyKey": "k"])
+        check(blind.lookupFailed && blind.isBlindDelete && blind.itemIDForDisplay == longID,
+              "a delete with a failed lookup is blind and carries the ID")
+        check(ApprovalSummary.shortID(longID) == "x-apple-…4F2A" && ApprovalSummary.shortID("E") == "E",
+              "IDs shortened to the first 8 and last 4 characters")
     }
 
     static func recurringEvent() {

@@ -61,7 +61,7 @@ Only active clients count toward the limit of 32. Revoked clients stay in the si
 
 With **Changes: Ask me first**, every create, edit, complete or delete from that client waits for your answer in a small panel at the top right of the screen. Reads never ask. The panel names the client, the calendar or list, and what would change (before and after, for an edit); the agent's name is shown as reported.
 
-- **Allow** or **Deny** (for a delete, the default button reads **Delete**). Return and Escape work only after you click into the panel, so typing in the agent's terminal can't answer it.
+- **Allow** or **Deny** (for a delete, the default button reads **Delete**; when the item to delete can't be loaded, **Deny** is the default and **Delete Anyway** takes a click). Return and Escape work only after you click into the panel, so typing in the agent's terminal can't answer it.
 - **Allow changes from … for 15 minutes** skips the panel for that client until the time is up or its settings change.
 - After **45 seconds** without an answer the change is refused. Up to 3 changes per client can wait; the panel steps through them ("1 of 3"), and the menu bar's **changes waiting for approval** item brings it forward.
 - Revoking the client, changing its access, or turning off the bridge refuses whatever is waiting.

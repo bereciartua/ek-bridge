@@ -103,6 +103,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         statusMenu = StatusMenuController(model: model)
         #if !EVENTKIT_UI_REVIEW
         approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
+        approvals.selectionChanged = { [weak self] in self?.approvalPanel.update() }
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         // If the listener didn't survive sleep, start it again.
         NSWorkspace.shared.notificationCenter.addObserver(

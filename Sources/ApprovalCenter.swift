@@ -25,6 +25,17 @@ struct ApprovalSummary: Equatable {
     /// The current item couldn't be read (deleted, or no Full Access).
     var lookupFailed = false
     var collectionColor: CollectionColor? = nil
+    /// A delete's item ID from the request, shown when the item didn't load.
+    var itemIDForDisplay: String? = nil
+
+    /// A delete of an item that couldn't be loaded: the panel can't show
+    /// what goes, so Deny is the default button.
+    var isBlindDelete: Bool { isDelete && lookupFailed }
+
+    /// "x-apple-…4F2A": the first 8 and last 4 characters of a long ID.
+    static func shortID(_ id: String) -> String {
+        id.count > 14 ? "\(id.prefix(8))…\(id.suffix(4))" : id
+    }
 }
 
 struct PendingApproval: Identifiable, Equatable {
@@ -48,7 +59,9 @@ final class ApprovalCenter: ApprovalGate {
 
     private(set) var pending = [PendingApproval]()
     /// Index of the request the panel shows ("1 of 3").
-    var selection = 0
+    var selection = 0 {
+        didSet { if selection != oldValue { selectionChanged() } }
+    }
 
     @ObservationIgnored private let summarize: (ApprovalRequest) -> ApprovalSummary
     @ObservationIgnored private let now: () -> Date
@@ -58,6 +71,8 @@ final class ApprovalCenter: ApprovalGate {
     @ObservationIgnored private var revisions = [UUID: Int]()
     /// Called whenever the queue changes, so the app can show or hide the panel.
     @ObservationIgnored var queueChanged: () -> Void = {}
+    /// Called when the panel shows another change, so it can fit its height.
+    @ObservationIgnored var selectionChanged: () -> Void = {}
 
     init(summarize: @escaping (ApprovalRequest) -> ApprovalSummary,
          now: @escaping () -> Date = Date.init,

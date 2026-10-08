@@ -2,6 +2,37 @@ import AppKit
 import EventKit
 import SwiftUI
 
+/// Shown instead of the delete's rows when the item didn't load.
+struct BlindDeleteWarning: View {
+    let itemID: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "\(AppIdentity.displayName) can't show what will be deleted."))
+                    .font(.callout.weight(.semibold))
+                Group {
+                    if let itemID {
+                        Text(String(localized: "The item didn't load (ID \(ApprovalSummary.shortID(itemID)))."))
+                            .help(itemID)
+                    } else {
+                        Text(String(localized: "The item didn't load."))
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The floating Ask-before-changes panel (§13.6). Non-activating, so typing
 /// in the agent's terminal can never approve a change by accident; Return and
 /// Escape work only after the user clicks into it.
@@ -25,15 +56,12 @@ final class ApprovalPanelController {
         }
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        // Fit the content: rows and the queue stepper change its height. The
-        // top edge stays put.
-        if let host {
-            let size = host.sizeThatFits(in: NSSize(width: 400, height: 2_000))
-            if size.height > 1, size != panel.contentLayoutRect.size {
-                let top = panel.frame.maxY
-                panel.setContentSize(size)
-                if panel.isVisible { panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top)) }
-            }
+        fit(panel)
+        // Once more after SwiftUI has drawn the change (a new selection's
+        // rows, say), which the first measurement can miss.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, !self.center.pending.isEmpty else { return }
+            self.fit(panel)
         }
         if !panel.isVisible {
             position(panel)
@@ -45,6 +73,18 @@ final class ApprovalPanelController {
                                             .priority: NSAccessibilityPriorityLevel.high.rawValue])
         }
         shownCount = center.pending.count
+    }
+
+    /// Fits the content: rows, warnings and the queue stepper change its
+    /// height. The top edge stays put.
+    private func fit(_ panel: NSPanel) {
+        guard let host else { return }
+        let size = host.sizeThatFits(in: NSSize(width: 400, height: 2_000))
+        if size.height > 1, size != panel.contentLayoutRect.size {
+            let top = panel.frame.maxY
+            panel.setContentSize(size)
+            if panel.isVisible { panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top)) }
+        }
     }
 
     func bringForward() {
@@ -95,6 +135,13 @@ struct ApprovalPanelView: View {
     @State private var armedID: UUID?
 
     var body: some View {
+        // The title bar is hidden, so its safe area would only add a gap at
+        // the top, and measure differently before and after the panel shows.
+        content.ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let item = center.current {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -173,7 +220,9 @@ struct ApprovalPanelView: View {
                     }
                 }
             }
-            if item.summary.lookupFailed {
+            if item.summary.isBlindDelete {
+                BlindDeleteWarning(itemID: item.summary.itemIDForDisplay)
+            } else if item.summary.lookupFailed {
                 Label(String(localized: "Couldn't load the current item."), systemImage: "exclamationmark.triangle")
                     .font(.callout)
                     .foregroundStyle(.orange)
@@ -221,22 +270,43 @@ struct ApprovalPanelView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Button(String(localized: "Deny")) { center.deny(item.id) }
-                .keyboardShortcut(.cancelAction)
-                .disabled(armedID != item.id)
-            if item.summary.isDelete {
-                Button(String(localized: "Delete"), role: .destructive) {
+            if item.summary.isBlindDelete {
+                // Nothing to review, so Return denies, Escape still denies,
+                // and deleting takes a click.
+                Button(String(localized: "Delete Anyway"), role: .destructive) {
                     center.allow(item.id, forWindow: allowWindow)
                 }
-                .keyboardShortcut(.defaultAction)
-                .tint(.red)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .disabled(armedID != item.id)
-            } else {
-                Button(String(localized: "Allow")) { center.allow(item.id, forWindow: allowWindow) }
+                Button(String(localized: "Deny")) { center.deny(item.id) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(armedID != item.id)
+                    .background {
+                        Button(String(localized: "Deny")) { center.deny(item.id) }
+                            .keyboardShortcut(.cancelAction)
+                            .disabled(armedID != item.id)
+                            .opacity(0)
+                            .accessibilityHidden(true)
+                    }
+            } else {
+                Button(String(localized: "Deny")) { center.deny(item.id) }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(armedID != item.id)
+                if item.summary.isDelete {
+                    Button(String(localized: "Delete"), role: .destructive) {
+                        center.allow(item.id, forWindow: allowWindow)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .tint(.red)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(armedID != item.id)
+                } else {
+                    Button(String(localized: "Allow")) { center.allow(item.id, forWindow: allowWindow) }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(armedID != item.id)
+                }
             }
         }
     }
