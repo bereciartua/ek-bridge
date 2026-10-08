@@ -212,7 +212,7 @@ struct MCPToolMappingTests {
         check(AgentOutcomeText.text(code: "forbidden", tool: "delete_event", detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
               == "Not allowed: this agent can't delete events in that calendar. If it should be able to, "
-              + "ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
+              + "ask the user to grant Delete for this connection in EK Bridge. Don't retry. (code: forbidden)",
               "A.3 forbidden")
         check(AgentOutcomeText.text(code: "approval_denied", tool: "create_event", detail: nil,
                                     retryAfter: nil, idempotencyKey: nil)
@@ -343,7 +343,7 @@ struct MCPToolMappingTests {
         check(AgentOutcomeText.text(code: "client_paused", tool: nil, detail: nil, retryAfter: nil,
                                     idempotencyKey: nil)
               == "Paused: the user paused this agent's access in EK Bridge. Its access isn't removed; "
-              + "ask the user to resume this client if they want you to continue, and don't retry until "
+              + "ask the user to resume this connection if they want you to continue, and don't retry until "
               + "they do. (code: client_paused)", "client_paused")
 
         // Every code the core and pipeline can return has a specific text.

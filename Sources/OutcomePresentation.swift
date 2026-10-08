@@ -27,7 +27,7 @@ struct OutcomePresentation: Equatable {
         guard let entry = entries[code] ?? prefixEntry(code) else {
             return OutcomePresentation(
                 code: code, label: String(localized: "Error"), tone: .neutral,
-                why: String(localized: "The bridge returned \(code)."), fix: nil)
+                why: String(localized: "\(AppIdentity.displayName) returned \(code)."), fix: nil)
         }
         return OutcomePresentation(code: code, label: entry.label, tone: entry.tone,
                                    why: entry.why, fix: entry.fix)
@@ -56,23 +56,23 @@ struct OutcomePresentation: Equatable {
 
     private static let invalid = Entry(
         label: String(localized: "Invalid request"), tone: .warn,
-        why: String(localized: "The parameters didn't match what the bridge accepts."),
+        why: String(localized: "The parameters didn't match what \(AppIdentity.displayName) accepts."),
         fix: String(localized: "See docs/API.md for this command."))
     private static let reviewNeeded = Entry(
         label: String(localized: "Needs review"), tone: .bad,
-        why: String(localized: "The bridge can't confirm whether the write happened."),
+        why: String(localized: "\(AppIdentity.displayName) can't confirm whether the write happened."),
         fix: String(localized: "Check the item before retrying, and reuse the same idempotency key. See docs/TESTING.md › Troubleshooting."))
     private static let notSaved = Entry(
         label: String(localized: "Not saved"), tone: .warn,
-        why: String(localized: "The saved item didn't match the request, so the bridge undid the change."),
+        why: String(localized: "The saved item didn't match the request, so \(AppIdentity.displayName) undid the change."),
         fix: String(localized: "The account may not support that value."))
     private static let unsupported = Entry(
         label: String(localized: "Not supported"), tone: .warn,
-        why: String(localized: "The bridge doesn't change items of this shape, to avoid damaging them."),
+        why: String(localized: "\(AppIdentity.displayName) doesn't change items of this shape, to avoid damaging them."),
         fix: String(localized: "See the support matrix in docs/API.md."))
     private static let failure = Entry(
         label: String(localized: "Error"), tone: .bad,
-        why: String(localized: "EventKit or the bridge reported an error."),
+        why: String(localized: "EventKit or \(AppIdentity.displayName) reported an error."),
         fix: String(localized: "Try again. If it repeats, check Overview."))
 
     private static let entries: [String: Entry] = {
@@ -84,34 +84,34 @@ struct OutcomePresentation: Equatable {
                                fix: nil)),
             ("forbidden", Entry(
                 label: String(localized: "Not allowed"), tone: .bad,
-                why: String(localized: "This client doesn't have that access to the calendar or list."),
-                fix: String(localized: "Grant it in the client's Access, only if the tool should be able to do this."))),
+                why: String(localized: "This connection doesn't have that access to the calendar or list."),
+                fix: String(localized: "Turn it on in the connection's Access, only if the tool should be able to do this."))),
             ("unauthorized", Entry(
                 label: String(localized: "Not recognized"), tone: .bad,
-                why: String(localized: "The request wasn't signed by an active client, or used an old key."),
-                fix: String(localized: "If this is your tool, check it uses the current key file. Otherwise, something unexpected is calling the bridge."))),
+                why: String(localized: "The request wasn't signed by an active connection's key, or used an old key."),
+                fix: String(localized: "If this is your tool, check it uses the current key file. Otherwise, something unexpected is calling \(AppIdentity.displayName)."))),
             ("unavailable", Entry(
                 label: String(localized: "Error"), tone: .bad,
-                why: String(localized: "The bridge couldn't read or update its client settings."),
+                why: String(localized: "\(AppIdentity.displayName) couldn't read or update its connection settings."),
                 fix: String(localized: "Open \(AppIdentity.displayName) and check Overview."))),
             ("full_access_required", Entry(
                 label: String(localized: "Needs Full Access"), tone: .bad,
-                why: String(localized: "macOS isn't giving the bridge Full Access."),
+                why: String(localized: "macOS isn't giving \(AppIdentity.displayName) Full Access."),
                 fix: String(localized: "Open Privacy Settings and turn on Full Access for \(AppIdentity.displayName)."))),
             ("target_not_writable", Entry(
                 label: String(localized: "Read only"), tone: .warn,
                 why: String(localized: "That calendar or list can't be changed."), fix: nil)),
             ("bridge_off", Entry(
-                label: String(localized: "Bridge was off"), tone: .neutral,
-                why: String(localized: "The bridge was off, so the request was refused."),
-                fix: String(localized: "Turn on the bridge if you want this tool to work."))),
+                label: String(localized: "\(AppIdentity.displayName) was paused"), tone: .neutral,
+                why: String(localized: "\(AppIdentity.displayName) was paused, so the request was refused."),
+                fix: String(localized: "Turn \(AppIdentity.displayName) on if you want this to work."))),
             ("client_paused", Entry(
-                label: String(localized: "Client was paused"), tone: .neutral,
-                why: String(localized: "This client is paused, so the request was refused. Its keys and access are kept."),
-                fix: String(localized: "Resume the client on its page if you want this tool to work again."))),
+                label: String(localized: "Connection was paused"), tone: .neutral,
+                why: String(localized: "This connection was paused, so the request was refused."),
+                fix: String(localized: "Resume the connection if you want it to work."))),
             ("rate_limited", Entry(
                 label: String(localized: "Too many requests"), tone: .warn,
-                why: String(localized: "This client sent requests faster than the bridge allows."),
+                why: String(localized: "This connection sent requests faster than \(AppIdentity.displayName) allows."),
                 fix: String(localized: "If it keeps happening, check what the tool is doing."))),
             ("approval_denied", Entry(
                 label: String(localized: "Declined by you"), tone: .neutral,
@@ -119,13 +119,13 @@ struct OutcomePresentation: Equatable {
             ("approval_timed_out", Entry(
                 label: String(localized: "Not approved in time"), tone: .warn,
                 why: String(localized: "Nobody answered the approval prompt within 45 seconds."),
-                fix: String(localized: "Ask the tool to try again when you're at the Mac, or choose Allow without asking for this client."))),
+                fix: String(localized: "Ask the tool to try again when you're at the Mac, or choose Allow without asking for this connection."))),
             ("cancelled", Entry(
                 label: String(localized: "Cancelled"), tone: .neutral,
                 why: String(localized: "The tool cancelled the request before it finished."), fix: nil)),
             ("timeout", Entry(
                 label: String(localized: "No answer in time"), tone: .bad,
-                why: String(localized: "The bridge didn't finish within 55 seconds."),
+                why: String(localized: "\(AppIdentity.displayName) didn't finish within 55 seconds."),
                 fix: String(localized: "Check the item before retrying."))),
             ("too_many_events_narrow_range", Entry(
                 label: String(localized: "Too many results"), tone: .warn,
@@ -148,15 +148,15 @@ struct OutcomePresentation: Equatable {
                 fix: String(localized: "Read again to get current IDs.")))
             + group(["conflict", "occurrence_conflict"], Entry(
                 label: String(localized: "Out of date"), tone: .warn,
-                why: String(localized: "The item changed since the client read it."),
-                fix: String(localized: "The client should read it again and retry with the new version.")))
+                why: String(localized: "The item changed since the tool read it."),
+                fix: String(localized: "The tool should read it again and retry with the new version.")))
             + group(["scope_changed"], Entry(
                 label: String(localized: "Access changed"), tone: .warn,
-                why: String(localized: "Access changed or the bridge turned off while the request ran."),
+                why: String(localized: "Access changed or \(AppIdentity.displayName) was paused while the request ran."),
                 fix: String(localized: "Send the request again.")))
             + group(["scope_changed_after_write"], Entry(
                 label: String(localized: "Access changed"), tone: .warn,
-                why: String(localized: "Access changed or the bridge turned off while the request ran, after the write was saved."),
+                why: String(localized: "Access changed or \(AppIdentity.displayName) was paused while the request ran, after the write was saved."),
                 fix: String(localized: "Check the item before sending the request again.")))
             + group(["idempotency_pending_review", "write_committed_journal_pending_review",
                      "completion_pending_reconciliation", "completion_readback_uncertain",
@@ -189,7 +189,7 @@ struct OutcomePresentation: Equatable {
                 fix: String(localized: "Read again to get current occurrences.")))
             + group(["invitation_read_only"], Entry(
                 label: String(localized: "Invitation"), tone: .warn,
-                why: String(localized: "The event has attendees; changing it could notify them, so the bridge leaves it alone."),
+                why: String(localized: "The event has attendees; changing it could notify them, so \(AppIdentity.displayName) leaves it alone."),
                 fix: String(localized: "Change it in Calendar.")))
             + group(["floating_time_read_only", "availability_unsupported", "alarms_unsupported",
                      "move_across_accounts_unsupported"], unsupported)

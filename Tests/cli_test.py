@@ -339,7 +339,7 @@ def main() -> int:
             lambda r: {"version": 2, "id": r["id"], "ok": False, "error": "forbidden"},
             stdin='{"listID": "L", "limit": 1}')
         check("ok:false prints JSON and a hint", result, 1,
-              "hint: Grant it in the client's Access, only if the tool should be able to do this.",
+              "hint: Turn it on in the connection's Access, only if the tool should be able to do this.",
               stdout=lambda out: out.endswith("\n") and
               json.loads(out).get("error") == "forbidden" and json.loads(out)["ok"] is False)
         request = seen.get("request", {})
@@ -363,7 +363,7 @@ def main() -> int:
                              lambda r: {"version": 2, "id": r["id"], "ok": False,
                                         "error": "brand_new_code"})
         check("ok:false with an unknown code", result, 1,
-              "hint: The bridge returned brand_new_code.")
+              "hint: EK Bridge returned brand_new_code.")
 
         result, _ = exchange("vanish-root", ["scope_status", *cred], lambda r: None)
         check("session removed while waiting", result, 3, SESSION_CHANGED)

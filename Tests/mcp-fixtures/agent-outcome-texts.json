@@ -1,57 +1,57 @@
 [
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "read_events"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't create events in that calendar. If it should be able to, ask the user to grant Create for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "create_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't edit events in that calendar. If it should be able to, ask the user to grant Edit for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't edit events in that calendar. If it should be able to, ask the user to grant Edit for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "update_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't delete events in that calendar. If it should be able to, ask the user to grant Delete for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "delete_event"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "read_reminders"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read reminders in that list. If it should be able to, ask the user to grant Read for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't add reminders in that list. If it should be able to, ask the user to grant Create for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't add reminders in that list. If it should be able to, ask the user to grant Create for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "create_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't edit reminders in that list. If it should be able to, ask the user to grant Edit for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't edit reminders in that list. If it should be able to, ask the user to grant Edit for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "update_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't complete reminders in that list. If it should be able to, ask the user to grant Complete for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't complete reminders in that list. If it should be able to, ask the user to grant Complete for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "complete_reminder"
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't delete reminders in that list. If it should be able to, ask the user to grant Delete for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't delete reminders in that list. If it should be able to, ask the user to grant Delete for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "delete_reminder"
   },
   {
@@ -339,7 +339,7 @@
   },
   {
     "code" : "forbidden",
-    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this client in EK Bridge. Don't retry. (code: forbidden)",
+    "text" : "Not allowed: this agent can't read events in that calendar. If it should be able to, ask the user to grant Read for this connection in EK Bridge. Don't retry. (code: forbidden)",
     "tool" : "get_event"
   },
   {
@@ -374,7 +374,7 @@
   },
   {
     "code" : "client_paused",
-    "text" : "Paused: the user paused this agent's access in EK Bridge. Its access isn't removed; ask the user to resume this client if they want you to continue, and don't retry until they do. (code: client_paused)",
+    "text" : "Paused: the user paused this agent's access in EK Bridge. Its access isn't removed; ask the user to resume this connection if they want you to continue, and don't retry until they do. (code: client_paused)",
     "tool" : "complete_reminder"
   },
   {

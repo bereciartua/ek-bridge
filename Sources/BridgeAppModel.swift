@@ -524,9 +524,9 @@ final class BridgeAppModel {
 
     /// Names are resolved at display time, so renames show everywhere at once.
     func clientName(_ id: String?) -> String {
-        guard let id else { return String(localized: "Unknown client") }
-        guard let client = client(id) else { return String(localized: "Removed client") }
-        return client.revoked ? String(localized: "\(client.name) (revoked)") : client.name
+        guard let id else { return String(localized: "Unknown connection") }
+        guard let client = client(id) else { return String(localized: "Removed connection") }
+        return client.revoked ? String(localized: "\(client.name) (removed)") : client.name
     }
 
     var problems: [AttentionProblem] {
@@ -574,10 +574,10 @@ final class BridgeAppModel {
 
     /// The header subtitle for the menu and the status item tooltip.
     var statusSubtitle: String {
-        if !policyStoreAvailable { return String(localized: "Client settings can't be read") }
+        if !policyStoreAvailable { return String(localized: "Connection settings can't be read") }
         switch bridge {
-        case .failed: return String(localized: "Off · the bridge couldn't start")
-        case .off: return String(localized: "Off · requests are refused")
+        case .failed: return String(localized: "Paused · \(AppIdentity.displayName) couldn't start")
+        case .off: return String(localized: "Paused · agents and scripts are refused")
         case .on:
             let failing = problems.compactMap { problem -> String? in
                 switch problem {
@@ -589,7 +589,7 @@ final class BridgeAppModel {
             if let first = failing.first { return String(localized: "On · \(first)") }
             let count = activeClients.count - pausedCount
             var parts = [String(localized: "On"),
-                         count == 1 ? String(localized: "1 client") : String(localized: "\(count) clients")]
+                         count == 1 ? String(localized: "1 connection") : String(localized: "\(count) connections")]
             if pausedCount > 0 { parts.append(String(localized: "\(pausedCount) paused")) }
             if let last = activity.first?.at {
                 parts.append(String(localized: "last request \(RelativeTime.ago(last, now: now).lowercased())"))
@@ -822,7 +822,7 @@ final class BridgeAppModel {
             go(.client(issued.id))
             clientScrollTarget = "access"
             connectTab[issued.id] = kind == .cli ? .cli : .agent
-            showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was created."),
+            showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
                               message: kind == .cli
                                 ? String(localized: "It has no access yet. Choose calendars and lists below, then Save.")
                                 : String(localized: "Choose what it can use below, then Save. Then connect your agent from Connect ▸ AI agent.")))
@@ -832,9 +832,9 @@ final class BridgeAppModel {
             return ClientRegistry.nameShapeIssue(name) ?? .empty
         case .failure(let error):
             sheet = nil
-            showBanner(Banner(kind: .error, title: String(localized: "Couldn't create the client."),
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't add the connection."),
                               message: error == .limitReached
-                                ? String(localized: "You have 32 active clients, the maximum. Revoke one to add another.")
+                                ? String(localized: "You have 32 connections, the maximum. Remove one to add another.")
                                 : String(localized: "Nothing was changed."),
                               code: error.rawValue))
         }
@@ -866,7 +866,7 @@ final class BridgeAppModel {
             return ClientRegistry.nameShapeIssue(name) ?? .empty
         case .failure(let error):
             sheet = nil
-            showBanner(Banner(kind: .error, title: String(localized: "Couldn't rename the client."),
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't rename the connection."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
             return nil
         }
@@ -902,7 +902,7 @@ final class BridgeAppModel {
         }
         if fileStatus == .unsafe {
             showBanner(Banner(kind: .warning, title: String(localized: "The key file isn't safe to replace."),
-                              message: String(localized: "Check its permissions in Finder, or revoke this client and create a new one."),
+                              message: String(localized: "Check its permissions in Finder, or remove this connection and add a new one."),
                               actionTitle: String(localized: "Show in Finder"),
                               action: { [weak self] in self?.showKeyFile(client.id) }))
             return
@@ -956,8 +956,8 @@ final class BridgeAppModel {
                          message: String(localized: "Its next request is handled as before.")))
         case .failure(let error):
             showBanner(Banner(kind: .error,
-                              title: paused ? String(localized: "Couldn't pause the client.")
-                                            : String(localized: "Couldn't resume the client."),
+                              title: paused ? String(localized: "Couldn't pause the connection.")
+                                            : String(localized: "Couldn't resume the connection."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
         }
     }
@@ -970,9 +970,9 @@ final class BridgeAppModel {
     private func confirmRevoke(_ client: ClientView) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "Revoke “\(client.name)”?")
-        alert.informativeText = String(localized: "Its key and MCP token stop working and all of its access is removed. You can’t undo this. To reconnect this tool later, create a new client.")
-        let revoke = alert.addButton(withTitle: String(localized: "Revoke"))
+        alert.messageText = String(localized: "Remove “\(client.name)”?")
+        alert.informativeText = String(localized: "The agent or script using it stops working: its key and MCP token are deleted and all of its access is removed. You can’t undo this. To reconnect it later, add a new connection.")
+        let revoke = alert.addButton(withTitle: String(localized: "Remove"))
         revoke.hasDestructiveAction = true
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -987,17 +987,17 @@ final class BridgeAppModel {
                 self.go(.overview)
                 switch removed {
                 case .success:
-                    self.showBanner(Banner(kind: .success, title: String(localized: "“\(client.name)” was revoked."),
+                    self.showBanner(Banner(kind: .success, title: String(localized: "“\(client.name)” was removed."),
                                            message: String(localized: "Its credential files were removed.")))
                 case .failure(let error):
                     self.showBanner(Banner(
-                        kind: .warning, title: String(localized: "“\(client.name)” was revoked, but a credential file couldn’t be removed."),
+                        kind: .warning, title: String(localized: "“\(client.name)” was removed, but a credential file couldn’t be deleted."),
                         message: String(localized: "Its key no longer works. Check the file before continuing."),
                         code: error.rawValue, actionTitle: String(localized: "Show in Finder"),
                         action: { [weak self] in self?.showKeyFile(client.id) }))
                 }
             case .failure(let error):
-                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't revoke the client."),
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't remove the connection."),
                                        message: String(localized: "Nothing was changed."), code: error.rawValue))
             }
         }
@@ -1011,11 +1011,11 @@ final class BridgeAppModel {
         if case .failure = removed { cleanedUp = false }
         if cleanedUp {
             showBanner(Banner(kind: .warning, title: title,
-                              message: String(localized: "The client was removed so no unused key is left behind. Check that Application Support isn’t full or locked, then try again."),
+                              message: String(localized: "The connection was removed so no unused key is left behind. Check that Application Support isn’t full or locked, then try again."),
                               code: code))
         } else {
             showBanner(Banner(kind: .warning, title: title,
-                              message: String(localized: "Cleanup didn’t finish. Turn off the bridge and check this client’s key file before continuing."),
+                              message: String(localized: "Cleanup didn’t finish. Pause \(AppIdentity.displayName) and check this connection’s key file before continuing."),
                               code: code, actionTitle: String(localized: "Show in Finder"),
                               action: { [weak self] in self?.showKeyFile(clientID) }))
         }
@@ -1086,7 +1086,7 @@ final class BridgeAppModel {
         case .failure(.unavailable):
             // The registry stops all access after a write failure until the app restarts.
             showBanner(Banner(kind: .error, title: String(localized: "Couldn't save."),
-                              message: String(localized: "Client settings can't be written, so nothing was changed and clients can't connect. Quit and reopen the app, then make the changes again."),
+                              message: String(localized: "Connection settings can't be written, so nothing was changed and agents and scripts can't connect. Quit and reopen the app, then make the changes again."),
                               code: ClientRegistryError.unavailable.rawValue))
             return false
         case .failure(let error):
@@ -1589,17 +1589,17 @@ final class BridgeAppModel {
     func applyApprovalToAll(_ mode: ApprovalMode) {
         let changing = activeClients.filter { $0.approval != mode }
         guard !changing.isEmpty else {
-            showBanner(Banner(kind: .info, title: String(localized: "Every client already uses this setting.")))
+            showBanner(Banner(kind: .info, title: String(localized: "Every connection already uses this setting.")))
             return
         }
         let alert = NSAlert()
         alert.messageText = mode == .ask
-            ? String(localized: "Ask before every change from all clients?")
-            : String(localized: "Allow changes from all clients without asking?")
+            ? String(localized: "Ask before every change from all connections?")
+            : String(localized: "Allow changes from all connections without asking?")
         alert.informativeText = changing.count == 1
-            ? String(localized: "1 client changes. Each client can still be changed on its page.")
-            : String(localized: "\(changing.count) clients change. Each client can still be changed on its page.")
-        alert.addButton(withTitle: String(localized: "Apply to All Clients"))
+            ? String(localized: "1 connection changes. Each one can still be changed on its page.")
+            : String(localized: "\(changing.count) connections change. Each one can still be changed on its page.")
+        alert.addButton(withTitle: String(localized: "Apply to All Connections"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
@@ -1613,7 +1613,7 @@ final class BridgeAppModel {
             }
             self.refresh()
             if let failed {
-                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't change every client."),
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't change every connection."),
                                        code: failed.rawValue))
             } else {
                 self.showBanner(Banner(kind: .success, title: String(localized: "Saved. Applies to the next change.")))
@@ -1710,7 +1710,7 @@ final class BridgeAppModel {
                 _ = services.credentialFiles.remove(clientID: client.id, kind: .mcpToken)
                 refresh()
                 showBanner(Banner(kind: .warning, title: String(localized: "Couldn't save the token file."),
-                                  message: String(localized: "MCP access is off for this client. Check that Application Support isn’t full or locked, then try again."),
+                                  message: String(localized: "MCP access is off for this connection. Check that Application Support isn’t full or locked, then try again."),
                                   code: error.rawValue))
                 return
             }
@@ -1816,7 +1816,7 @@ final class BridgeAppModel {
         guard let client = client(clientID), client.hasMCPToken, let url = tokenFileURL(clientID) else { return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Copy the MCP token for “\(client.name)”?")
-        alert.informativeText = String(localized: "Anyone with this token can use \(client.name)'s access while the bridge is on. Paste it only into the agent's settings, and don't share it. The clipboard is cleared in 90 seconds.")
+        alert.informativeText = String(localized: "Anyone with this token can use \(client.name)'s access while \(AppIdentity.displayName) is on. Paste it only into the agent's settings, and don't share it. The clipboard is cleared in 90 seconds.")
         alert.addButton(withTitle: String(localized: "Copy Token"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -1862,8 +1862,8 @@ final class BridgeAppModel {
     /// "Remote Access on · 2 cloud clients", for the menu bar.
     var remoteMenuLine: String {
         let count = cloudClients.count
-        return count == 1 ? String(localized: "Remote Access on · 1 cloud client")
-                          : String(localized: "Remote Access on · \(count) cloud clients")
+        return count == 1 ? String(localized: "Remote Access on · 1 cloud connection")
+                          : String(localized: "Remote Access on · \(count) cloud connections")
     }
 
     /// Overview's line: "Remote Access · Reachable · my-mac.tail1234.ts.net".
@@ -1907,7 +1907,7 @@ final class BridgeAppModel {
         guard on else { applyRemoteEnabled(false); return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Turn on Remote Access?")
-        alert.informativeText = String(localized: "Cloud agents you allow will be able to reach this Mac through a tunnel you set up. Nothing is reachable until you set up a tunnel and allow a client.")
+        alert.informativeText = String(localized: "Cloud agents you allow will be able to reach this Mac through a tunnel you set up. Nothing is reachable until you set up a tunnel and allow a connection.")
         alert.addButton(withTitle: String(localized: "Turn On"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -2066,7 +2066,7 @@ final class BridgeAppModel {
         let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources,
                                       unavailableName: unavailableName)
         return client.grants.isEmpty
-            ? String(localized: "This client has no access yet, so cloud agents can't use anything.")
+            ? String(localized: "This connection has no access yet, so cloud agents can't use anything.")
             : String(localized: "Cloud agents can use this from the internet: \(text).")
     }
 
@@ -2113,7 +2113,7 @@ final class BridgeAppModel {
         guard let client = client(clientID), client.cloudAccess else { return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Copy the remote token for “\(client.name)”?")
-        alert.informativeText = String(localized: "Anyone with this token and the URL can use \(client.name)'s access from the internet while Remote Access and the bridge are on. Paste it only into the cloud agent's settings. The clipboard is cleared in 90 seconds.")
+        alert.informativeText = String(localized: "Anyone with this token and the URL can use \(client.name)'s access from the internet while Remote Access and \(AppIdentity.displayName) are on. Paste it only into the cloud agent's settings. The clipboard is cleared in 90 seconds.")
         alert.addButton(withTitle: String(localized: "Copy Remote Token"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in

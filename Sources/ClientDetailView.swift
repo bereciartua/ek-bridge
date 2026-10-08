@@ -106,7 +106,7 @@ struct ClientHeader: View {
             } label: {
                 Label(String(localized: "Activity"), systemImage: "list.bullet")
             }
-            .help(String(localized: "Show this client's requests"))
+            .help(String(localized: "Show this connection's requests"))
             ActionMenuButton(accessibilityLabel: String(localized: "More actions for \(client.name)"),
                              help: String(localized: "More actions")) {
                 ClientMenu.items(model: model, client: client)
@@ -140,13 +140,13 @@ struct PausedNotice: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).bold()
-                    Text(String(localized: "Every request from it is refused and shows in Activity as Client was paused. Its keys, tokens, access and cloud connections are kept, so it works again as soon as you resume it."))
+                    Text(String(localized: "Every request from it is refused and shows in Activity as Connection was paused. Its keys, tokens, access and cloud connections are kept, so it works again as soon as you resume it."))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
                 Button(String(localized: "Resume")) { model.setPaused(client.id, false) }
-                    .help(String(localized: "Let this client's requests through again"))
+                    .help(String(localized: "Let this connection's requests through again"))
             }
             .padding(16)
         }
@@ -154,7 +154,7 @@ struct PausedNotice: View {
     }
 
     private var title: String {
-        guard let pausedAt = client.pausedAt else { return String(localized: "This client is paused.") }
+        guard let pausedAt = client.pausedAt else { return String(localized: "This connection is paused.") }
         return String(localized: "Paused since \(pausedAt.formatted(date: .abbreviated, time: .shortened)).")
     }
 }
@@ -199,11 +199,11 @@ enum ClientMenu {
         items += [
             .separator,
             client.paused
-                ? .init(title: String(localized: "Resume Client"), systemImage: "play.circle",
+                ? .init(title: String(localized: "Resume Connection"), systemImage: "play.circle",
                         action: { model.setPaused(client.id, false) })
-                : .init(title: String(localized: "Pause Client"), systemImage: "pause.circle",
+                : .init(title: String(localized: "Pause Connection"), systemImage: "pause.circle",
                         action: { model.setPaused(client.id, true) }),
-            .init(title: String(localized: "Revoke Client…"), destructive: true,
+            .init(title: String(localized: "Remove Connection…"), destructive: true,
                   action: { model.revokeClient(client.id) }),
         ]
         return items
@@ -238,7 +238,7 @@ struct ConnectSection: View {
                 if client.hasSigningKey {
                     CommandLineConnect(model: model, client: client)
                 } else {
-                    EmptyConnectCard(text: String(localized: "This client has no command-line key."),
+                    EmptyConnectCard(text: String(localized: "This connection has no command-line key."),
                                      button: String(localized: "Add Command-Line Key")) {
                         model.addSigningKey(client.id)
                     }
@@ -279,7 +279,7 @@ struct CommandLineConnect: View {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         Text(keyStatus == .missing
                              ? String(localized: "The key file is missing. Rotate the key to create a new one.")
-                             : String(localized: "The key file has unsafe permissions or isn't a regular file. Check it in Finder, or revoke this client."))
+                             : String(localized: "The key file has unsafe permissions or isn't a regular file. Check it in Finder, or remove this connection."))
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
@@ -303,7 +303,7 @@ struct CommandLineConnect: View {
                 } actions: {
                     CopyButton(text: ConnectCommand.scopeStatus(for: client, among: model.clients, program: model.cliProgram),
                                title: String(localized: "Copy Command"),
-                               help: String(localized: "Copy a command that checks this client's access"))
+                               help: String(localized: "Copy a command that checks this connection's access"))
                 }
             }
             Label(String(localized: "The key is never shown here. Apps running as you can read the key file, so keep it out of repositories, chats and screenshots."),
@@ -387,7 +387,7 @@ struct ApprovalControl: View {
                     .accessibilityHidden(true)
             }
         }
-        .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this client. Reads never ask."))
+        .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this connection. Reads never ask."))
     }
 }
 
@@ -621,7 +621,7 @@ struct AccessRow: View {
                 : String(localized: "Write access will be removed when you save, because this list is now read only.")
         }
         if ClientGrantEditing.writeWithoutRead(mask) {
-            return String(localized: "Without Read, this client can't look up items to edit, complete or delete them.")
+            return String(localized: "Without Read, this connection can't look up items to edit, complete or delete them.")
         }
         return nil
     }
@@ -691,7 +691,7 @@ struct RevokedClientView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     PaneTitle(title: client.name)
-                    Pill(label: String(localized: "Revoked"), tone: .neutral)
+                    Pill(label: String(localized: "Removed"), tone: .neutral)
                 }
                 Card {
                     ConnectRow(label: String(localized: "Client ID")) {
@@ -701,12 +701,12 @@ struct RevokedClientView: View {
                     }
                     if let revokedAt = client.revokedAt {
                         Divider().padding(.leading, 16)
-                        ConnectRow(label: String(localized: "Revoked")) {
+                        ConnectRow(label: String(localized: "Removed")) {
                             Text(RelativeTime.full(revokedAt))
                         } actions: { EmptyView() }
                     }
                 }
-                Text(String(localized: "Its key no longer works and it has no access. Revoked clients are kept so Activity stays understandable. To reconnect this tool, create a new client."))
+                Text(String(localized: "Its key no longer works and it has no access. Removed connections are kept so Activity stays understandable. To reconnect this tool, add a new connection."))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(String(localized: "Show Activity")) { model.openActivity(client: client.id) }
@@ -731,7 +731,7 @@ struct NewClientSheet: View {
     var body: some View {
         let issue = model.nameIssue(name)
         VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "New Client")).font(.headline)
+            Text(String(localized: "Add a Connection")).font(.headline)
             Text(String(localized: "Name the agent or script that will connect. It starts with no access."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -746,7 +746,7 @@ struct NewClientSheet: View {
                 if let shown = visibleIssue(issue) {
                     Text(NameIssueText.message(shown)).font(.callout).foregroundStyle(.red)
                 } else {
-                    Text(String(localized: "Shown in Activity and the menu bar. Use one client per tool."))
+                    Text(String(localized: "Shown in Activity and the menu bar. Use one connection per tool."))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -776,7 +776,7 @@ struct NewClientSheet: View {
                 Toggle(String(localized: "Ask me before each change"), isOn: Binding(
                     get: { ask ?? (model.defaultApproval(for: kind) == .ask) }, set: { ask = $0 }))
                     .toggleStyle(.checkbox)
-                Text(String(localized: "Preset from Settings. You can change this later on the client's page."))
+                Text(String(localized: "Preset from Settings. You can change this later on the connection's page."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
@@ -885,7 +885,7 @@ struct RenameClientSheet: View {
         let issue = model.nameIssue(name, excluding: clientID)
         let unchanged = name.trimmingCharacters(in: .whitespacesAndNewlines) == original
         VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "Rename Client")).font(.headline)
+            Text(String(localized: "Rename Connection")).font(.headline)
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(localized: "Name"))
                 TextField(String(localized: "Name"), text: $name)

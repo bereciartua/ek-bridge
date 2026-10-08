@@ -20,7 +20,7 @@ struct RemoteAccessSettings: View {
             }
             Card {
                 SettingsRow(title: String(localized: "Remote Access"),
-                            caption: String(localized: "Only clients with cloud access turned on can connect.")) {
+                            caption: String(localized: "Only connections with cloud access turned on can connect.")) {
                     Toggle(String(localized: "Remote Access"),
                            isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccessEnabled($0) }))
                         .toggleStyle(.switch)
@@ -218,7 +218,7 @@ struct CloudSection: View {
             Card {
                 SettingsRow(title: String(localized: "Allow cloud access"),
                             caption: client.cloudAccess ? model.cloudSummary(client)
-                                : String(localized: "Off: cloud agents can't use this client.")) {
+                                : String(localized: "Off: cloud agents can't use this connection.")) {
                     Toggle(String(localized: "Allow cloud access"), isOn: Binding(
                         get: { client.cloudAccess }, set: { model.setCloudAccess(client.id, $0) }))
                         .toggleStyle(.switch)
@@ -227,7 +227,7 @@ struct CloudSection: View {
                 if client.cloudAccess { details }
             }
             if client.cloudAccess {
-                Label(String(localized: "Use a separate client for each cloud agent, with only the access it needs. Turning off Remote Access cuts off every cloud agent at once."),
+                Label(String(localized: "Use a separate connection for each cloud agent, with only the access it needs. Turning off Remote Access cuts off every cloud agent at once."),
                       systemImage: "info.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -424,7 +424,7 @@ struct OAuthClientSheet: View {
             if let details = model.oauthClientDetails {
                 Text(String(localized: "OAuth Client for “\(model.clientName(details.bridgeClientID))”"))
                     .font(.headline)
-                Text(String(localized: "Enter these values in the app's OAuth settings. Pairing is open for 10 minutes; when the app asks you to sign in, check the code and allow it. If pairing has closed by then, reopen it with Connect a Cloud App… on the client page."))
+                Text(String(localized: "Enter these values in the app's OAuth settings. Pairing is open for 10 minutes; when the app asks you to sign in, check the code and allow it. If pairing has closed by then, reopen it with Connect a Cloud App… on the connection's page."))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {

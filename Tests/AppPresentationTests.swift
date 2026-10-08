@@ -59,7 +59,7 @@ struct AppPresentationTests {
         precondition(OutcomePresentation.of("error:recurrence_whatever").label == "Not supported")
         let unknown = OutcomePresentation.of("error:mystery_code")
         precondition(unknown.label == "Error" && unknown.tone == .neutral &&
-                     unknown.why == "The bridge returned mystery_code.")
+                     unknown.why == "EK Bridge returned mystery_code.")
         precondition(OutcomePresentation.of("success").tone == .ok)
         precondition(!OutcomePresentation.of("already_completed").tone.isProblem)
         precondition(CommandPresentation.label("complete_reminder") == "Complete reminder")

@@ -62,7 +62,7 @@ struct RenameNotice: View {
     }
 
     private var message: String {
-        var text = String(localized: "Your settings, clients and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its client's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app, so it can't start again at login.")
+        var text = String(localized: "Your settings, connections and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its connection's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app, so it can't start again at login.")
         if model.commandLineTool == .elsewhere {
             text += " " + String(localized: "Install the command-line tool again from Settings ▸ Developer.")
         }
@@ -83,7 +83,7 @@ struct UpdateCard: View {
                 title: update.critical
                     ? String(localized: "A security update is available: version \(update.version).")
                     : String(localized: "Version \(update.version) is available."),
-                message: String(localized: "See what's new, then install it. \(AppIdentity.displayName) restarts, and your access, clients and agent setups stay as they are."),
+                message: String(localized: "See what's new, then install it. \(AppIdentity.displayName) restarts, and your access, connections and agent setups stay as they are."),
                 actionTitle: String(localized: "Install Update…"),
                 action: { model.checkForUpdates() }),
                 onDismiss: update.critical ? nil : { model.dismissFoundUpdate() })
@@ -96,8 +96,8 @@ struct PolicyUnavailableCard: View {
 
     var body: some View {
         BannerView(banner: Banner(
-            kind: .error, title: String(localized: "Client settings can't be read."),
-            message: String(localized: "The file in the data folder has unexpected permissions or contents, so clients can't connect. Quit other copies of the app, then check the folder."),
+            kind: .error, title: String(localized: "Connection settings can't be read."),
+            message: String(localized: "The file in the data folder has unexpected permissions or contents, so agents and scripts can't connect. Quit other copies of the app, then check the folder."),
             actionTitle: String(localized: "Show in Finder"),
             action: { model.revealDataFolder() }))
     }
@@ -131,14 +131,14 @@ struct BridgeStatusCard: View {
                 Spacer(minLength: 12)
                 Toggle(isOn: Binding(get: { model.bridge.isOn },
                                      set: { model.setBridgeEnabled($0) })) {
-                    Text(String(localized: "Bridge"))
+                    Text(AppIdentity.displayName)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.large)
                 .labelsHidden()
                 .disabled(!model.policyStoreAvailable && !model.bridge.isOn)
-                .accessibilityLabel(String(localized: "Bridge"))
-                .accessibilityValue(model.bridge.isOn ? String(localized: "On") : String(localized: "Off"))
+                .accessibilityLabel(AppIdentity.displayName)
+                .accessibilityValue(model.bridge.isOn ? String(localized: "On") : String(localized: "Paused"))
             }
             .padding(18)
         }
@@ -160,9 +160,9 @@ struct BridgeStatusCard: View {
 
     private var title: String {
         switch model.bridge {
-        case .on: String(localized: "Bridge is on")
-        case .off: String(localized: "Bridge is off")
-        case .failed: String(localized: "Bridge is off")
+        case .on: String(localized: "\(AppIdentity.displayName) is on")
+        case .off: String(localized: "\(AppIdentity.displayName) is paused")
+        case .failed: String(localized: "\(AppIdentity.displayName) is paused")
         }
     }
 
@@ -171,17 +171,17 @@ struct BridgeStatusCard: View {
         case .on:
             let count = model.activeClients.count - model.pausedCount
             let text = count == 1
-                ? String(localized: "1 client can use the access you've granted. Requests stay on this Mac.")
-                : String(localized: "\(count) clients can use the access you've granted. Requests stay on this Mac.")
+                ? String(localized: "1 connection can use the access you've granted. Requests stay on this Mac.")
+                : String(localized: "\(count) connections can use the access you've granted. Requests stay on this Mac.")
             switch model.pausedCount {
             case 0: return text
             case 1: return text + " " + String(localized: "1 is paused.")
             default: return text + " " + String(localized: "\(model.pausedCount) are paused.")
             }
         case .off:
-            return String(localized: "Requests are refused. Clients keep their access.")
+            return String(localized: "Agents and scripts are refused until you turn it on. Their access is kept.")
         case .failed(let reason):
-            return String(localized: "The bridge couldn't start. \(reason)")
+            return String(localized: "\(AppIdentity.displayName) couldn't start. \(reason)")
         }
     }
 }
@@ -217,11 +217,11 @@ struct OverviewClients: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "Clients"),
-                         subtitle: String(localized: "Each client has its own key and access."))
+            SectionTitle(title: String(localized: "Connections"),
+                         subtitle: String(localized: "Each connection has its own key and access."))
             if model.activeClients.isEmpty {
                 Card {
-                    Text(String(localized: "No clients yet. A client is one tool or script with its own key."))
+                    Text(String(localized: "No connections yet. A connection is one agent or script with its own key."))
                         .foregroundStyle(.secondary)
                         .padding(16)
                 }
@@ -245,12 +245,12 @@ struct NewClientButton: View {
 
     var body: some View {
         Button { model.beginNewClient() } label: {
-            Label(String(localized: "New Client…"), systemImage: "plus")
+            Label(String(localized: "Add a Connection…"), systemImage: "plus")
         }
         .modifier(Prominent(on: prominent))
         .disabled(!model.canCreateClient)
         .help(model.canCreateClient ? ""
-              : String(localized: "You have 32 active clients, the maximum. Revoke one to add another."))
+              : String(localized: "You have 32 connections, the maximum. Remove one to add another."))
     }
 }
 
@@ -368,7 +368,7 @@ struct SetupChecklistView: View {
                                      focus: SetupChecklist.focusClient(input))
                     }
                 }
-                Label(String(localized: "A client is one tool or script with its own key. Give each tool its own client so you can see and revoke it separately."),
+                Label(String(localized: "A connection is one agent or script with its own key. Give each one its own connection so you can see and remove it separately."),
                       systemImage: "info.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -470,7 +470,7 @@ struct SetupStepRow: View {
         }
     }
 
-    private var clientName: String { focus?.name ?? String(localized: "the client") }
+    private var clientName: String { focus?.name ?? String(localized: "the connection") }
 
     private var title: String {
         if state == .done { return doneTitle }
@@ -489,9 +489,9 @@ struct SetupStepRow: View {
         switch step {
         case .calendarAccess: String(localized: "Calendar access allowed")
         case .remindersAccess: String(localized: "Reminders access allowed")
-        case .createClient: String(localized: "Client created")
+        case .createClient: String(localized: "Connection added")
         case .chooseAccess: String(localized: "Access chosen")
-        case .turnOn: String(localized: "Bridge turned on")
+        case .turnOn: String(localized: "\(AppIdentity.displayName) turned on")
         case .mcpServer: String(localized: "MCP server turned on")
         case .testRequest: String(localized: "Tool connected")
         }
@@ -501,9 +501,9 @@ struct SetupStepRow: View {
         switch step {
         case .calendarAccess: String(localized: "Allow Calendar access")
         case .remindersAccess: String(localized: "Allow Reminders access")
-        case .createClient: String(localized: "Create a client")
+        case .createClient: String(localized: "Add a connection")
         case .chooseAccess: String(localized: "Choose what \(clientName) can use")
-        case .turnOn: String(localized: "Turn on the bridge")
+        case .turnOn: String(localized: "Turn on \(AppIdentity.displayName)")
         case .mcpServer: String(localized: "Turn on the MCP server")
         case .testRequest: String(localized: "Connect your tool")
         }
@@ -527,7 +527,7 @@ struct SetupStepRow: View {
         case .chooseAccess:
             return String(localized: "Pick calendars and lists, and what it can do with each. It has no access yet.")
         case .turnOn:
-            return String(localized: "Clients can only connect while it's on. Your choice is kept after a restart.")
+            return String(localized: "Agents and scripts can only connect while it's on. Your choice is kept after a restart.")
         case .mcpServer:
             return String(localized: "Lets AI agents on this Mac connect. Listens on this Mac only.")
         case .testRequest:
@@ -575,11 +575,11 @@ struct SetupStepRow: View {
             }
         case .turnOn:
             Toggle(isOn: Binding(get: { model.bridge.isOn }, set: { model.setBridgeEnabled($0) })) {
-                Text(String(localized: "Bridge"))
+                Text(AppIdentity.displayName)
             }
             .toggleStyle(.switch)
             .labelsHidden()
-            .accessibilityLabel(String(localized: "Turn on the bridge"))
+            .accessibilityLabel(String(localized: "Turn on \(AppIdentity.displayName)"))
         case .mcpServer:
             if state != .done {
                 Button(String(localized: "Turn On")) { model.setMCPServerEnabled(true) }

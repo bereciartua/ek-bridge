@@ -8,15 +8,15 @@ enum BridgeErrorText {
         case .alreadyActive?:
             String(localized: "Another copy of \(AppIdentity.displayName) is already running.")
         case .unsafePath?:
-            String(localized: "The bridge's folder in /tmp has unsafe permissions. Quit other copies and try again.")
+            String(localized: "\(AppIdentity.displayName)'s folder in /tmp has unsafe permissions. Quit other copies and try again.")
         case .directoryFailed?, .writeFailed?:
-            String(localized: "The bridge couldn't create its working folder.")
+            String(localized: "\(AppIdentity.displayName) couldn't create its working folder.")
         case nil:
             String(localized: "Something unexpected stopped it.")
         }
     }
 
-    static let policyUnavailable = String(localized: "Client settings can't be read.")
+    static let policyUnavailable = String(localized: "Connection settings can't be read.")
 }
 
 @MainActor
@@ -393,7 +393,7 @@ enum MainMenu {
         app.addItem(item(String(localized: "Quit \(name)"), #selector(NSApplication.terminate(_:)), "q"))
 
         let file = submenu(String(localized: "File"), in: main)
-        file.addItem(item(String(localized: "New Client…"), #selector(BridgeAppDelegate.newClient(_:)), "n", target: target))
+        file.addItem(item(String(localized: "Add a Connection…"), #selector(BridgeAppDelegate.newClient(_:)), "n", target: target))
         file.addItem(.separator())
         file.addItem(item(String(localized: "Save Access"), #selector(BridgeAppDelegate.saveAccess(_:)), "s", target: target))
         file.addItem(item(String(localized: "Revert Access"), #selector(BridgeAppDelegate.revertAccess(_:)), target: target))
@@ -542,7 +542,7 @@ enum RenameMigrationLaunch {
             withBundleIdentifier: LegacyIdentity.bundleID).first(where: { !$0.isTerminated }) {
             if !asked {
                 let message = beforeMigration
-                    ? String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName). Its settings, clients and Activity move over once the old app has quit.")
+                    ? String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName). Its settings, connections and Activity move over once the old app has quit.")
                     : String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName), and the two share their data, so only one can run. Delete the old app so it doesn't start again.")
                 guard alert(String(localized: "Quit \(LegacyIdentity.displayName) to continue"), message,
                             buttons: [String(localized: "Quit \(LegacyIdentity.displayName)"),

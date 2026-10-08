@@ -328,7 +328,7 @@ final class StatusHeaderView: NSView {
         subtitle.preferredMaxLayoutWidth = Self.width - 110
         toggle.target = self
         toggle.action = #selector(toggled)
-        toggle.setAccessibilityLabel(String(localized: "Bridge"))
+        toggle.setAccessibilityLabel(AppIdentity.displayName)
         let labels = NSStackView(views: [title, subtitle])
         labels.orientation = .vertical
         labels.alignment = .leading

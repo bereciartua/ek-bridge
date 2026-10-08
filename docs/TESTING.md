@@ -67,8 +67,8 @@ Run it before the first public release and after any change to the bundle layout
 
 1. On a fresh macOS user account, or a macOS VM on Apple silicon (UTM or Tart), download the DMG from the draft release in Safari, so it carries the quarantine flag.
 2. Open it: no Gatekeeper warning. `spctl --assess --type open --context context:primary-signature -v EKBridge-<version>.dmg` says `source=Notarized Developer ID`. Drag the app to Applications and open it from there: no warning, and the window opens on the setup checklist.
-3. Work through the checklist: grant Calendar and Reminders access, create a client, connect one agent (Claude Code, say) and run its `bridge-mcp check`; turn on Start at login.
-4. Install the next build over it at the same path (drag from a second DMG, or later through Sparkle), then confirm that access is still granted, the client and its token still work, the agent still connects, Start at login is still on, and Activity is intact.
+3. Work through the checklist: grant Calendar and Reminders access, add a connection, connect one agent (Claude Code, say) and run its `bridge-mcp check`; turn on Start at login.
+4. Install the next build over it at the same path (drag from a second DMG, or later through Sparkle), then confirm that access is still granted, the connection and its token still work, the agent still connects, Start at login is still on, and Activity is intact.
 5. If an Intel Mac is available, repeat steps 1–3 there: the `x86_64` slices are compiled and checked but have never run.
 
 ### Update test
@@ -155,7 +155,7 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 
 - [ ] MCP Inspector (`npx @modelcontextprotocol/inspector`, Streamable HTTP with the `Authorization` header): list tools, call each read tool, check how errors render.
 - [ ] MCP conformance suite, if one covers servers for 2025-11-25 or 2026-07-28 at release time, against `build/mcp-server-test`.
-- [ ] Claude Code, HTTP with `headersHelper`, then the launcher: connect; `list_collections`; read the test calendar; create, update and delete a timed event; create a reminder with a due date and weekly recurrence; complete a nonrecurring reminder; deny one approval; remove a grant mid-session → `forbidden`; bridge off → `bridge_off`; reset the token → the helper picks up the new token on reconnect.
+- [ ] Claude Code, HTTP with `headersHelper`, then the launcher: connect; `list_collections`; read the test calendar; create, update and delete a timed event; create a reminder with a due date and weekly recurrence; complete a nonrecurring reminder; deny one approval; remove a grant mid-session → `forbidden`; EK Bridge paused → `bridge_off`; reset the token → the helper picks up the new token on reconnect.
 - [ ] Codex CLI, launcher: the same core steps; its 60-second timeout isn't hit while an approval waits.
 - [ ] Claude Desktop, launcher: connect after editing the config and restarting; one read and one approved write.
 - [ ] Cursor, launcher: one read and one write.
@@ -185,7 +185,7 @@ This covers part of the four agents' rows above (not the token reset, grant remo
 - [ ] Tailscale Funnel + Anthropic Messages API with `authorization_token` (the setup's `curl`): Test reports Reachable with Tailscale Funnel; `list_collections` and a read work; Activity shows a remote row with the forwarded address; **Reset Remote Token…** makes the old token fail; **Turn Off Remote Access** makes the URL stop answering.
 - [ ] Cursor cloud agent, header setup: one read; with **Ask me first**, one write approved at the Mac and one left to time out.
 - [ ] GitHub Copilot coding agent on a scratch repository: the read-only `tools` list works; secrets named `COPILOT_MCP_*` reach the header.
-- [ ] claude.ai custom connector, then the same connector in Claude Desktop and the Claude mobile app: pairing (code shown in both places, Allow), one read, the connection listed under the client, **Revoke** ends it, and a refresh after an hour keeps it working.
+- [ ] claude.ai custom connector, then the same connector in Claude Desktop and the Claude mobile app: pairing (code shown in both places, Allow), one read, the cloud app listed on the connection's page, **Revoke** ends it, and a refresh after an hour keeps it working.
 - [ ] ChatGPT developer mode: custom MCP server with OAuth, pairing, one read.
 - [ ] Gemini Enterprise: **Set Up OAuth Client…**, the data store with Enable PKCE Support, pairing, one read.
 - [ ] Each tunnel's commands from Settings: Cloudflare Tunnel and ngrok (Host rewritten to `127.0.0.1:<port>`), the Cloudflare quick tunnel, and the Test result and Activity tunnel name for each.
@@ -198,8 +198,8 @@ This covers part of the four agents' rows above (not the token reset, grant remo
 | Symptom | Read-only checks and next step |
 | --- | --- |
 | No menu bar icon | Check whether the installed app launched in the current logged-in GUI session. Inspect macOS Login Items status if Launch at Login was expected. Do not start a second copy while one is running. |
-| CLI exits 3: `isn't running, or the bridge is off` or `the bridge session changed` | Check the menu bar icon (a check mark means on) or Overview; confirm the app is running and the bridge is on. Check that `client.py` uses the matching `bridge-client` (`sh build.sh`). A stale `/tmp` descriptor after a crash is not proof that the bridge is active. Exit 4 means a missing or unsafe key, parameter or registry file; the message names the file. |
-| `forbidden` | Select the row in Activity: it names the client, the calendar or list, and the missing access, with a button to that row. Confirm the exact Calendar or Reminders ID and the client's saved action boxes. Names can repeat; a Read grant does not imply Create, and vice versa. |
+| CLI exits 3: `isn't running, or the bridge is off` or `the bridge session changed` | Check the menu bar icon (a check mark means on) or Overview; confirm the app is running and EK Bridge is on. Check that `client.py` uses the matching `bridge-client` (`sh build.sh`). A stale `/tmp` descriptor after a crash is not proof that the bridge is active. Exit 4 means a missing or unsafe key, parameter or registry file; the message names the file. |
+| `forbidden` | Select the row in Activity: it names the connection, the calendar or list, and the missing access, with a button to that row. Confirm the exact Calendar or Reminders ID and the connection's saved action boxes. Names can repeat; a Read grant does not imply Create, and vice versa. |
 | `full_access_required` | Check Overview ▸ macOS access (the menu bar icon also shows an exclamation badge) and macOS Privacy & Security settings for the installed signed app. A differently signed or relocated build may be treated differently. Do not reset TCC blindly. |
 | `conflict`, `item_unavailable`, or `occurrence_conflict` | Read the item again and use its current ID, version, due instant, and fingerprint. Provider sync can change them. |
 | `idempotency_pending_review`, `completion_readback_uncertain`, `journal_clock_rollback`, or timeout after a write | Stop automatic retries. Inspect the exact item and journal state locally with appropriate authorization; reconcile whether the write happened before sending any new key. Never delete the journal merely to clear a failure. |

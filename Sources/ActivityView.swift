@@ -30,7 +30,7 @@ struct ActivityView: View {
                 ContentUnavailableView {
                     Label(String(localized: "No requests yet"), systemImage: "list.bullet")
                 } description: {
-                    Text(String(localized: "Requests from your clients appear here, with what happened and why."))
+                    Text(String(localized: "Requests from your connections appear here, with what happened and why."))
                 }
             } else {
                 GeometryReader { proxy in
@@ -234,7 +234,7 @@ struct ActivityTable: View {
                 ViaIcon(via: entry.via)
             }
             .width(min: columns.via, ideal: columns.via, max: columns.via)
-            TableColumn(String(localized: "Client")) { entry in
+            TableColumn(String(localized: "Connection")) { entry in
                 Text(model.clientName(entry.clientID))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -351,7 +351,7 @@ struct ActivityInspector: View {
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
                 GridRow {
-                    Text(String(localized: "Client")).foregroundStyle(.secondary)
+                    Text(String(localized: "Connection")).foregroundStyle(.secondary)
                     Text(model.clientName(entry.clientID))
                 }
                 if let via = entry.via {
@@ -540,8 +540,8 @@ struct ActivityFilterMenu: View {
 
     var body: some View {
         Menu {
-            Section(String(localized: "Client")) {
-                choice(String(localized: "All Clients"), model.activityClientFilter == .all) {
+            Section(String(localized: "Connection")) {
+                choice(String(localized: "All Connections"), model.activityClientFilter == .all) {
                     model.activityClientFilter = .all
                 }
                 ForEach(model.activeClients) { client in
@@ -557,7 +557,7 @@ struct ActivityFilterMenu: View {
                         model.activityClientFilter = .client(client.id)
                     }
                 }
-                choice(String(localized: "Unknown client"), model.activityClientFilter == .unknown) {
+                choice(String(localized: "Unknown connection"), model.activityClientFilter == .unknown) {
                     model.activityClientFilter = .unknown
                 }
             }
@@ -571,14 +571,14 @@ struct ActivityFilterMenu: View {
         }
         .fixedSize()
         .frame(maxWidth: 220)
-        .accessibilityLabel(String(localized: "Filter by client and transport"))
+        .accessibilityLabel(String(localized: "Filter by connection and transport"))
     }
 
     private var label: String {
         let client = switch model.activityClientFilter {
-        case .all: String(localized: "All Clients")
+        case .all: String(localized: "All Connections")
         case .client(let id): model.clientName(id)
-        case .unknown: String(localized: "Unknown client")
+        case .unknown: String(localized: "Unknown connection")
         }
         return model.activityVia == .all ? client : "\(client) · \(title(model.activityVia))"
     }

@@ -10,7 +10,7 @@ struct ConnectAgentTab: View {
     var body: some View {
         if !client.hasMCPToken {
             EmptyConnectCard(
-                text: String(localized: "This client can't connect over MCP yet."),
+                text: String(localized: "This connection has no MCP access yet."),
                 button: String(localized: "Turn On MCP Access"), prominent: true) {
                 model.turnOnMCPAccess(client.id)
             }

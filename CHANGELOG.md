@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Changed
+
+- The app calls clients **connections** (sidebar, menus, Activity, Settings), and the master switch reads **EK Bridge is on** / **EK Bridge is paused**. The CLI, the API, file names and `--client` keep "client".
+
 ## [0.8.3] - 2026-10-08
 
 A polish release: Activity's columns fit, Overview's client rows agree with themselves, a delete EK Bridge can't show is never the default, the menu bar shows the day-arc icon, the app offers to move itself to Applications, and unavailable calendars keep their names. Nothing changes for agents or scripts. The client registry stays at **version 4**, so going back to 0.8.2 means installing its DMG over this one; 0.8.2 ignores the new `collection-labels.json`.

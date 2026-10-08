@@ -44,7 +44,7 @@ struct SettingsView: View {
                 SettingsRow(title: String(localized: "Start at login"),
                             caption: AppIdentity.isLiveTest
                                 ? String(localized: "Not available in the test copy.")
-                                : String(localized: "The bridge also remembers whether it was on.")) {
+                                : String(localized: "\(AppIdentity.displayName) also remembers whether it was on.")) {
                     Toggle(String(localized: "Start at login"),
                            isOn: Binding(get: { model.loginItem == .enabled },
                                          set: { model.setStartAtLogin($0) }))
@@ -129,7 +129,7 @@ struct SettingsView: View {
                 }
                 RowDivider()
                 SettingsRow(title: String(localized: "Show developer tools"),
-                            caption: String(localized: "For contributors testing the bridge with throwaway data.")) {
+                            caption: String(localized: "For contributors testing \(AppIdentity.displayName) with throwaway data.")) {
                     Toggle(String(localized: "Show developer tools"),
                            isOn: Binding(get: { model.showDeveloperTools },
                                          set: { model.setShowDeveloperTools($0) }))
@@ -195,7 +195,7 @@ struct SettingsView: View {
     private var commandLineToolCaption: String {
         switch model.commandLineTool {
         case .installed:
-            String(localized: "bridge-client is in ~/.local/bin and runs this copy of the app’s client.")
+            String(localized: "bridge-client is in ~/.local/bin and runs this copy of the app’s command-line tool.")
         case .notInstalled where model.cliLinkedByHomebrew:
             String(localized: "Homebrew already linked bridge-client to this copy of the app. Installing also adds it to ~/.local/bin.")
         case .notInstalled:
@@ -336,7 +336,7 @@ struct MCPServerSettings: View {
             SectionTitle(title: String(localized: "MCP Server"))
             Card {
                 SettingsRow(title: String(localized: "MCP server"),
-                            caption: String(localized: "Lets AI agents on this Mac connect. Each agent still needs a client with access.")) {
+                            caption: String(localized: "Lets AI agents on this Mac connect. Each agent still needs a connection with access.")) {
                     Toggle(String(localized: "MCP server"),
                            isOn: Binding(get: { model.mcpEnabled }, set: { model.setMCPServerEnabled($0) }))
                         .toggleStyle(.switch)
@@ -388,22 +388,22 @@ struct MCPServerSettings: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(String(localized: "Ask before changes")).font(.headline)
-                Text(String(localized: "Each client can be changed on its page. Reads never ask."))
+                Text(String(localized: "Each connection can be changed on its page. Reads never ask."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .padding(.top, 6)
             Card {
-                SettingsRow(title: String(localized: "New AI agent clients")) {
+                SettingsRow(title: String(localized: "New AI agent connections")) {
                     approvalPicker(.agent)
                 }
                 RowDivider()
-                SettingsRow(title: String(localized: "New command-line clients")) {
+                SettingsRow(title: String(localized: "New command-line connections")) {
                     approvalPicker(.cli)
                 }
                 RowDivider()
-                SettingsRow(title: String(localized: "Set every existing client to one mode.")) {
-                    Menu(String(localized: "Apply to All Clients…")) {
+                SettingsRow(title: String(localized: "Set every existing connection to one mode.")) {
+                    Menu(String(localized: "Apply to All Connections…")) {
                         Button(String(localized: "Ask me first")) { model.applyApprovalToAll(.ask) }
                         Button(String(localized: "Allow without asking")) { model.applyApprovalToAll(.allow) }
                     }
@@ -443,7 +443,7 @@ struct MCPServerSettings: View {
     }
 
     private func approvalPicker(_ kind: ClientKind) -> some View {
-        Picker(kind == .cli ? String(localized: "New command-line clients") : String(localized: "New AI agent clients"),
+        Picker(kind == .cli ? String(localized: "New command-line connections") : String(localized: "New AI agent connections"),
                selection: Binding(get: { model.defaultApproval(for: kind) },
                                   set: { model.setNewClientApproval($0, for: kind) })) {
             Text(String(localized: "Ask me first")).tag(ApprovalMode.ask)

@@ -846,13 +846,13 @@ final class BehaviorReview {
                   self.window.attachedSheet == nil, self.model.banner?.kind == .success,
                   self.model.activeClients.contains(where: { $0.id == created.id }),
                   self.model.tokenFileStatus(created.id) == .present,
-                  ClientMenu.items(model: self.model, client: paused).contains(where: { $0.title == "Resume Client" })
+                  ClientMenu.items(model: self.model, client: paused).contains(where: { $0.title == "Resume Connection" })
             else { return false }
             self.model.setPaused(created.id, false)
             guard let resumed = self.model.client(created.id) else { return false }
             return !resumed.paused && resumed.pausedAt == nil && resumed.approval == created.approval &&
                 self.model.tokenFileStatus(created.id) == .present &&
-                ClientMenu.items(model: self.model, client: resumed).contains(where: { $0.title == "Pause Client" })
+                ClientMenu.items(model: self.model, client: resumed).contains(where: { $0.title == "Pause Connection" })
         }
         step("revoke asks first") {
             guard let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }

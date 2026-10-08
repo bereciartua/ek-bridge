@@ -53,7 +53,7 @@ struct SidebarView: View {
                         .tag(Route.client(client.id))
                 }
                 if model.activeClients.isEmpty {
-                    Text(String(localized: "No clients yet"))
+                    Text(String(localized: "No connections yet"))
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
                 }
@@ -66,16 +66,16 @@ struct SidebarView: View {
                                 AvatarView(name: client.name, id: client.id, size: 18).opacity(0.5)
                             }
                             .tag(Route.client(client.id))
-                            .accessibilityLabel(String(localized: "\(client.name), revoked"))
+                            .accessibilityLabel(String(localized: "\(client.name), removed"))
                         }
                     } label: {
-                        Text(String(localized: "Revoked (\(model.revokedClients.count))"))
+                        Text(String(localized: "Removed (\(model.revokedClients.count))"))
                             .foregroundStyle(.secondary)
                     }
                 }
             } header: {
                 HStack {
-                    Text(String(localized: "Clients"))
+                    Text(String(localized: "Connections"))
                     Spacer()
                     Button {
                         model.beginNewClient()
@@ -84,9 +84,9 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.borderless)
                     .disabled(!model.canCreateClient)
-                    .help(model.canCreateClient ? String(localized: "New Client…")
-                        : String(localized: "You have 32 active clients, the maximum. Revoke one to add another."))
-                    .accessibilityLabel(String(localized: "New Client…"))
+                    .help(model.canCreateClient ? String(localized: "Add a Connection…")
+                        : String(localized: "You have 32 connections, the maximum. Remove one to add another."))
+                    .accessibilityLabel(String(localized: "Add a Connection…"))
                 }
             }
         }
@@ -153,11 +153,11 @@ struct ClientSidebarRow: View {
             }
             Divider()
             if client.paused {
-                Button(String(localized: "Resume Client")) { model.setPaused(client.id, false) }
+                Button(String(localized: "Resume Connection")) { model.setPaused(client.id, false) }
             } else {
-                Button(String(localized: "Pause Client")) { model.setPaused(client.id, true) }
+                Button(String(localized: "Pause Connection")) { model.setPaused(client.id, true) }
             }
-            Button(String(localized: "Revoke Client…"), role: .destructive) { model.revokeClient(client.id) }
+            Button(String(localized: "Remove Connection…"), role: .destructive) { model.revokeClient(client.id) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(client.name), \(subtitle)")
@@ -207,7 +207,7 @@ enum NameIssueText {
         case .empty: String(localized: "Enter a name.")
         case .tooLong: String(localized: "Use a shorter name (up to 80 bytes).")
         case .controlCharacters: String(localized: "Names can't contain tabs or line breaks.")
-        case .duplicate(let name): String(localized: "Another client is already called “\(name)”.")
+        case .duplicate(let name): String(localized: "Another connection is already called “\(name)”.")
         }
     }
 }

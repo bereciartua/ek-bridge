@@ -319,8 +319,8 @@ enum AttentionProblem: Equatable, Hashable {
         switch self {
         case .calendarAccess(let status): AccessText.problemTitle(.calendar, status)
         case .remindersAccess(let status): AccessText.problemTitle(.reminderList, status)
-        case .policyStoreUnavailable: String(localized: "Client settings can't be read")
-        case .bridgeFailed: String(localized: "The bridge couldn't start")
+        case .policyStoreUnavailable: String(localized: "Connection settings can't be read")
+        case .bridgeFailed: String(localized: "\(AppIdentity.displayName) couldn't start")
         case .mcpServerFailed: String(localized: "The MCP server couldn't start")
         case .remoteAccessFailed: String(localized: "Remote Access couldn't start")
         }
@@ -380,7 +380,7 @@ enum AccessText {
                 ? String(localized: "Not allowed yet. Needed to show your calendars.")
                 : String(localized: "Not allowed yet. Needed to show your lists.")
         case .denied: String(localized: "Turned off in System Settings.")
-        case .writeOnly: String(localized: "Add-only access. The bridge needs Full Access to read and update items.")
+        case .writeOnly: String(localized: "Add-only access. \(AppIdentity.displayName) needs Full Access to read and update items.")
         case .restricted: String(localized: "Blocked by a profile on this Mac. Ask whoever manages it.")
         case .fullAccess: nil
         @unknown default: String(localized: "Unknown access state.")
