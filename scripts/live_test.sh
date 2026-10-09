@@ -26,6 +26,14 @@ set -eu
 #        sh scripts/live_test.sh rollback       load a copy of its data folder with the frozen
 #                                               0.8.2 registry (Tests/rollback-0.8.2); the copy
 #                                               is made in a temp folder and deleted after
+#        sh scripts/live_test.sh quicktunnel start NAME [--keep-host] [--port 47626]
+#                                               start a Cloudflare quick tunnel to the copy's
+#                                               remote port (no other port is accepted) and
+#                                               print its address; --keep-host leaves Host as
+#                                               the tunnel sends it (no --http-host-header)
+#        sh scripts/live_test.sh quicktunnel stop NAME|stop-all|status
+#                                               stop one (only the PID this helper started),
+#                                               all of them, or list them; cleanup stops all
 #
 #   EVENTKIT_SIGN_IDENTITY  build: the codesign identity. Default: the first
 #                           "Developer ID Application" identity in the keychain,
@@ -48,6 +56,10 @@ app=${LIVE_TEST_APP:-"$project_dir/build/live-test/EK Bridge Test.app"}
 data="$HOME/Library/Application Support/EKBridge Live Test"
 automation="$data/automation"
 prefix="EK Bridge Test · "
+# The test copy's remote port (RemoteDefaults.port in the flavor). Quick
+# tunnels go only here, never to the installed app's 47615 or 47616.
+remote_port=47626
+tunnels="$project_dir/build/live-test/quicktunnels"
 
 fail() { printf 'live_test: %s\n' "$*" >&2; exit 1; }
 
@@ -152,7 +164,126 @@ start() {
     printf 'live_test: started %s\n' "$app"
 }
 
+# Quick tunnels (plan 08): a throwaway trycloudflare.com address in front of
+# the copy's remote port. No account and nothing in ~/.cloudflared: each one
+# runs with an empty config file of its own, and its PID, log and address
+# are kept in build/live-test/quicktunnels.
+tunnel_alive() {
+    [ -f "$tunnels/$1.pid" ] || return 1
+    pid=$(cat "$tunnels/$1.pid")
+    ps -o command= -p "$pid" 2>/dev/null | grep -q "cloudflared tunnel .*--config $tunnels/empty.yml"
+}
+
+quicktunnel_start() {
+    name=${1:-}
+    case "$name" in ''|*[!A-Za-z0-9_-]*) fail "usage: live_test.sh quicktunnel start NAME [--keep-host]" ;; esac
+    shift
+    keep_host=0
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --keep-host) keep_host=1 ;;
+            --port)
+                [ "${2:-}" = "$remote_port" ] || fail "quick tunnels go only to the test copy's port $remote_port"
+                shift ;;
+            *) fail "unknown option $1" ;;
+        esac
+        shift
+    done
+    command -v cloudflared > /dev/null || fail "cloudflared isn't installed (brew install cloudflared)"
+    tunnel_alive "$name" && fail "quick tunnel $name is already running; stop it first"
+    mkdir -p "$tunnels"
+    : > "$tunnels/empty.yml"
+    rm -f "$tunnels/$name.log" "$tunnels/$name.host" "$tunnels/$name.metrics"
+    set -- tunnel --no-autoupdate --config "$tunnels/empty.yml" --url "http://127.0.0.1:$remote_port"
+    [ "$keep_host" -eq 1 ] || set -- "$@" --http-host-header "127.0.0.1:$remote_port"
+    nohup cloudflared "$@" > "$tunnels/$name.log" 2>&1 < /dev/null &
+    printf '%s\n' "$!" > "$tunnels/$name.pid"
+    tries=0
+    host=
+    while [ "$tries" -lt 600 ]; do
+        tunnel_alive "$name" || { tail -5 "$tunnels/$name.log" >&2; rm -f "$tunnels/$name.pid"; fail "cloudflared stopped"; }
+        metrics=$(sed -n 's/.*metrics server on \(127\.0\.0\.1:[0-9]*\)\/metrics.*/\1/p' "$tunnels/$name.log" | head -1)
+        if [ -n "$metrics" ]; then
+            host=$(curl -s --max-time 1 "http://$metrics/quicktunnel" \
+                | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("hostname") or "")
+except Exception: print("")' 2>/dev/null || true)
+            [ -n "$host" ] && break
+        fi
+        tries=$((tries + 1))
+        sleep 0.1
+    done
+    if [ -z "$host" ]; then
+        quicktunnel_stop "$name"
+        fail "no quick tunnel address within 60 seconds (Cloudflare rate limit or no network?)"
+    fi
+    printf '%s\n' "$metrics" > "$tunnels/$name.metrics"
+    printf 'https://%s\n' "$host" > "$tunnels/$name.host"
+    printf 'https://%s\n' "$host"
+}
+
+quicktunnel_stop() {
+    name=$1
+    if tunnel_alive "$name"; then
+        pid=$(cat "$tunnels/$name.pid")
+        kill "$pid" 2>/dev/null || true
+        tries=0
+        while kill -0 "$pid" 2>/dev/null; do
+            tries=$((tries + 1))
+            [ "$tries" -lt 50 ] || { kill -9 "$pid" 2>/dev/null || true; break; }
+            sleep 0.1
+        done
+        printf 'live_test: stopped quick tunnel %s\n' "$name"
+    fi
+    rm -f "$tunnels/$name.pid" "$tunnels/$name.host" "$tunnels/$name.metrics"
+}
+
+quicktunnel_stop_all() {
+    [ -d "$tunnels" ] || return 0
+    for file in "$tunnels"/*.pid; do
+        [ -e "$file" ] || continue
+        quicktunnel_stop "$(basename "$file" .pid)"
+    done
+    # Anything still running with the helper's config file is one of ours.
+    if pgrep -f "cloudflared tunnel .*--config $tunnels/empty.yml" > /dev/null; then
+        pkill -f "cloudflared tunnel .*--config $tunnels/empty.yml" || true
+        sleep 0.5
+        pgrep -f "cloudflared tunnel .*--config $tunnels/empty.yml" > /dev/null \
+            && fail "a quick tunnel from this helper is still running"
+    fi
+    return 0
+}
+
+quicktunnel() {
+    action=${1:-}
+    [ "$#" -gt 0 ] && shift
+    case "$action" in
+        start) quicktunnel_start "$@" ;;
+        stop)
+            [ "$#" -eq 1 ] || fail "usage: live_test.sh quicktunnel stop NAME"
+            quicktunnel_stop "$1" ;;
+        stop-all) quicktunnel_stop_all ;;
+        status)
+            found=0
+            for file in "$tunnels"/*.pid; do
+                [ -e "$file" ] || continue
+                name=$(basename "$file" .pid)
+                found=1
+                if tunnel_alive "$name"; then
+                    printf '%s running %s metrics %s\n' "$name" "$(cat "$tunnels/$name.host" 2>/dev/null)" \
+                        "$(cat "$tunnels/$name.metrics" 2>/dev/null)"
+                else
+                    printf '%s not running\n' "$name"
+                fi
+            done
+            [ "$found" -eq 1 ] || printf 'live_test: no quick tunnels\n'
+            ;;
+        *) fail "usage: live_test.sh quicktunnel start NAME [--keep-host] | stop NAME | stop-all | status" ;;
+    esac
+}
+
 cleanup() {
+    quicktunnel_stop_all
     running || start
     removed=$(cmd '{"command": "removeTestCollections"}') || { printf '%s\n' "$removed"; fail "cleanup failed"; }
     printf '%s\n' "$removed"
@@ -208,6 +339,7 @@ try FileManager.default.trashItem(at: URL(fileURLWithPath: CommandLine.arguments
         printf 'live_test: moved %s to the Trash\n' "$target"
         ;;
     cleanup) cleanup ;;
+    quicktunnel) quicktunnel "$@" ;;
     rollback)
         # Never the installed app's folder: always a copy of the test copy's.
         [ -f "$data/client-registry.json" ] || fail "no registry in $data yet"

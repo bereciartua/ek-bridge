@@ -157,6 +157,10 @@ final class LiveTestAutomation {
                 completion(.success(on))
             case "setBridge": completion(.success(try setBridge(command)))
             case "setMCP": completion(.success(try setMCP(command)))
+            case "setRemote": completion(.success(try setRemote(command)))
+            case "setRemoteAddress": completion(.success(try setRemoteAddress(command)))
+            case "testRemote": testRemote(command, completion: completion)
+            case "remoteGuide": completion(.success(try remoteGuide(command)))
             case "requestAccess": completion(.success(try requestAccess(command)))
             case "answerPanel": try answerPanel(command, completion: completion)
             case "oneClick": try oneClick(command, completion: completion)
@@ -302,7 +306,92 @@ final class LiveTestAutomation {
                        "width": window?.contentLayoutRect.width ?? 0,
                        "height": window?.contentLayoutRect.height ?? 0],
             "panel": ["visible": panel?.isVisible ?? false, "number": panel?.windowNumber ?? 0],
+            "remote": remoteState(),
         ]
+    }
+
+    // MARK: Remote Access (plan 08)
+
+    /// What the Remote Access page shows. The address is the test copy's own
+    /// (a quick tunnel to port 47626 at most); transcripts anonymize it.
+    private func remoteState() -> [String: Any] {
+        var test: [String: Any]
+        switch model.remoteTest {
+        case .notTested: test = ["state": "notTested"]
+        case .testing: test = ["state": "testing"]
+        case .reachable(let rtt, let tunnel, _):
+            test = ["state": "reachable", "ms": Int((rtt * 1000).rounded()), "tunnel": tunnel ?? NSNull()]
+        case .notReachable(let reason, _): test = ["state": "notReachable", "reason": reason]
+        }
+        return [
+            "enabled": model.remoteEnabled,
+            "active": model.remoteActive,
+            "listening": model.remoteIsListening,
+            "port": model.remotePort,
+            "origin": model.remoteOrigin ?? NSNull(),
+            "mcpURL": model.remoteMCPURL.map { $0.replacingOccurrences(of: model.remoteSecret, with: "<secret>") }
+                ?? NSNull(),
+            "test": test,
+            "tunnelChoice": model.tunnelChoice.rawValue,
+            "tunnelLabel": model.tunnelChoice.name,
+            "guideActive": model.remoteGuideActive,
+            "guideStep": "\(model.remoteGuideStep)",
+            "status": model.remoteStatusLine ?? NSNull(),
+        ]
+    }
+
+    /// `{"on": true}` turns Remote Access on without the confirmation alert,
+    /// as other automation commands skip theirs.
+    private func setRemote(_ command: [String: Any]) throws -> [String: Any] {
+        guard let on = command["on"] as? Bool else { throw CommandError(message: "needs on") }
+        guard model.remotePort == RemoteDefaults.port else {
+            throw CommandError(message: "the test copy's remote port must be \(RemoteDefaults.port)")
+        }
+        if on != model.remoteEnabled { model.applyRemoteEnabled(on) }
+        return remoteState()
+    }
+
+    private func setRemoteAddress(_ command: [String: Any]) throws -> [String: Any] {
+        guard let address = command["address"] as? String else { throw CommandError(message: "needs address") }
+        if let issue = model.setRemoteAddress(address) { throw CommandError(message: issue) }
+        return remoteState()
+    }
+
+    /// The Test button, waiting for its result.
+    private func testRemote(_ command: [String: Any], completion: @escaping Completion) {
+        guard model.remoteEnabled, model.remoteOrigin != nil else {
+            return completion(.failure(CommandError(message: "Remote Access needs to be on, with an address")))
+        }
+        model.testRemoteAccess()
+        let deadline = Date().addingTimeInterval(command["timeout"] as? Double ?? 25)
+        func poll() {
+            if model.remoteTest != .testing || Date() >= deadline {
+                return completion(.success(remoteState()))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { poll() }
+        }
+        poll()
+    }
+
+    /// The first-setup guide as its buttons drive it: `open`, `choose`
+    /// (`tunnel`), `started` (I've Started It), `back`, `close`.
+    private func remoteGuide(_ command: [String: Any]) throws -> [String: Any] {
+        switch command["action"] as? String ?? "" {
+        case "open":
+            model.show(.remoteAccess)
+            model.remoteGuideActive = true
+        case "choose":
+            guard let tunnel = (command["tunnel"] as? String).flatMap(TunnelProvider.init(rawValue:)) else {
+                throw CommandError(message: "tunnel is one of \(TunnelProvider.allCases.map(\.rawValue))")
+            }
+            model.tunnelChoice = tunnel
+            model.remoteGuideActive = true
+        case "started": model.remoteTunnelStarted = true
+        case "back": model.chooseTunnelAgain()
+        case "close": model.remoteGuideActive = false
+        default: throw CommandError(message: "action is open, choose, started, back or close")
+        }
+        return remoteState()
     }
 
     private func accessText(_ status: EKAuthorizationStatus) -> String {
