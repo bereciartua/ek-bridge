@@ -294,6 +294,20 @@ enum CommandPresentation {
         (succeeded ? pastTense(command, moved: moved) : presentTense(command, moved: moved)) ?? shortLabel(command)
     }
 
+    /// The verb alone, for "Moved “Design review”" (C06): past tense when it
+    /// went through. Nil for reads.
+    static func verb(_ command: String, moved: Bool, succeeded: Bool) -> String? {
+        switch BridgeCommand(rawValue: command) {
+        case .createEvent, .createReminder: succeeded ? String(localized: "Added") : String(localized: "Add")
+        case .updateEvent, .updateReminder:
+            moved ? (succeeded ? String(localized: "Moved") : String(localized: "Move"))
+                  : (succeeded ? String(localized: "Changed") : String(localized: "Change"))
+        case .deleteEvent, .deleteReminder: succeeded ? String(localized: "Deleted") : String(localized: "Delete")
+        case .completeReminder: succeeded ? String(localized: "Completed") : String(localized: "Complete")
+        default: nil
+        }
+    }
+
     /// Every label the Change column can show, for sizing it.
     static var allChangeLabels: [String] {
         let commands = BridgeCommand.allCases.map(\.rawValue) + ["mcp"]

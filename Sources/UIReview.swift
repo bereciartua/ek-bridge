@@ -1692,6 +1692,12 @@ final class BehaviorReview {
                                           info: [AppNotification.requestIDKey: "nothing"])
             return self.model.route == .activity
         }
+        step("Overview's Today and the menu name the item") {
+            guard let design = self.model.activity.first(where: { $0.item?.id == "ev-design" && $0.code == "success" }),
+                  let deleted = self.model.activity.first(where: { $0.item?.id == "ev-gone" }) else { return false }
+            return design.headline(item: self.model.itemTitle(design), collection: "Work") == "Changed “Design review”" &&
+                deleted.headline(item: self.model.itemTitle(deleted), collection: "Work") == "Deleted event · Work"
+        }
         step("deleted item shows Deleted") {
             guard let gone = self.model.activity.first(where: { $0.item?.id == "ev-gone" }),
                   case .found(let item) = self.model.itemDisplay(gone) else { return false }
@@ -1859,13 +1865,17 @@ final class SnapshotReview {
                 return window
             }
             step("overview") {
-                // Needs you: a change waiting for approval and an unavailable calendar.
+                // Needs you (mockup 07): an agent asking for access and an
+                // unavailable calendar. Today names the items (C06).
                 self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
-                self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": "Buy oat milk"],
-                                          agent: "claude-code 2.4.1")
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.createEvent, ["calendarID": "cal-home", "title": "Dentist"],
+                                        client: UIReview.cursorID, name: "Cursor", resource: .calendar,
+                                        target: "cal-home", mask: ClientGrant.read, bit: ClientGrant.create,
+                                        agent: "cursor 1.7")
                 return main
             }
             step("overview-quiet") {

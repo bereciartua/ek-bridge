@@ -174,7 +174,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                     self?.model.openActivity(selecting: entry.id)
                 }
                 row.attributedTitle = recentTitle(entry)
-                row.setAccessibilityLabel(String(localized: "\(model.clientName(entry.clientID)), \(CommandPresentation.label(entry.command)), \(entry.outcome.label), \(RelativeTime.ago(entry.at, now: model.now))"))
+                row.setAccessibilityLabel(String(localized: "\(model.clientName(entry.clientID)), \(entry.headline(item: model.itemTitle(entry), collection: nil)), \(entry.resultLabel), \(RelativeTime.ago(entry.at, now: model.now))"))
                 menu.addItem(row)
             }
         }
@@ -294,11 +294,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return result
     }
 
-    /// "Update event · Work", then "Claude Code · 2 min" on the right (mockup 09;
-    /// item names come with Activity's item IDs).
+    /// "Moved “Design review”", then "Claude Code · 2 min" on the right
+    /// (mockup 09). The name is looked up when the menu opens, for these
+    /// three rows only (C06); without it, "Changed event · Work".
     private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
-        let target = entry.targetID.flatMap { id in model.collections.first { $0.id == id }?.name }
-        let text = [CommandPresentation.label(entry.command), target].compactMap { $0 }.joined(separator: " · ")
+        let target = entry.targetKey.flatMap { model.collection($0)?.name }
+        let text = entry.headline(item: model.itemTitle(entry), collection: target)
         return iconTitle(outcomeImage(entry.outcome.tone), text,
                          trailing: "\(model.clientName(entry.clientID)) · \(RelativeTime.short(entry.at, now: model.now))")
     }

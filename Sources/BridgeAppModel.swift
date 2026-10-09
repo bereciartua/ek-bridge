@@ -1609,6 +1609,12 @@ final class BridgeAppModel {
         entry.requestID.flatMap { recentSummaries[$0] }
     }
 
+    /// The item's name now, when it still exists (C06).
+    func itemTitle(_ entry: ActivityEntry) -> String? {
+        if case .found(let item) = itemDisplay(entry), item.exists { return item.title }
+        return nil
+    }
+
     /// A looked-up title already in the cache, for Activity's search. Never
     /// looks anything up itself.
     func cachedItemTitle(_ entry: ActivityEntry) -> String? {

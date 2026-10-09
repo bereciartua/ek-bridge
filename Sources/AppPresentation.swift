@@ -284,6 +284,14 @@ struct ActivityEntry: Identifiable, Equatable {
         return outcome.label
     }
     static let approvedValues: Set<String> = ["user", "window", "access_once", "access_always"]
+    /// Overview's Today and the menu's Recent changes (C06): "Moved “Design
+    /// review”" with the item's name looked up now, else "Moved event · Work".
+    func headline(item: String?, collection: String?) -> String {
+        if let item, let verb = CommandPresentation.verb(command, moved: isMove, succeeded: code == "success") {
+            return "\(verb) “\(item)”"
+        }
+        return [changeLabel, collection].compactMap { $0 }.joined(separator: " · ")
+    }
     /// Which filter shows this row.
     func matches(_ kind: ActivityKind) -> Bool {
         switch kind {

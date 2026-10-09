@@ -315,6 +315,12 @@ struct AppPresentationTests {
         precondition(writes.filter { $0.matches(.changes) }.count == 3 && writes.filter { $0.matches(.problems) }.count == 1)
         precondition(writes.filter { $0.matches(.all) }.count == 4)
         precondition(writes[0].resultLabel == "Allowed")
+        // C06: "Moved “Design review”", or the change and calendar without a name.
+        precondition(movedEntry.headline(item: "Design review", collection: "Work") == "Moved “Design review”")
+        precondition(movedEntry.headline(item: nil, collection: "Work") == "Moved event · Work")
+        precondition(writes[1].headline(item: "Milk", collection: "Groceries") == "Add “Milk”", "not allowed: present tense")
+        precondition(writes[2].headline(item: "x", collection: "Work") == "Read events · Work", "reads have no item verb")
+        precondition(CommandPresentation.verb("complete_reminder", moved: false, succeeded: true) == "Completed")
         // Day groups: newest first, across a daylight-saving change (US, Nov 1 2026).
         var newYork = Calendar(identifier: .gregorian)
         newYork.timeZone = TimeZone(identifier: "America/New_York")!
