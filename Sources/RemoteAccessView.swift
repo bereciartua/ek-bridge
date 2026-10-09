@@ -10,9 +10,10 @@ import SwiftUI
 struct RemoteAccessPage: View {
     let model: BridgeAppModel
 
-    private enum Mode { case intro, guide, setUp }
+    private enum Mode { case intro, guide, setUp, switching(TunnelSwitch) }
 
     private var mode: Mode {
+        if let change = model.tunnelSwitch { return .switching(change) }
         if model.remoteGuideActive { return .guide }
         if model.remoteOrigin != nil { return .setUp }
         return model.remoteEnabled ? .guide : .intro
@@ -21,11 +22,20 @@ struct RemoteAccessPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
                 switch mode {
-                case .intro: intro
-                case .guide: RemoteGuideView(model: model)
-                case .setUp: RemoteSetUpView(model: model)
+                case .intro:
+                    header
+                    intro
+                case .guide:
+                    header
+                    RemoteGuideView(model: model)
+                case .setUp:
+                    header
+                    RemoteSetUpView(model: model)
+                case .switching(let change):
+                    PaneTitle(title: change.kind == .editAddress ? String(localized: "Change address")
+                                                                 : String(localized: "Switch tunnel"))
+                    TunnelSwitchView(model: model, change: change)
                 }
             }
             .padding(24)
@@ -47,7 +57,7 @@ struct RemoteAccessPage: View {
                 Pill(label: String(localized: "Experimental"), tone: .warn)
                     .help(String(localized: "Not yet tested with every cloud agent and tunnel."))
                 Spacer()
-                if mode == .setUp {
+                if case .setUp = mode {
                     Toggle(String(localized: "Remote Access"),
                            isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccessEnabled($0) }))
                         .toggleStyle(.switch)
@@ -350,50 +360,11 @@ struct RemoteGuideHeader: View {
     let current: RemoteGuide.Step
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach([RemoteGuide.Step.chooseTunnel, .startTunnel, .pasteAddress, .test], id: \.rawValue) { step in
-                let done = step.rawValue < current.rawValue
-                let isCurrent = step == current || (current == .done && step == .test)
-                HStack(spacing: 8) {
-                    ZStack {
-                        Circle().strokeBorder(done ? Color.green : isCurrent ? Color.primary : Color.secondary,
-                                              lineWidth: 1.5)
-                        if done {
-                            Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.green)
-                        } else {
-                            Text("\(step.rawValue)").font(.caption.weight(.semibold))
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                    Text(title(step))
-                        .fontWeight(isCurrent ? .semibold : .regular)
-                        .foregroundStyle(done ? Color.green : isCurrent ? Color.primary : Color.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(String(localized: "Step \(step.rawValue), \(title(step)), \(done ? String(localized: "done") : isCurrent ? String(localized: "current") : String(localized: "not done"))"))
-                if step != .test { Divider() }
-            }
-        }
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func title(_ step: RemoteGuide.Step) -> String {
-        switch step {
-        case .chooseTunnel: String(localized: "Choose a tunnel")
-        case .startTunnel: String(localized: "Start it")
-        case .pasteAddress: String(localized: "Paste its address")
-        case .test, .done: String(localized: "Test")
-        }
+        GuideStepsHeader(titles: [String(localized: "Choose a tunnel"), String(localized: "Start it"),
+                                  String(localized: "Paste its address"), String(localized: "Test")],
+                         current: current.rawValue - 1,
+                         // Done shows every step checked, with Test highlighted.
+                         highlighted: min(current.rawValue, RemoteGuide.Step.test.rawValue) - 1)
     }
 }
 
@@ -562,7 +533,7 @@ extension RemoteSetUpView {
                                                                    remotePort: model.remotePort,
                                                                    mcpPort: model.mcpPort))
         } actions: {
-            Button(String(localized: "Switch Tunnel…")) { model.chooseTunnelAgain() }
+            Button(String(localized: "Switch Tunnel…")) { model.beginSwitch() }
         }
         if let health {
             TunnelFix(health: health, provider: provider, remotePort: model.remotePort,

@@ -399,6 +399,25 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/TunnelHealth.swift" \
     "$project_dir/Tests/TunnelHealthTests.swift" \
     -o "$project_dir/build/tunnel-health-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
+    "$project_dir/Sources/TunnelHealth.swift" \
+    "$project_dir/Sources/TunnelSwitch.swift" \
+    "$project_dir/Tests/TunnelSwitchTests.swift" \
+    -o "$project_dir/build/tunnel-switch-tests"
+"$project_dir/build/tunnel-switch-tests"
 "$project_dir/build/tunnel-health-tests"
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \

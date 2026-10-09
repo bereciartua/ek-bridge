@@ -61,6 +61,8 @@ enum ModelSheet: Identifiable, Equatable {
     case oauthClient
     /// Add to <Agent>…: the preview, then the result (B07).
     case configPreview
+    /// Switch Tunnel… and Edit…'s confirmation (plan 08 T06).
+    case tunnelSwitch
 
     var id: String {
         switch self {
@@ -74,6 +76,7 @@ enum ModelSheet: Identifiable, Equatable {
         case .pairing(let id): "pairing-\(id)"
         case .oauthClient: "oauth-client"
         case .configPreview: "config-preview"
+        case .tunnelSwitch: "tunnel-switch"
         }
     }
 }
@@ -260,6 +263,10 @@ final class BridgeAppModel {
         didSet {
             // A pairing request that arrived while another sheet was open is shown once it closes.
             if oldValue == .configPreview, sheet != .configPreview { oneClick = nil }
+            // Closing the confirmation goes back to Paste and test.
+            if oldValue == .tunnelSwitch, sheet != .tunnelSwitch, tunnelSwitch?.confirming == true {
+                tunnelSwitch?.confirming = false
+            }
             if sheet == nil, oldValue != nil {
                 DispatchQueue.main.async { [weak self] in self?.presentNextPairing() }
             }
@@ -376,6 +383,11 @@ final class BridgeAppModel {
     var remoteTunnelStarted = false
     /// Guide step 3 shown again from step 4's Back.
     var remoteEditingAddress = false
+    /// Switch Tunnel… or Address ▸ Edit… in progress (plan 08 T06): memory
+    /// only, and nothing is saved until Switch.
+    private(set) var tunnelSwitch: TunnelSwitch?
+    /// Each tunnel's last address (D2), UserDefaults `RemoteTunnelAddresses`.
+    private(set) var rememberedAddresses = [TunnelProvider: String]()
     /// Guide step 2's hostname for Cloudflare Tunnel and ngrok (plan 08 T04):
     /// the commands use it, never the address in use.
     var guideHostname = ""
@@ -494,6 +506,7 @@ final class BridgeAppModel {
             tunnelChoice = tunnel
         }
         tunnelChosen = defaults.string(forKey: Keys.tunnelChoice) != nil
+        rememberedAddresses = TunnelAddressMemory.load(defaults)
         connectionAgents = ConnectionAgentKinds.load(defaults)
         let resume = defaults.double(forKey: Keys.resumeAt)
         resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
@@ -813,7 +826,7 @@ final class BridgeAppModel {
 
     /// Step 2 while you start the tunnel (D8).
     var tunnelStartState: TunnelStartState {
-        TunnelStartState.make(remoteOn: remoteEnabled, provider: tunnelChoice, health: currentTunnelHealth)
+        TunnelStartState.make(remoteOn: remoteEnabled, provider: tunnelCheckTarget, health: currentTunnelHealth)
     }
 
     /// The hostname step 2's commands use, if one was typed.
@@ -833,6 +846,13 @@ final class BridgeAppModel {
 
     /// Step 2 moves on by itself once the tunnel is found, once per entry from step 1.
     private func advanceGuideIfFound() {
+        if let change = tunnelSwitch {
+            guard change.step == .start,
+                  tunnelStartState.autoAdvances(advancedThisEntry: change.advancedThisEntry) else { return }
+            tunnelSwitch?.advancedThisEntry = true
+            switchContinue()
+            return
+        }
         guard waitingForTunnel, tunnelStartState.autoAdvances(advancedThisEntry: guideAdvancedThisEntry) else { return }
         guideAdvancedThisEntry = true
         guideContinue()
@@ -2751,6 +2771,12 @@ final class BridgeAppModel {
             setRemoteOffAt(nil)
             remoteCandidate = nil
             tunnelHealth = nil
+            // A switch stays open, but its test no longer applies.
+            if tunnelSwitch != nil {
+                tunnelSwitch?.test = .notTested
+                tunnelSwitch?.confirming = false
+                if sheet == .tunnelSwitch { sheet = nil }
+            }
             tunnelHealthProvider = nil
         }
         updateKeepAwake()
@@ -2790,7 +2816,8 @@ final class BridgeAppModel {
             : nil
     }
 
-    func setRemoteAddress(_ text: String) -> String? {
+    /// Saves the address. `switchedTo` is set by Switch Tunnel…, for its banner.
+    func setRemoteAddress(_ text: String, switchedTo: TunnelProvider? = nil) -> String? {
         if let issue = remoteAddressIssue(text) { return issue }
         sheet = nil
         remoteEditingAddress = false
@@ -2799,14 +2826,197 @@ final class BridgeAppModel {
         services.defaults.set(remoteOrigin, forKey: Keys.remoteOrigin)
         remoteTest = .notTested
         services.remote.update(remoteConfiguration)
-        if previous != nil, previous != remoteOrigin {
-            let dropped = dropStaleConnections()
+        let changed = previous != nil && previous != remoteOrigin
+        let dropped = changed ? dropStaleConnections() : 0
+        let message = dropped > 0
+            ? String(localized: "Update the URL in each cloud agent. Connected cloud apps were disconnected; connect them again.")
+            : String(localized: "Update the URL in each cloud agent.")
+        if let switchedTo {
+            showBanner(Banner(kind: .info, title: String(localized: "Switched to \(switchedTo.name)."),
+                              message: changed ? message : nil))
+        } else if changed {
             showBanner(Banner(kind: .info, title: String(localized: "The Remote Access address changed."),
-                              message: dropped > 0
-                                ? String(localized: "Update the URL in each cloud agent. Connected cloud apps were disconnected; connect them again.")
-                                : String(localized: "Update the URL in each cloud agent.")))
+                              message: message))
         }
+        // Remembered for switching back (D2), under the tunnel it belongs to.
+        if let origin = remoteOrigin { rememberAddress(tunnelLabel, origin) }
         return nil
+    }
+
+    private func rememberAddress(_ provider: TunnelProvider, _ origin: String) {
+        guard rememberedAddresses[provider] != origin else { return }
+        rememberedAddresses[provider] = origin
+        TunnelAddressMemory.save(rememberedAddresses, services.defaults)
+    }
+
+    // MARK: Switch Tunnel… and Edit… (plan 08 T06, T07)
+
+    /// Switch Tunnel…: the tunnel in use keeps working until Switch.
+    func beginSwitch() {
+        guard let origin = remoteOrigin else { return }
+        remoteGuideActive = false
+        guideHostname = ""
+        guideAddress = nil
+        // An earlier "Switched to …" banner is about the switch before this one.
+        if banner?.persists == false { dismissBanner() }
+        tunnelSwitch = TunnelSwitch(kind: .switchTunnel, fromTunnel: tunnelLabel, fromOrigin: origin)
+        show(.remoteAccess)
+    }
+
+    /// Address ▸ Edit…: the same tunnel at a new address, tested before it's saved.
+    func beginEditAddress() {
+        guard let origin = remoteOrigin else { return }
+        remoteGuideActive = false
+        guideHostname = ""
+        guideAddress = nil
+        // An earlier "Switched to …" banner is about the switch before this one.
+        if banner?.persists == false { dismissBanner() }
+        tunnelSwitch = TunnelSwitch(kind: .editAddress, fromTunnel: tunnelLabel, fromOrigin: origin)
+        show(.remoteAccess)
+    }
+
+    /// Step 1 ▸ a tunnel (not the one in use).
+    func switchChoose(_ provider: TunnelProvider) {
+        guard var change = tunnelSwitch, change.canChoose(provider) else { return }
+        change.picked = provider
+        change.started = false
+        change.advancedThisEntry = false
+        change.test = .notTested
+        change.address = ""
+        change.addressSource = .none
+        tunnelSwitch = change
+        setRemoteCandidate(nil)
+        guideAddress = nil
+        // Pre-filled from the address it had last time (D2).
+        guideHostname = provider.asksForHostname ? TunnelAddressMemory.hostname(rememberedAddresses[provider]) ?? "" : ""
+        if remoteEnabled { checkTunnel() }
+    }
+
+    /// Step 2 ▸ Continue or I've Started It, or the tunnel was found: step 3,
+    /// with the running tunnel's address, else the remembered one.
+    func switchContinue() {
+        guard var change = tunnelSwitch, let picked = change.picked else { return }
+        var found: String?
+        if case .found(let address) = tunnelStartState { found = address }
+        if change.kind == .switchTunnel {
+            (change.address, change.addressSource) = TunnelSwitch.prefill(found: found,
+                                                                            remembered: rememberedAddresses[picked])
+        }
+        change.started = true
+        tunnelSwitch = change
+    }
+
+    /// Back, one step.
+    func switchBack() {
+        guard var change = tunnelSwitch else { return }
+        switch change.step {
+        case .choose:
+            return cancelSwitch()
+        case .start:
+            change.picked = nil
+            guideHostname = ""
+        case .test:
+            if change.kind == .editAddress { return cancelSwitch() }
+            change.started = false
+            change.test = .notTested
+            setRemoteCandidate(nil)
+        case .confirm:
+            change.confirming = false
+            if sheet == .tunnelSwitch { sheet = nil }
+        }
+        tunnelSwitch = change
+    }
+
+    /// Step 3's text field.
+    func setSwitchAddress(_ text: String) {
+        guard tunnelSwitch != nil, tunnelSwitch?.address != text else { return }
+        tunnelSwitch?.address = text
+    }
+
+    /// Why step 3's address can't be tested, if it can't.
+    var switchAddressIssue: String? {
+        guard let text = tunnelSwitch?.address, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return remoteAddressIssue(text)
+    }
+
+    var switchNormalizedAddress: String? {
+        tunnelSwitch.flatMap { RemoteConfiguration.normalizedOrigin($0.address) }
+    }
+
+    /// Test: the health check through the new tunnel. The server accepts the
+    /// candidate for that only (T05); nothing is saved.
+    func switchTest() {
+        guard remoteEnabled, var change = tunnelSwitch, let candidate = switchNormalizedAddress else { return }
+        if case .testing = change.test { return }
+        change.test = .testing(address: candidate)
+        tunnelSwitch = change
+        checkTunnel()
+        testRemoteCandidate(candidate) { [weak self] result in
+            guard let self, var change = self.tunnelSwitch, change.test == .testing(address: candidate) else { return }
+            switch result {
+            case .success(let value):
+                change.test = .reachable(address: candidate, ms: Int((value.rtt * 1000).rounded()),
+                                         tunnel: TunnelProvider.named(value.tunnel))
+            case .failure(let failure):
+                change.test = .notReachable(address: candidate, reason: failure.reason)
+            }
+            self.tunnelSwitch = change
+        }
+    }
+
+    /// Another tunnel answered: continue as that one (§4.3).
+    func switchContinueAs(_ provider: TunnelProvider) {
+        guard tunnelSwitch?.kind == .switchTunnel, provider != tunnelSwitch?.fromTunnel else { return }
+        tunnelSwitch?.picked = provider
+    }
+
+    /// Switch… (Save…): the confirmation, once the address passed the test.
+    func switchConfirm() {
+        guard let change = tunnelSwitch, change.canConfirm(normalized: switchNormalizedAddress) else { return }
+        tunnelSwitch?.confirming = true
+        sheet = .tunnelSwitch
+    }
+
+    /// Step 4's lists (D5): connections whose agents need the new URL, and
+    /// signed-in cloud apps that will be disconnected.
+    var tunnelSwitchSummary: TunnelSwitchSummary? {
+        guard let change = tunnelSwitch, let origin = switchNormalizedAddress else { return nil }
+        _ = oauthChanges
+        let tokens = cloudClients.filter(\.hasRemoteToken).map(\.name)
+        var apps = [String]()
+        for client in cloudClients {
+            for connection in oauthConnections(client.id) where !apps.contains(connection.appName) {
+                apps.append(connection.appName)
+            }
+        }
+        return TunnelSwitchSummary.make(change, newOrigin: origin, port: remotePort, remoteTokenClients: tokens,
+                                        oauthApps: apps)
+    }
+
+    /// Switch (Save): the only step that saves anything. The address goes
+    /// through `setRemoteAddress` (stale cloud apps are disconnected, the
+    /// banner says so), then the tunnel and its remembered address.
+    func switchCommit() {
+        guard let change = tunnelSwitch, let picked = change.picked, let candidate = switchNormalizedAddress,
+              change.canConfirm(normalized: candidate) else { return }
+        tunnelSwitch = nil
+        if sheet == .tunnelSwitch { sheet = nil }
+        setRemoteCandidate(nil)
+        guideHostname = ""
+        guideAddress = nil
+        tunnelChoice = picked
+        _ = setRemoteAddress(candidate, switchedTo: change.kind == .switchTunnel ? picked : nil)
+        rememberAddress(picked, candidate)
+        testRemoteAccess()
+    }
+
+    /// Cancel, at any step: everything stays as it was.
+    func cancelSwitch() {
+        tunnelSwitch = nil
+        if sheet == .tunnelSwitch { sheet = nil }
+        setRemoteCandidate(nil)
+        guideHostname = ""
+        guideAddress = nil
     }
 
     /// OAuth connections are bound to the MCP URL, so a new address or secret path ends them.
@@ -2892,6 +3102,12 @@ final class BridgeAppModel {
         remoteEditingAddress = false
         guideAddress = nil
         guideHostname = ""
+        cancelSwitch()
+    }
+
+    /// UI review: an address used before, for Switch Tunnel…'s Last used.
+    func rememberAddressForReview(_ provider: TunnelProvider, _ origin: String) {
+        rememberAddress(provider, origin)
     }
     #endif
 
@@ -2911,7 +3127,8 @@ final class BridgeAppModel {
 
     /// The tunnel being set up in the guide, otherwise the one in use.
     var tunnelCheckTarget: TunnelProvider {
-        remoteGuideActive ? tunnelChoice : tunnelLabel
+        if let picked = tunnelSwitch?.picked { return picked }
+        return remoteGuideActive ? tunnelChoice : tunnelLabel
     }
 
     /// The last check's answer, if it was for the tunnel the page shows.
@@ -2927,7 +3144,8 @@ final class BridgeAppModel {
 
     /// Step 2 of a guide is waiting for the tunnel to start: check every 3 s.
     var waitingForTunnel: Bool {
-        remoteGuideActive && remoteGuideStep == .startTunnel
+        if let tunnelSwitch { return tunnelSwitch.step == .start }
+        return remoteGuideActive && remoteGuideStep == .startTunnel
     }
 
     /// One check at a time. A result for a tunnel the page no longer shows is

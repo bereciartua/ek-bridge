@@ -25,6 +25,7 @@ struct MainView: View {
             case .pairing(let id): PairingSheet(model: model, id: id)
             case .oauthClient: OAuthClientSheet(model: model)
             case .configPreview: ConfigPreviewSheet(model: model)
+            case .tunnelSwitch: TunnelSwitchSheet(model: model)
             }
         }
     }
