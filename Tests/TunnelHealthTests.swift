@@ -26,7 +26,8 @@ struct TunnelHealthTests {
         processes()
         labels()
         words()
-        print("Tunnel health: Tailscale, cloudflared and ngrok parsers, the Tunnel row's name and state words passed")
+        schedule()
+        print("Tunnel health: Tailscale, cloudflared and ngrok parsers, the Tunnel row's name, state words and the check schedule passed")
     }
 
     static func tailscale() {
@@ -145,6 +146,19 @@ struct TunnelHealthTests {
         check(TunnelProcess.ngrokPort(["ngrok", "http", "--url", "https://x.ngrok-free.app", "localhost:47616"]) == nil,
               "a flag value isn't the port")
         check(TunnelProcess.cloudflaredConfig(["cloudflared", "--config", "/tmp/c.yml", "tunnel", "run"]) == "/tmp/c.yml", "--config")
+    }
+
+    static func schedule() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let interval = TunnelCheckSchedule.interval
+        check(interval(false, false) == nil && interval(false, true) == nil, "nothing while Remote Access is off")
+        check(interval(true, false) == 60 && interval(true, true) == 3, "60 s while on, 3 s while waiting in step 2")
+        let due = { (last: Date?, seconds: TimeInterval?) in TunnelCheckSchedule.isDue(lastCheck: last, now: now, interval: seconds) }
+        check(due(nil, 60) && !due(nil, nil), "first check")
+        check(!due(now.addingTimeInterval(-59), 60) && due(now.addingTimeInterval(-60), 60), "60 s")
+        check(!due(now.addingTimeInterval(-2.9), 3) && due(now.addingTimeInterval(-3), 3), "3 s")
+        check(due(now.addingTimeInterval(30), 60), "a clock that went back")
+        check(!due(now.addingTimeInterval(-3600), nil), "never while off")
     }
 
     static func labels() {

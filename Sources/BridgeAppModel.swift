@@ -199,6 +199,8 @@ struct BridgeServices {
     var showItem: (ItemRef) -> Bool = { _ in false }
     /// macOS notifications (C05).
     var notifications: NotificationControls = .unavailable
+    /// Is the tunnel running on this Mac? Read-only, display only (plan 08 §5).
+    var tunnels: TunnelChecks = .unavailable
 }
 
 /// What Activity can say about a row's item.
@@ -371,6 +373,16 @@ final class BridgeAppModel {
     var remoteTunnelStarted = false
     /// Guide step 3 shown again from step 4's Back.
     var remoteEditingAddress = false
+    /// What the tunnel's own tool said at the last check (plan 08 §5), and
+    /// for which tunnel. Display only.
+    private(set) var tunnelHealth: TunnelHealth?
+    private(set) var tunnelHealthProvider: TunnelProvider?
+    private(set) var tunnelHealthCheckedAt: Date?
+    @ObservationIgnored private var tunnelCheckRunning = false
+    @ObservationIgnored private var tunnelCheckAgain = false
+    @ObservationIgnored private var tunnelCheckStarted: Date?
+    @ObservationIgnored private var tunnelCheckWaiters = [(TunnelHealth?) -> Void]()
+    @ObservationIgnored private var tunnelTimer: Timer?
     var cloudAgentChoice = [String: CloudAgentKind]()
     var connectTab = [String: ConnectTab]()
     /// The agent picked on a Connect tab this session; falls back to the
@@ -552,6 +564,11 @@ final class BridgeAppModel {
             MainActor.assumeIsolated { self?.tick() }
         }
         timer?.tolerance = 0.5
+        // Does nothing while Remote Access is off (TunnelCheckSchedule).
+        tunnelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tunnelTick() }
+        }
+        tunnelTimer?.tolerance = 0.2
     }
 
     // MARK: Refresh
@@ -2662,6 +2679,8 @@ final class BridgeAppModel {
             remoteStatus = .off
             remoteTest = .notTested
             setRemoteOffAt(nil)
+            tunnelHealth = nil
+            tunnelHealthProvider = nil
         }
         updateKeepAwake()
         announce(on ? String(localized: "Remote Access on") : String(localized: "Remote Access off"))
@@ -2774,6 +2793,7 @@ final class BridgeAppModel {
     /// tunnel, with a nonce only this app issued.
     func testRemoteAccess() {
         guard remoteEnabled, remoteOrigin != nil, remoteTest != .testing else { return }
+        checkTunnel()
         remoteTest = .testing
         services.remote.test(remoteConfiguration) { [weak self] result in
             guard let self else { return }
@@ -2784,6 +2804,84 @@ final class BridgeAppModel {
                 self.remoteTest = .notReachable(reason: failure.reason, at: Date())
             }
         }
+    }
+
+    // MARK: Tunnel checks on this Mac (plan 08 §5)
+
+    /// The tunnel the last reachability test went through, from its headers.
+    var lastTestedTunnel: TunnelProvider? {
+        if case .reachable(_, let tunnel, _) = remoteTest { return TunnelProvider.named(tunnel) }
+        return nil
+    }
+
+    /// The Tunnel row's name (D4): the tunnel that answered the last test,
+    /// then what the address looks like, then the stored choice.
+    var tunnelLabel: TunnelProvider {
+        TunnelLabel.resolve(lastTested: lastTestedTunnel, address: remoteOrigin, stored: tunnelChoice)
+    }
+
+    /// The tunnel being set up in the guide, otherwise the one in use.
+    var tunnelCheckTarget: TunnelProvider {
+        remoteGuideActive ? tunnelChoice : tunnelLabel
+    }
+
+    /// The last check's answer, if it was for the tunnel the page shows.
+    var currentTunnelHealth: TunnelHealth? {
+        tunnelHealthProvider == tunnelCheckTarget ? tunnelHealth : nil
+    }
+
+    /// The Status row's reason for a failed test, when the check explains it.
+    var remoteUnreachableReason: String? {
+        guard case .notReachable = remoteTest else { return nil }
+        return currentTunnelHealth?.unreachableReason(tunnelCheckTarget, remotePort: remotePort)
+    }
+
+    /// Step 2 of a guide is waiting for the tunnel to start: check every 3 s.
+    var waitingForTunnel: Bool {
+        remoteGuideActive && remoteGuideStep == .startTunnel
+    }
+
+    /// One check at a time. A result for a tunnel the page no longer shows is
+    /// dropped and the check runs again for the new one.
+    func checkTunnel(_ done: ((TunnelHealth?) -> Void)? = nil) {
+        if let done { tunnelCheckWaiters.append(done) }
+        guard !tunnelCheckRunning else { tunnelCheckAgain = true; return }
+        let provider = tunnelCheckTarget
+        let port = remotePort
+        tunnelCheckRunning = true
+        tunnelCheckStarted = Date()
+        services.tunnels.check(provider, port) { [weak self] health in
+            guard let self else { return }
+            self.tunnelCheckRunning = false
+            let current = provider == self.tunnelCheckTarget && port == self.remotePort
+            if current {
+                if self.tunnelHealth != health || self.tunnelHealthProvider != provider {
+                    self.tunnelHealth = health
+                    self.tunnelHealthProvider = provider
+                }
+                self.tunnelHealthCheckedAt = Date()
+            }
+            if self.tunnelCheckAgain || !current {
+                self.tunnelCheckAgain = false
+                self.checkTunnel()
+                return
+            }
+            let waiters = self.tunnelCheckWaiters
+            self.tunnelCheckWaiters = []
+            waiters.forEach { $0(health) }
+        }
+    }
+
+    /// Opening the Remote Access page, or the Mac waking up.
+    func checkTunnelNow() {
+        if remoteEnabled { checkTunnel() }
+    }
+
+    private func tunnelTick() {
+        let interval = TunnelCheckSchedule.interval(remoteOn: remoteEnabled, waitingForTunnel: waitingForTunnel)
+        guard !tunnelCheckRunning,
+              TunnelCheckSchedule.isDue(lastCheck: tunnelCheckStarted, now: Date(), interval: interval) else { return }
+        checkTunnel()
     }
 
     // MARK: Cloud access per client

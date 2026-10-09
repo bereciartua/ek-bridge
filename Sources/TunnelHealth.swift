@@ -421,3 +421,24 @@ enum RemoteOriginText {
         return "https://" + host.lowercased() + (url.port.map { ":\($0)" } ?? "")
     }
 }
+
+/// When the tunnel is checked in the background (plan 08 §5.4): every 3 s
+/// while a guide waits for the tunnel to start, every 60 s while Remote
+/// Access is on, never while it's off. Opening the page, waking the Mac and
+/// running Test check right away as well.
+enum TunnelCheckSchedule {
+    static let waitingInterval: TimeInterval = 3
+    static let onInterval: TimeInterval = 60
+
+    static func interval(remoteOn: Bool, waitingForTunnel: Bool) -> TimeInterval? {
+        guard remoteOn else { return nil }
+        return waitingForTunnel ? waitingInterval : onInterval
+    }
+
+    /// A clock that went back counts as due.
+    static func isDue(lastCheck: Date?, now: Date, interval: TimeInterval?) -> Bool {
+        guard let interval else { return false }
+        guard let lastCheck else { return true }
+        return now.timeIntervalSince(lastCheck) >= interval || now < lastCheck
+    }
+}

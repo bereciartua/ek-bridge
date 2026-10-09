@@ -35,6 +35,8 @@ struct RemoteAccessPage: View {
         .onChange(of: model.remoteGuideStep) { _, step in
             if step == .done { model.remoteGuideActive = false }
         }
+        // Is the tunnel running on this Mac? (plan 08 §5.4)
+        .onAppear { model.checkTunnelNow() }
     }
 
     private var header: some View {

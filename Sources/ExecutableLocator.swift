@@ -46,15 +46,17 @@ enum ProcessRunner {
         let timedOut: Bool
     }
 
+    /// `mergeErrors` false drops stderr, for tools whose warnings would get
+    /// in the way of the JSON they print (`tailscale status --json`).
     static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval,
-                    environment: [String: String]? = nil) -> Result? {
+                    environment: [String: String]? = nil, mergeErrors: Bool = true) -> Result? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         if let environment { process.environment = environment }
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = pipe
+        process.standardError = mergeErrors ? pipe : FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         let collected = OutputBuffer()
         pipe.fileHandleForReading.readabilityHandler = { handle in

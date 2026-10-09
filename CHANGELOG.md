@@ -8,6 +8,8 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Added
 
+- **Remote Access checks whether your tunnel is running on this Mac.** For Tailscale Funnel it reads `tailscale status --json` and `tailscale funnel status --json`; for Cloudflare Tunnel and quick tunnels, cloudflared's local status server on `127.0.0.1:20241–20245`; for ngrok, its agent API on `127.0.0.1:4040`; and, when those are off, this user's process list. The checks are read-only: they never start, stop or change a tunnel, send nothing off the Mac, and never change what EK Bridge accepts. They run when you open Remote Access, every 60 seconds while it's on, after the Mac wakes and before each **Test**; nothing runs while Remote Access is off.
+
 - **Live-test copy: Remote Access automation and quick tunnels for maintainers** ([details](docs/TESTING.md#live-test-copy)). EK Bridge Test's automation can turn Remote Access on, set the address, run Test and drive the guide, and `sh scripts/live_test.sh quicktunnel start|stop|stop-all|status` runs Cloudflare quick tunnels to the test copy's remote port only (never another port, never with `~/.cloudflared`). Nothing changes in the released app.
 
 ## [0.10.3] - 2026-10-09

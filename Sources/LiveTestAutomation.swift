@@ -161,6 +161,12 @@ final class LiveTestAutomation {
             case "setRemoteAddress": completion(.success(try setRemoteAddress(command)))
             case "testRemote": testRemote(command, completion: completion)
             case "remoteGuide": completion(.success(try remoteGuide(command)))
+            case "tunnelCheck":
+                // Runs the check on this Mac now (read-only) and waits for it.
+                model.checkTunnel { [weak self] _ in
+                    guard let self else { return }
+                    completion(.success(self.tunnelHealthState()))
+                }
             case "requestAccess": completion(.success(try requestAccess(command)))
             case "answerPanel": try answerPanel(command, completion: completion)
             case "oneClick": try oneClick(command, completion: completion)
@@ -333,10 +339,26 @@ final class LiveTestAutomation {
                 ?? NSNull(),
             "test": test,
             "tunnelChoice": model.tunnelChoice.rawValue,
-            "tunnelLabel": model.tunnelChoice.name,
+            "tunnelLabel": model.tunnelLabel.name,
             "guideActive": model.remoteGuideActive,
             "guideStep": "\(model.remoteGuideStep)",
             "status": model.remoteStatusLine ?? NSNull(),
+            "tunnelHealth": tunnelHealthState(),
+            "unreachableReason": model.remoteUnreachableReason ?? NSNull(),
+        ]
+    }
+
+    private func tunnelHealthState() -> [String: Any] {
+        let provider = model.tunnelCheckTarget
+        guard let health = model.currentTunnelHealth else { return ["tunnel": provider.rawValue, "state": NSNull()] }
+        return [
+            "tunnel": provider.rawValue,
+            "state": health.code,
+            "label": health.label,
+            "detail": health.detail(provider, remotePort: model.remotePort, mcpPort: model.mcpPort) ?? NSNull(),
+            "address": health.address ?? NSNull(),
+            "warns": health.warns,
+            "checkedAt": model.tunnelHealthCheckedAt.map { ISO8601DateFormatter().string(from: $0) as Any } ?? NSNull(),
         ]
     }
 
