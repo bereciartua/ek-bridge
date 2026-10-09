@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-09
+
+A small release for how EK Bridge installs: opening the DMG now shows a window that says what to do. The app is unchanged. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.1 works by installing its DMG over this one.
+
 ### Changed
 
 - The DMG opens to a drag-to-install window: EK Bridge and the Applications folder side by side on a cream background, with a dotted arc from the app to Applications and *Drag to Applications to install* below, no toolbar or sidebar, and the app icon on the disk.
