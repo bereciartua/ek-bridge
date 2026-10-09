@@ -56,7 +56,6 @@ enum ModelSheet: Identifiable, Equatable {
     case collectionIDs
     case mcpPort
     case remotePort
-    case remoteAddress
     case pairing(UUID)
     case oauthClient
     /// Add to <Agent>…: the preview, then the result (B07).
@@ -72,7 +71,6 @@ enum ModelSheet: Identifiable, Equatable {
         case .collectionIDs: "collection-ids"
         case .mcpPort: "mcp-port"
         case .remotePort: "remote-port"
-        case .remoteAddress: "remote-address"
         case .pairing(let id): "pairing-\(id)"
         case .oauthClient: "oauth-client"
         case .configPreview: "config-preview"

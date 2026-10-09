@@ -1750,6 +1750,35 @@ final class BehaviorReview {
             self.model.applyRemoteEnabled(true)
             return kept && unchanged()
         }
+        // Plan 08 T07: Address ▸ Edit… goes through the same test.
+        let renamed = "https://new-name-77.trycloudflare.com"
+        step("Edit… opens Paste and test for the tunnel in use") {
+            before = now()
+            self.model.beginEditAddress()
+            guard let change = self.model.tunnelSwitch else { return false }
+            return change.kind == .editAddress && change.step == .test && change.address == before.origin
+                && change.steps.map(change.title) == ["Paste and test", "Save"] && change.picked == before.label
+        }
+        step("Edit… ▸ Cancel changes nothing") {
+            self.model.setSwitchAddress(renamed)
+            self.model.cancelSwitch()
+            return unchanged()
+        }
+        step("Edit… ▸ a new address, tested") {
+            self.model.beginEditAddress()
+            self.model.setSwitchAddress(renamed)
+            self.model.switchTest()
+            return self.model.remoteCandidate == renamed && self.model.remoteOrigin == before.origin
+        }
+        step("…then Save updates it") {
+            guard case .reachable? = self.model.tunnelSwitch?.test else { return false }
+            self.model.switchConfirm()
+            guard self.model.sheet == .tunnelSwitch, self.model.tunnelSwitchSummary?.stopTunnel == nil else { return false }
+            self.model.switchCommit()
+            return self.model.remoteOrigin == renamed && self.model.tunnelLabel == before.label
+                && self.model.banner?.title == "The Remote Access address changed."
+                && self.model.rememberedAddresses[before.label] == renamed && self.model.remoteCandidate == nil
+        }
         step("turning off from the page") {
             self.model.setRemoteAccessEnabled(false)
             return !self.model.remoteEnabled && self.model.remoteStatus == .off
@@ -2598,6 +2627,14 @@ final class SnapshotReview {
                     self.model.switchTest()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.model.switchConfirm() }
                 }
+                return main
+            }
+            // Plan 08 T07: Address ▸ Edit… tests the new address before saving it.
+            step("remote-edit-address") {
+                if self.model.tunnelSwitch?.confirming == true { self.model.switchCommit() }
+                self.model.beginEditAddress()
+                self.model.setSwitchAddress("https://my-mac-2.tail1234.ts.net")
+                self.model.switchTest()
                 return main
             }
             step("client-cloud") {

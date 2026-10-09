@@ -387,7 +387,8 @@ struct RemoteSetUpView: View {
                         Text("—").foregroundStyle(.tertiary)
                     }
                 } actions: {
-                    Button(String(localized: "Edit…")) { model.sheet = .remoteAddress }
+                    // The new address is tested before it's saved (plan 08 T07).
+                    Button(String(localized: "Edit…")) { model.beginEditAddress() }
                 }
                 RowDivider()
                 ValueRow(label: String(localized: "MCP URL")) {
@@ -908,45 +909,6 @@ struct OAuthClientSheet: View {
             }
         }
     }
-}
-
-/// the Remote Access page ▸ Address.
-struct RemoteAddressSheet: View {
-    let model: BridgeAppModel
-    @State private var text = ""
-    @State private var submitted: String?
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "Tunnel Address")).font(.headline)
-            Text(String(localized: "The public https address your tunnel gives this Mac, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField(String(localized: "Address"), text: $text, prompt: Text("https://my-mac.tail1234.ts.net"))
-                .textFieldStyle(.roundedBorder)
-                .focused($focused)
-                .onSubmit(save)
-            if let submitted {
-                Text(submitted).font(.callout).foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button(String(localized: "Cancel")) { model.sheet = nil }.keyboardShortcut(.cancelAction)
-                Button(String(localized: "Save"), action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
-        .onAppear {
-            text = model.remoteOrigin ?? ""
-            focused = true
-        }
-    }
-
-    private func save() { submitted = model.setRemoteAddress(text) }
 }
 
 /// the Remote Access page ▸ Port.

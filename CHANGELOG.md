@@ -23,6 +23,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Changed
 
+- **Address ▸ Edit…** tests the new address through the tunnel before saving it (Paste and test · Save), with the same confirmation as Switch Tunnel…. Before, it saved first.
 - **The Remote Access page's Tunnel row** moves up under Status and says whether the tunnel is running on this Mac: *Running · on this Mac · forwards to 47616*, *Not running* with the command to start it (with Copy), *Wrong port*, *Not public* (Tailscale Serve without Funnel), *Not installed* with where to get it, or *Can't check on this Mac*. It names the tunnel that answered the last test, then what the address looks like, then the tunnel you picked, so it can't disagree with the address. When a test fails and the check explains why, the Status row says so (*Tailscale Funnel isn't running on this Mac.*). Its button is now **Switch Tunnel…**.
 
 ## [0.10.3] - 2026-10-09
