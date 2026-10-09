@@ -13,8 +13,68 @@ struct MCPGateTests {
         let parses = jsonRPC()
         MainActor.assumeIsolated { headerValuesAndAgents() }
         listener()
+        let remote = remoteCandidate()
         print("MCP gate: \(gates) endpoint checks in §7.4 order, A.4 401, \(parses) JSON-RPC parses, "
-              + "Mcp-Name base64, agent names, loopback-only listener, port probe passed")
+              + "Mcp-Name base64, agent names, loopback-only listener, port probe, "
+              + "\(remote) Remote Access candidate-host checks passed")
+    }
+
+    // MARK: Remote Access candidate (plan 08 T05)
+
+    /// While a new address is tested, its Host gets the health check only:
+    /// MCP, OAuth and discovery with that Host are still 421.
+    static func remoteCandidate() -> Int {
+        let secret = "q7Zk2vN4bXwP9sL1mT6hYa"
+        let prefix = "/r/" + secret
+        var configuration = RemoteConfiguration(secret: secret, publicOrigin: "https://my-mac.tail1234.ts.net",
+                                                port: 47616)
+        func verdict(_ method: String, _ target: String, host: String) -> String {
+            let request = Self.request(method: method, target: target, ["Host": host])
+            switch RemoteHTTPGate.check(request, configuration: configuration) {
+            case .respond(let response, _): return String(response.status)
+            case .mcp: return "mcp"
+            case .health: return "health"
+            case .oauth: return "oauth"
+            }
+        }
+        let health = prefix + "/health?nonce=abc"
+        let candidate = "quiet-river-1234.trycloudflare.com"
+        let routes: [(String, String)] = [
+            ("POST", prefix + "/mcp"), ("GET", prefix + "/oauth/authorize?x=1"), ("POST", prefix + "/oauth/token"),
+            ("GET", "/.well-known/oauth-protected-resource" + prefix + "/mcp"),
+            ("GET", "/.well-known/oauth-authorization-server" + prefix), ("GET", prefix + "/.well-known/openid-configuration"),
+        ]
+        var checks = 0
+        func expect(_ value: String, _ wanted: String, _ what: String) {
+            precondition(value == wanted, "\(what): \(value), wanted \(wanted)")
+            checks += 1
+        }
+        // No candidate: 421 for its Host, as before.
+        expect(verdict("GET", health, host: candidate), "421", "no candidate, health")
+        for (method, target) in routes { expect(verdict(method, target, host: candidate), "421", "no candidate \(target)") }
+        expect(verdict("GET", health, host: "my-mac.tail1234.ts.net"), "health", "the address in use")
+        // With a candidate: health only.
+        configuration.candidateOrigin = "https://" + candidate
+        expect(verdict("GET", health, host: candidate), "health", "candidate health")
+        expect(verdict("GET", health, host: candidate + ":443"), "health", "candidate health :443")
+        expect(verdict("GET", health, host: "Quiet-River-1234.trycloudflare.com"), "health", "Host is case-insensitive")
+        for (method, target) in routes { expect(verdict(method, target, host: candidate), "421", "candidate \(target)") }
+        expect(verdict("POST", health, host: candidate), "404", "health still needs GET")
+        expect(verdict("GET", prefix + "/health", host: candidate), "404", "health still needs a nonce")
+        expect(verdict("GET", "/r/wrong/health?nonce=abc", host: candidate), "404", "the secret path still comes first")
+        expect(verdict("GET", health, host: "other.trycloudflare.com"), "421", "only the candidate")
+        // The address in use keeps working; loopback (tunnels that rewrite Host) too.
+        expect(verdict("POST", prefix + "/mcp", host: "my-mac.tail1234.ts.net"), "mcp", "in use, mcp")
+        expect(verdict("POST", prefix + "/mcp", host: "127.0.0.1:47616"), "mcp", "loopback, mcp")
+        // Port rules as for the address: a candidate with a port.
+        configuration.candidateOrigin = "https://my-mac.tail1234.ts.net:8443"
+        expect(verdict("GET", health, host: "my-mac.tail1234.ts.net:8443"), "health", "candidate with a port")
+        expect(verdict("GET", health, host: "my-mac.tail1234.ts.net"), "health", "…the address in use, by itself")
+        expect(verdict("POST", prefix + "/mcp", host: "my-mac.tail1234.ts.net:8443"), "421", "candidate port, mcp")
+        precondition(configuration.mcpURL == "https://my-mac.tail1234.ts.net" + prefix + "/mcp"
+                     && configuration.oauthContext?.publicOrigin == "https://my-mac.tail1234.ts.net",
+                     "the MCP URL and OAuth never use the candidate")
+        return checks + 1
     }
 
     // MARK: Requests

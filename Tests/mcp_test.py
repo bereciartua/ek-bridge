@@ -1094,6 +1094,29 @@ def run_remote(h, catalog):
     status, _, _, _ = Remote(h, port).raw(method="GET", path=PREFIX + "/health?nonce=" + nonce, body=b"")
     check("health nonce single use", status == 404, status)
 
+    # A candidate address being tested (Switch Tunnel…, plan 08 T05): its Host
+    # gets the health check only, never MCP, OAuth or discovery, and only while set.
+    candidate = "quiet-river-1234.trycloudflare.com"
+    def candidate_health():
+        nonce = h.control(cmd="nonce")["nonce"]
+        status, _, body, _ = Remote(h, port, host=candidate).raw(
+            method="GET", path=PREFIX + "/health?nonce=" + nonce, body=b"")
+        return status, body, nonce
+    check("candidate host 421 before the test", candidate_health()[0] == 421)
+    h.control(cmd="remote_candidate", origin="https://" + candidate)
+    status, body, nonce = candidate_health()
+    check("candidate health", status == 200 and body["nonce"] == nonce, (status, body))
+    for method, path in [("POST", PREFIX + "/mcp"), ("GET", PREFIX + "/oauth/authorize?client_id=x"),
+                         ("POST", PREFIX + "/oauth/token"), ("POST", PREFIX + "/oauth/register"),
+                         ("GET", "/.well-known/oauth-protected-resource" + PREFIX + "/mcp"),
+                         ("GET", "/.well-known/oauth-authorization-server" + PREFIX)]:
+        status, _, _, _ = Remote(h, port, token, host=candidate).raw(method=method, path=path, body=json.dumps(ping).encode())
+        check(f"candidate host 421 {method} {path}", status == 421, status)
+    status, _, body, _ = Remote(h, port, token).raw(body=ping)
+    check("the address in use keeps working", status == 200 and "result" in body, status)
+    h.control(cmd="remote_candidate", origin=None)
+    check("candidate host 421 after", candidate_health()[0] == 421)
+
     run_oauth(h, port, catalog)
 
     # Remote limits are stricter: 15 calls in a burst.

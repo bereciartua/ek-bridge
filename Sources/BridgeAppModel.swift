@@ -346,6 +346,9 @@ final class BridgeAppModel {
     private(set) var remotePort = RemoteDefaults.port
     private(set) var remoteSecret = ""
     private(set) var remoteOrigin: String?
+    /// The address Switch Tunnel… or Edit… is testing, accepted for the
+    /// health check only (plan 08 T05). Memory only.
+    private(set) var remoteCandidate: String?
     private(set) var remoteStatus: RemoteMCPService.Status = .off
     private(set) var remoteTest = RemoteTestState.notTested
     private(set) var remoteAutoOff: TimeInterval = 0
@@ -2628,7 +2631,27 @@ final class BridgeAppModel {
     // MARK: Remote Access
 
     var remoteConfiguration: RemoteConfiguration {
-        RemoteConfiguration(secret: remoteSecret, publicOrigin: remoteOrigin, port: remotePort)
+        RemoteConfiguration(secret: remoteSecret, publicOrigin: remoteOrigin, port: remotePort,
+                            candidateOrigin: remoteCandidate)
+    }
+
+    /// Lets the server answer the health check for an address being tested
+    /// (plan 08 T05), and nothing else. Never saved; nil clears it.
+    func setRemoteCandidate(_ origin: String?) {
+        let candidate = origin.flatMap(RemoteConfiguration.normalizedOrigin)
+        guard candidate != remoteCandidate else { return }
+        remoteCandidate = candidate
+        if remoteEnabled { services.remote.update(remoteConfiguration) }
+    }
+
+    /// Fetches `<candidate>/r/<secret>/health?nonce=…` through the new tunnel,
+    /// with the same nonce check as Test. Saves nothing.
+    func testRemoteCandidate(_ origin: String,
+                             completion: @escaping (Result<(rtt: TimeInterval, tunnel: String?), RemoteTestFailure>) -> Void) {
+        setRemoteCandidate(origin)
+        var configuration = remoteConfiguration
+        configuration.publicOrigin = remoteCandidate
+        services.remote.test(configuration, completion)
     }
 
     var remoteIsListening: Bool {
@@ -2726,6 +2749,7 @@ final class BridgeAppModel {
             remoteStatus = .off
             remoteTest = .notTested
             setRemoteOffAt(nil)
+            remoteCandidate = nil
             tunnelHealth = nil
             tunnelHealthProvider = nil
         }
