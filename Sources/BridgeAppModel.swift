@@ -2877,6 +2877,24 @@ final class BridgeAppModel {
         }
     }
 
+    #if EVENTKIT_UI_REVIEW
+    /// UI review: Remote Access as before it was set up, so the dark pass
+    /// of the snapshots starts where the light one did.
+    func resetRemoteAccessForReview() {
+        applyRemoteEnabled(false)
+        remoteOrigin = nil
+        services.defaults.removeObject(forKey: Keys.remoteOrigin)
+        tunnelChoice = .tailscaleFunnel
+        tunnelChosen = false
+        services.defaults.removeObject(forKey: Keys.tunnelChoice)
+        remoteGuideActive = false
+        remoteTunnelStarted = false
+        remoteEditingAddress = false
+        guideAddress = nil
+        guideHostname = ""
+    }
+    #endif
+
     // MARK: Tunnel checks on this Mac (plan 08 §5)
 
     /// The tunnel the last reachability test went through, from its headers.

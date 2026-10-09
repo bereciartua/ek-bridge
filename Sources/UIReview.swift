@@ -2302,6 +2302,9 @@ final class SnapshotReview {
             // Remote Access (B10): the page before setup, the guide, then set up.
             step("remote-not-set-up") {
                 self.review.approvals.withdrawAll()
+                // The dark pass starts where the light one did, not set up.
+                self.model.resetRemoteAccessForReview()
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
                 self.model.navigate(to: .remoteAccess)
                 return main
             }
