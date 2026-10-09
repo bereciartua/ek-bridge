@@ -290,6 +290,11 @@ final class BridgeAppModel {
     @ObservationIgnored private var itemCache = [ItemRef: ItemSnapshot]()
     /// Bumped when the cache is cleared, so rows look their items up again.
     private(set) var itemLookupGeneration = 0
+    /// Approval panel summaries of changes answered this session, by request
+    /// ID (C03): Activity shows their before → after. Memory only, at most 200.
+    private(set) var recentSummaries = [String: ApprovalSummary]()
+    @ObservationIgnored private var recentSummaryOrder = [String]()
+    static let maxRecentSummaries = 200
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
     private(set) var showDeveloperTools = false
@@ -482,6 +487,9 @@ final class BridgeAppModel {
 
     func start() {
         started = true
+        services.approvals?.answered = { [weak self] requestID, summary, _ in
+            self?.rememberApprovalSummary(requestID, summary)
+        }
         syncMCPServer()
         if remoteEnabled {
             if let offAt = remoteOffAt, offAt <= Date() {
@@ -1559,6 +1567,20 @@ final class BridgeAppModel {
         guard let snapshot = services.itemLookup(ref) else { return .none }
         itemCache[ref] = snapshot
         return .found(snapshot)
+    }
+
+    /// Keeps an answered change's panel summary for this session (C03).
+    func rememberApprovalSummary(_ requestID: String, _ summary: ApprovalSummary) {
+        if recentSummaries[requestID] == nil { recentSummaryOrder.append(requestID) }
+        recentSummaries[requestID] = summary
+        while recentSummaryOrder.count > Self.maxRecentSummaries {
+            recentSummaries[recentSummaryOrder.removeFirst()] = nil
+        }
+    }
+
+    /// The panel's summary for an Activity row answered this session.
+    func recentSummary(_ entry: ActivityEntry) -> ApprovalSummary? {
+        entry.requestID.flatMap { recentSummaries[$0] }
     }
 
     /// A looked-up title already in the cache, for Activity's search. Never

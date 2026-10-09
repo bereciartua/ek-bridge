@@ -43,6 +43,8 @@ struct ApprovalRequest {
     let targetID: String?
     /// The client's revision when asked; an allowance ends when it changes.
     var revision = 0
+    /// Joins the answer to the request's Activity rows (C03).
+    var requestID: String? = nil
 }
 
 enum ApprovalDecision: Equatable {
@@ -173,7 +175,8 @@ final class RequestPipeline {
         if request.command.isWrite, call.approval == .ask, let approvals {
             let approval = ApprovalRequest(clientID: clientID, clientName: call.clientName,
                                            agent: origin.agent, request: request,
-                                           targetID: call.targetID, revision: call.revision)
+                                           targetID: call.targetID, revision: call.revision,
+                                           requestID: call.requestID)
             ticket.withdrawApproval = approvals.request(approval) { [weak self] decision in
                 ticket.withdrawApproval = nil
                 guard let self else { completion(["error": "app_unavailable"]); return }

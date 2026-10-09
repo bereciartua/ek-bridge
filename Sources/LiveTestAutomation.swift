@@ -241,6 +241,11 @@ final class LiveTestAutomation {
                 case .none: break
                 }
             }
+            if let summary = model.recentSummary(entry) {
+                row["sessionSummary"] = summary.rows.filter { $0.before != nil }.map {
+                    "\($0.label): \($0.before ?? "") → \($0.value)"
+                }
+            }
             row["change"] = entry.changeLabel
             row["resultLabel"] = entry.resultLabel
             return row

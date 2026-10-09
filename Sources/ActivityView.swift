@@ -446,6 +446,8 @@ struct ActivityItemCard: View {
                 case .found:
                     Text(String(localized: "Deleted item")).font(.headline).foregroundStyle(.secondary)
                     location(nil)
+                    // What the panel showed when it was answered this session.
+                    if let summary = model.recentSummary(entry) { rows(summary, changedOnly: false) }
                 case .noAccess(let resource):
                     Text(Self.noAccessText(resource)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -469,12 +471,36 @@ struct ActivityItemCard: View {
         }
     }
 
-    /// The item's time now.
+    /// Before → after from the approval panel when the change was answered
+    /// this session (C03), otherwise the item's time now.
     @ViewBuilder
     private func changes(_ item: ItemSnapshot) -> some View {
-        if let when = item.when {
+        if let summary = model.recentSummary(entry), summary.rows.contains(where: { $0.before != nil }) {
+            rows(summary, changedOnly: true)
+        } else if let when = item.when {
             Text(when).foregroundStyle(.secondary)
         }
+    }
+
+    private func rows(_ summary: ApprovalSummary, changedOnly: Bool) -> some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
+            ForEach(Array(summary.rows.filter { !changedOnly || $0.before != nil }.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    Text(row.label).foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if let before = row.before {
+                            Text(before).strikethrough().foregroundStyle(.secondary)
+                                .accessibilityLabel(String(localized: "Before: \(before)"))
+                            Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                        Text(row.value).lineLimit(2)
+                            .accessibilityLabel(row.before == nil ? row.value : String(localized: "After: \(row.value)"))
+                    }
+                }
+            }
+        }
+        .font(.callout)
     }
 }
 

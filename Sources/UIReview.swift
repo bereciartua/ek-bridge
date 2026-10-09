@@ -220,6 +220,16 @@ final class UIReview {
             })
     }
 
+    /// The panel's summary for the seeded "Design review" change: moved an hour later.
+    static var designSummary: ApprovalSummary {
+        let day = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
+        func at(_ hour: Int) -> Date { day.addingTimeInterval(Double(hour) * 3_600) }
+        return ApprovalSummary(title: "Claude Code wants to change an event", subtitle: "Work · iCloud",
+                               rows: [.init(label: String(localized: "When"), value: ApprovalSummaries.span(at(11), at(12)),
+                                            before: ApprovalSummaries.span(at(10), at(11)))],
+                               isDelete: false)
+    }
+
     /// Show in Calendar / Reminders calls (the fake opens nothing).
     var itemShows = 0
 
@@ -1548,6 +1558,16 @@ final class BehaviorReview {
             return item.title == "Design review" && item.exists && write.changeLabel == "Changed event" &&
                 write.resultLabel == "Approved" && self.review.itemShows == before + 1
         }
+        step("an answered change keeps its summary for the session") {
+            let request = BridgeRequest(id: "c03", command: .updateEvent, parameters: ["calendarID": "cal-work"])
+            var asked = ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code", agent: nil,
+                                        request: request, targetID: "cal-work")
+            asked.requestID = "\(UIReview.claudeID)|c03"
+            _ = self.review.approvals.request(asked) { _ in }
+            guard let item = self.review.approvals.pending.last else { return false }
+            self.review.approvals.allow(item.id)
+            return self.model.recentSummaries["\(UIReview.claudeID)|c03"] == item.summary
+        }
         step("deleted item shows Deleted") {
             guard let gone = self.model.activity.first(where: { $0.item?.id == "ev-gone" }),
                   case .found(let item) = self.model.itemDisplay(gone) else { return false }
@@ -1772,9 +1792,10 @@ final class SnapshotReview {
             }
             step("activity") {
                 self.model.navigate(to: .activity)
-                self.model.activitySelection = self.model.activity.first {
-                    $0.item?.id == "ev-design" && $0.code == "success"
-                }?.id
+                let design = self.model.activity.first { $0.item?.id == "ev-design" && $0.code == "success" }
+                // Approved in the panel this session (C03): its before → after.
+                if let request = design?.requestID { self.model.rememberApprovalSummary(request, UIReview.designSummary) }
+                self.model.activitySelection = design?.id
                 return main
             }
             step("activity-minimum") {

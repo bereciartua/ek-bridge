@@ -34,6 +34,8 @@ struct ApprovalCenterTests {
             schedule: { delay, action in scheduled.append((delay, action)) })
         center.queueChanged = { queueChanges += 1 }
         let recorder = Recorder()
+        var answered = [(String, ApprovalSummary, ApprovalDecision)]()
+        center.answered = { answered.append(($0, $1, $2)) }
 
         func ask(_ name: String, client: String, revision: Int = 1) -> () -> Void {
             let request = BridgeRequest(id: UUID().uuidString, command: .createReminder,
@@ -186,6 +188,29 @@ struct ApprovalCenterTests {
         precondition(recorder.decisions.values.map(\.count).reduce(0, +) == resolvedBefore)
         precondition(recorder.decisions.values.allSatisfy { $0.count == 1 }, "every request resolved exactly once")
 
-        print("Approval center: FIFO and selection, 45 s timeout, 3 per client, 15-minute window, withdraw, shutdown, exactly-once passed")
+        // C03: the panel's summary goes along with the answer, by request ID,
+        // for allowed, denied and timed-out changes only.
+        precondition(answered.isEmpty, "requests without a request ID report nothing")
+        func askWithID(_ name: String) -> () -> Void {
+            let request = BridgeRequest(id: name, command: .updateEvent, parameters: ["calendarID": "CAL"])
+            var approval = ApprovalRequest(clientID: "Z", clientName: "Client Z", agent: nil, request: request,
+                                           targetID: "CAL", revision: 1)
+            approval.requestID = "Z|\(name)"
+            return center.request(approval, completion: recorder.completion(name))
+        }
+        _ = askWithID("z1")
+        center.allow(center.pending.last!.id)
+        _ = askWithID("z2")
+        center.deny(center.pending.last!.id)
+        let withdrawZ3 = askWithID("z3")
+        withdrawZ3()
+        _ = askWithID("z4")
+        scheduled.last!.action()
+        precondition(answered.map(\.0) == ["Z|z1", "Z|z2", "Z|z4"], "\(answered.map(\.0))")
+        precondition(answered.map(\.2) == [.allowed, .denied, .timedOut])
+        precondition(answered[0].1.title == "Client Z wants to update_event")
+        precondition(recorder.only("z1") == .allowed && recorder.only("z3") == .withdrawn)
+
+        print("Approval center: FIFO and selection, 45 s timeout, 3 per client, 15-minute window, withdraw, shutdown, exactly-once, summaries with answers passed")
     }
 }

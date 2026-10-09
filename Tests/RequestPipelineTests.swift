@@ -420,6 +420,8 @@ struct RequestPipelineTests {
             precondition(asked.clientID == g.clientID && asked.clientName == "Agent")
             precondition(asked.agent == "Claude Code 2.4.1" && asked.targetID == "CAL-A")
             precondition(asked.request.command == .createEvent && asked.revision > 0)
+            precondition(asked.requestID == "\(g.clientID)|\(asked.request.id)" &&
+                         asked.requestID == g.lastRow.requestID, "C03: the answer joins the row")
             precondition(box.error == error, "\(mode): \(String(describing: box.reply))")
             precondition(g.executor.calls.count == (error == nil ? 1 : 0), "\(mode)")
             precondition(g.lastRow.approval == detail, "\(mode)")

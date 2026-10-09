@@ -3,7 +3,8 @@ import Observation
 
 /// What the approval panel shows for one change. Built in the app from the
 /// request parameters and a fresh EventKit lookup, never from agent prose.
-/// Shown on screen only; never stored.
+/// Shown on screen, and kept in memory for the session so Activity can show
+/// the change's before → after (C03); never written to disk.
 struct ApprovalSummary: Equatable {
     struct Row: Equatable {
         let label: String
@@ -45,6 +46,8 @@ struct PendingApproval: Identifiable, Equatable {
     let agent: String?
     let summary: ApprovalSummary
     let expiresAt: Date
+    /// The request's Activity request ID, when the pipeline asked.
+    var requestID: String? = nil
 
     static func == (lhs: PendingApproval, rhs: PendingApproval) -> Bool { lhs.id == rhs.id }
 }
@@ -73,6 +76,9 @@ final class ApprovalCenter: ApprovalGate {
     @ObservationIgnored var queueChanged: () -> Void = {}
     /// Called when the panel shows another change, so it can fit its height.
     @ObservationIgnored var selectionChanged: () -> Void = {}
+    /// Called with the panel's summary when a change is answered (allowed,
+    /// denied or timed out), so Activity can show it this session (C03).
+    @ObservationIgnored var answered: (_ requestID: String, ApprovalSummary, ApprovalDecision) -> Void = { _, _, _ in }
 
     init(summarize: @escaping (ApprovalRequest) -> ApprovalSummary,
          now: @escaping () -> Date = Date.init,
@@ -100,7 +106,8 @@ final class ApprovalCenter: ApprovalGate {
         let item = PendingApproval(id: UUID(), clientID: approval.clientID,
                                    clientName: approval.clientName, agent: approval.agent,
                                    summary: summarize(approval),
-                                   expiresAt: now().addingTimeInterval(Self.timeout))
+                                   expiresAt: now().addingTimeInterval(Self.timeout),
+                                   requestID: approval.requestID)
         pending.append(item)
         completions[item.id] = completion
         revisions[item.id] = approval.revision
@@ -152,6 +159,10 @@ final class ApprovalCenter: ApprovalGate {
     private func resolve(_ id: UUID, _ decision: ApprovalDecision) {
         guard let completion = completions.removeValue(forKey: id) else { return }
         revisions[id] = nil
+        if let item = pending.first(where: { $0.id == id }), let requestID = item.requestID,
+           [.allowed, .denied, .timedOut].contains(decision) {
+            answered(requestID, item.summary, decision)
+        }
         if let index = pending.firstIndex(where: { $0.id == id }) {
             pending.remove(at: index)
             // Keep showing the same change when an earlier one goes away.
