@@ -257,6 +257,8 @@ struct ActivityEntry: Identifiable, Equatable {
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
     var isMCP: Bool { via == "mcp" }
+    /// A create, update, complete, delete or move, whatever its outcome.
+    var isWrite: Bool { BridgeCommand(rawValue: command)?.isWrite == true }
     var isProblem: Bool { outcome.tone.isProblem }
 
     static func entries(from activity: [ClientActivity]) -> [ActivityEntry] {
@@ -284,6 +286,10 @@ enum ActivityStats {
         let requests: Int
         let notAllowed: Int
         let last: Date?
+        /// Adds, edits, completions and deletes that went through.
+        var changes = 0
+        /// Rows a problem: refused, failed or needing review.
+        var problems = 0
     }
 
     static func today(_ entries: [ActivityEntry], now: Date = Date(),
@@ -291,7 +297,9 @@ enum ActivityStats {
         let today = entries.filter { calendar.isDate($0.at, inSameDayAs: now) }
         return Today(requests: today.count,
                      notAllowed: today.filter { $0.code == "forbidden" || $0.code == "unauthorized" }.count,
-                     last: entries.first?.at)
+                     last: entries.first?.at,
+                     changes: today.filter { $0.isWrite && $0.code == "success" }.count,
+                     problems: today.filter(\.isProblem).count)
     }
 
     static func unseenProblems(_ entries: [ActivityEntry], since: Date?) -> Int {
@@ -319,8 +327,8 @@ enum AttentionProblem: Equatable, Hashable {
         switch self {
         case .calendarAccess(let status): AccessText.problemTitle(.calendar, status)
         case .remindersAccess(let status): AccessText.problemTitle(.reminderList, status)
-        case .policyStoreUnavailable: String(localized: "Client settings can't be read")
-        case .bridgeFailed: String(localized: "The bridge couldn't start")
+        case .policyStoreUnavailable: String(localized: "Connection settings can't be read")
+        case .bridgeFailed: String(localized: "\(AppIdentity.displayName) couldn't start")
         case .mcpServerFailed: String(localized: "The MCP server couldn't start")
         case .remoteAccessFailed: String(localized: "Remote Access couldn't start")
         }
@@ -380,7 +388,7 @@ enum AccessText {
                 ? String(localized: "Not allowed yet. Needed to show your calendars.")
                 : String(localized: "Not allowed yet. Needed to show your lists.")
         case .denied: String(localized: "Turned off in System Settings.")
-        case .writeOnly: String(localized: "Add-only access. The bridge needs Full Access to read and update items.")
+        case .writeOnly: String(localized: "Add-only access. \(AppIdentity.displayName) needs Full Access to read and update items.")
         case .restricted: String(localized: "Blocked by a profile on this Mac. Ask whoever manages it.")
         case .fullAccess: nil
         @unknown default: String(localized: "Unknown access state.")
@@ -399,14 +407,17 @@ enum AccessText {
     }
 }
 
-/// The first-run checklist (§6). Pure so it can be unit tested.
+/// The first-run checklist (B09, mockup 01): macOS access, add your agent,
+/// connect it. Pure so it can be unit tested.
 enum SetupChecklist {
-    // Raw values are stored (skipped steps), so new steps take new numbers;
-    // the order below is the display order.
+    // Raw values are stored (skipped steps), so new steps take new numbers.
+    // Steps 1–7 are 0.8's seven-step list: they still decode (a skipped
+    // Calendar or Reminders still counts) but aren't shown.
     enum Step: Int, CaseIterable {
         case calendarAccess = 1, remindersAccess, createClient, chooseAccess, turnOn
         case mcpServer = 7
         case testRequest = 6
+        case macOSAccess = 10, addConnection = 11, connect = 12
     }
 
     enum State: Equatable {
@@ -414,7 +425,7 @@ enum SetupChecklist {
         case skipped
         case current
         case pending
-        /// Not needed: the other access type is done and a client exists.
+        /// 0.8's optional access step; no longer produced.
         case optional
     }
 
@@ -428,7 +439,7 @@ enum SetupChecklist {
         var mcpListening = false
     }
 
-    /// The client the checklist talks about: a client with access that hasn't
+    /// The connection the checklist talks about: one with access that hasn't
     /// sent a request yet, else one with no access yet, else the first one.
     static func focusClient(_ input: Input) -> ClientView? {
         let active = input.clients.filter { !$0.revoked }
@@ -437,47 +448,43 @@ enum SetupChecklist {
             ?? active.first
     }
 
+    /// Calendar or Reminders decided: allowed, turned off, or skipped in setup.
+    static func decided(_ resource: ClientResource, _ input: Input) -> Bool {
+        let status = resource == .calendar ? input.calendar : input.reminders
+        let skip: Step = resource == .calendar ? .calendarAccess : .remindersAccess
+        return status == .fullAccess || status == .denied || input.skipped.contains(skip)
+    }
+
     static func isDone(_ step: Step, _ input: Input) -> Bool {
         let active = input.clients.filter { !$0.revoked }
         switch step {
+        case .macOSAccess:
+            // One type allowed, the other allowed, turned off or skipped.
+            return (input.calendar == .fullAccess || input.reminders == .fullAccess)
+                && decided(.calendar, input) && decided(.reminderList, input)
+        case .addConnection: return active.contains { !$0.grants.isEmpty }
+        case .connect, .testRequest: return active.contains { input.successfulClientIDs.contains($0.id) }
         case .calendarAccess: return input.calendar == .fullAccess
         case .remindersAccess: return input.reminders == .fullAccess
         case .createClient: return !active.isEmpty
         case .chooseAccess: return focusClient(input).map { !$0.grants.isEmpty } ?? false
         case .turnOn: return input.bridgeOn
         case .mcpServer: return input.mcpListening
-        case .testRequest: return active.contains { input.successfulClientIDs.contains($0.id) }
         }
     }
 
-    /// The MCP step is shown only when the client the checklist is about can
-    /// connect over MCP.
-    static func steps(_ input: Input) -> [Step] {
-        let mcp = focusClient(input)?.hasMCPToken ?? false
-        return Step.allCases.filter { $0 != .mcpServer || mcp }
-    }
+    static func steps(_ input: Input) -> [Step] { [.macOSAccess, .addConnection, .connect] }
 
+    /// Done steps; the first step not done is current, the rest pending.
     static func states(_ input: Input) -> [Step: State] {
-        let hasClient = input.clients.contains { !$0.revoked }
         var result = [Step: State]()
-        for step in steps(input) {
-            if isDone(step, input) { result[step] = .done; continue }
-            if input.skipped.contains(step) { result[step] = .skipped; continue }
-            switch step {
-            case .calendarAccess where hasClient && isDone(.remindersAccess, input),
-                 .remindersAccess where hasClient && isDone(.calendarAccess, input):
-                result[step] = .optional
-            default:
-                result[step] = .pending
-            }
-        }
+        for step in steps(input) { result[step] = isDone(step, input) ? .done : .pending }
         if let first = steps(input).first(where: { result[$0] == .pending }) {
             result[first] = .current
         }
         return result
     }
 
-    /// Complete when no step is pending. Optional and skipped steps don't block.
     static func isComplete(_ input: Input) -> Bool {
         !states(input).values.contains { $0 == .pending || $0 == .current }
     }
@@ -533,6 +540,112 @@ enum ConnectCommand {
             return "\"\(text)\""
         }
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// The Remote Access page's guide (B10): 1 choose a tunnel, 2 turn on and
+/// start it, 3 paste its address, 4 test. Derived, not stored, apart from the
+/// tunnel choice and "I've started it".
+enum RemoteGuide {
+    enum Step: Int, Equatable { case chooseTunnel = 1, startTunnel, pasteAddress, test, done }
+
+    static func step(tunnelChosen: Bool, remoteOn: Bool, started: Bool, origin: String?,
+                     reachable: Bool) -> Step {
+        guard tunnelChosen else { return .chooseTunnel }
+        guard remoteOn, started || origin != nil else { return .startTunnel }
+        guard origin != nil else { return .pasteAddress }
+        return reachable ? .done : .test
+    }
+}
+
+/// When the local MCP server runs (D1): only while EK Bridge is on, the
+/// user allows it (Settings ▸ Advanced) and some connection has an MCP token.
+enum MCPRunPolicy {
+    static func shouldRun(bridgeOn: Bool, allowed: Bool, hasMCPConnections: Bool) -> Bool {
+        bridgeOn && allowed && hasMCPConnections
+    }
+
+    /// The first launch of 0.9 turns 0.8's separate MCP switch into the
+    /// Advanced switch: on unless the user turned the server off and no
+    /// connection uses MCP. `old` is nil when the switch was never touched.
+    static func migratedAllowed(old: Bool?, hasMCPConnections: Bool) -> Bool {
+        old == nil || old == true || hasMCPConnections
+    }
+}
+
+/// Overview's Needs you (B12): what's waiting for the user, in order.
+enum NeedsYouItem: Equatable {
+    case approvals(Int)
+    case problem(AttentionProblem)
+    /// A granted calendar or list EventKit doesn't list; `name` from its label.
+    case unavailable(connectionID: String, connectionName: String, key: GrantKey, name: String?, mask: Int)
+    case refused(count: Int, since: Date?)
+    case update(version: String, critical: Bool)
+}
+
+enum NeedsYou {
+    struct Unavailable: Equatable {
+        let connectionID: String
+        let connectionName: String
+        let key: GrantKey
+        let name: String?
+        let mask: Int
+    }
+
+    /// Approvals, problems, unavailable calendars, refused requests not yet
+    /// seen, then an update (only when Overview has no update card).
+    static func items(pendingApprovals: Int, problems: [AttentionProblem], unavailable: [Unavailable],
+                      unseenProblems: Int, lastViewed: Date?, update: (version: String, critical: Bool)?,
+                      updateCardShown: Bool) -> [NeedsYouItem] {
+        var items = [NeedsYouItem]()
+        if pendingApprovals > 0 { items.append(.approvals(pendingApprovals)) }
+        items += problems.map { .problem($0) }
+        items += unavailable.map {
+            .unavailable(connectionID: $0.connectionID, connectionName: $0.connectionName, key: $0.key,
+                         name: $0.name, mask: $0.mask)
+        }
+        if unseenProblems > 0 { items.append(.refused(count: unseenProblems, since: lastViewed)) }
+        if let update, !updateCardShown { items.append(.update(version: update.version, critical: update.critical)) }
+        return items
+    }
+}
+
+/// Pause EK Bridge ▸ … in the menu bar.
+enum PauseChoice: CaseIterable {
+    case oneHour, untilTomorrow, untilTurnedOn
+}
+
+enum PauseSchedule {
+    /// When a pause ends: in an hour, at 8:00 the next local morning, or
+    /// never (nil). DST-safe: 8:00 is set on the next calendar day.
+    static func resumeDate(_ choice: PauseChoice, now: Date, calendar: Calendar = .current) -> Date? {
+        switch choice {
+        case .oneHour:
+            return now.addingTimeInterval(3_600)
+        case .untilTomorrow:
+            let today = calendar.startOfDay(for: now)
+            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
+            return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow)
+        case .untilTurnedOn:
+            return nil
+        }
+    }
+
+    /// "until 3:40 PM" today, "until tomorrow at 8:00 AM", else "until Oct 10 at 8:00 AM".
+    static func untilText(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        var time = Date.FormatStyle(date: .omitted, time: .shortened)
+        time.calendar = calendar
+        time.timeZone = calendar.timeZone
+        let clock = date.formatted(time)
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "until \(clock)") }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(date, inSameDayAs: tomorrow) {
+            return String(localized: "until tomorrow at \(clock)")
+        }
+        var day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        day.calendar = calendar
+        day.timeZone = calendar.timeZone
+        return String(localized: "until \(date.formatted(day)) at \(clock)")
     }
 }
 

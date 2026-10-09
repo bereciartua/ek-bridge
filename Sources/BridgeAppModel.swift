@@ -8,6 +8,8 @@ enum Route: Hashable {
     case activity
     case client(String)
     case settings
+    /// Remote Access's own page (B10).
+    case remoteAccess
 }
 
 enum DockIconMode: String, CaseIterable, Identifiable {
@@ -57,6 +59,8 @@ enum ModelSheet: Identifiable, Equatable {
     case remoteAddress
     case pairing(UUID)
     case oauthClient
+    /// Add to <Agent>…: the preview, then the result (B07).
+    case configPreview
 
     var id: String {
         switch self {
@@ -69,6 +73,7 @@ enum ModelSheet: Identifiable, Equatable {
         case .remoteAddress: "remote-address"
         case .pairing(let id): "pairing-\(id)"
         case .oauthClient: "oauth-client"
+        case .configPreview: "config-preview"
         }
     }
 }
@@ -89,6 +94,15 @@ enum ClientKind: String, CaseIterable, Identifiable {
 
 /// The client page's Connect tabs.
 enum ConnectTab: Hashable { case agent, cli }
+
+/// Settings' tabs (B11).
+enum SettingsTab: Hashable, CaseIterable { case general, advanced, about }
+
+/// A connection page's tabs (B08).
+enum ClientTab: Hashable, CaseIterable { case access, connect, activity }
+
+/// The dot before a connection's status line.
+enum StatusDot: Equatable { case ok, waiting, warning, neutral }
 
 /// The MCP server, as the model drives it. The UI-review build passes fakes.
 @MainActor
@@ -173,6 +187,26 @@ struct BridgeServices {
     var approvals: ApprovalCenter?
     var remote: RemoteControls
     var updater: UpdaterControls
+    /// Agents found on this Mac (B04). The live version answers from a cache
+    /// refreshed in the background; the UI-review build returns fixed ones.
+    var installedAgents: () -> Set<AgentKind> = { [] }
+    /// Add to <Agent>…: preview, apply, restart (B07).
+    var agentSetup: AgentSetupControls = .unavailable
+}
+
+/// One Add to <Agent>… from click to result.
+struct OneClickSession: Equatable {
+    enum Phase: Equatable {
+        case loading
+        case preview(OneClickPreview)
+        case running(OneClickPreview)
+        case done(OneClickResult)
+        case failed(OneClickFailure)
+    }
+
+    let clientID: String
+    let agent: AgentKind
+    var phase: Phase
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -207,6 +241,7 @@ final class BridgeAppModel {
     var sheet: ModelSheet? {
         didSet {
             // A pairing request that arrived while another sheet was open is shown once it closes.
+            if oldValue == .configPreview, sheet != .configPreview { oneClick = nil }
             if sheet == nil, oldValue != nil {
                 DispatchQueue.main.async { [weak self] in self?.presentNextPairing() }
             }
@@ -219,9 +254,14 @@ final class BridgeAppModel {
     var accessFocus: GrantKey?
     /// The scroll target inside the client pane ("access" after creating a client).
     var clientScrollTarget: String?
-    /// The scroll target inside Settings ("mcp" or "remote").
+    /// The scroll target inside Settings: "mcp" and "developer" (Advanced), "about".
     var settingsScrollTarget: String?
+    var settingsTab = SettingsTab.general
     var accessTab = [String: ClientResource]()
+    /// The tab each connection page shows, this session (B08).
+    var clientTab = [String: ClientTab]()
+    /// Connections whose Connect tab shows Advanced options (method, token file).
+    var advancedSetup = Set<String>()
 
     var activityClientFilter: ActivityClientFilter = .all
     var activityVia: ActivityViaFilter = .all
@@ -255,14 +295,18 @@ final class BridgeAppModel {
     private(set) var testCollectionsState: TestCollectionsState = .notCreated
     private(set) var waitingForTestRequest = false
 
-    // MCP server (Settings ▸ MCP Server) and agent connections.
-    private(set) var mcpEnabled = false
+    // The local MCP server (Settings ▸ Advanced) and agent connections. It
+    // runs while EK Bridge is on, the user allows it, and a connection has
+    // an MCP token (`mcpShouldRun`).
+    private(set) var localMCPAllowed = true
+    /// Whether the model has started `services.mcp` (and not stopped it).
+    private(set) var mcpStarted = false
     private(set) var mcpPort = MCPDefaults.port
     private(set) var mcpStatus: MCPService.Status = .off
     private(set) var mcpConnections = [String: MCPServer.Connection]()
     private(set) var newAgentApproval = ApprovalMode.ask
     private(set) var newCLIApproval = ApprovalMode.allow
-    // Remote Access (Settings ▸ Remote Access, client Cloud sections).
+    // Remote Access (the Remote Access page, client Cloud sections).
     private(set) var remoteEnabled = false
     private(set) var remotePort = RemoteDefaults.port
     private(set) var remoteSecret = ""
@@ -271,15 +315,41 @@ final class BridgeAppModel {
     private(set) var remoteTest = RemoteTestState.notTested
     private(set) var remoteAutoOff: TimeInterval = 0
     private(set) var remoteOffAt: Date?
+    /// Pause EK Bridge ▸ For 1 Hour / Until Tomorrow: when it turns back on.
+    private(set) var resumeAt: Date?
     private(set) var keepAwake = false
     private(set) var remoteNotes = [RemoteRequestNote]()
     private(set) var remoteConnections = [String: MCPServer.Connection]()
     /// Bumped when OAuth connections or pairing change, so views re-read them.
     private(set) var oauthChanges = 0
-    var tunnelChoice = TunnelProvider.tailscaleFunnel
+    /// The guide's tunnel, saved once chosen (UserDefaults RemoteTunnelChoice).
+    var tunnelChoice = TunnelProvider.tailscaleFunnel {
+        didSet { services.defaults.set(tunnelChoice.rawValue, forKey: Keys.tunnelChoice) }
+    }
+    var tunnelChosen: Bool { services.defaults.string(forKey: Keys.tunnelChoice) != nil }
+    /// The Remote Access guide is in progress (shown even once Remote Access is on).
+    var remoteGuideActive = false
+    /// Guide step 2's "I've Started It", this session.
+    var remoteTunnelStarted = false
+    /// Guide step 3 shown again from step 4's Back.
+    var remoteEditingAddress = false
     var cloudAgentChoice = [String: CloudAgentKind]()
     var connectTab = [String: ConnectTab]()
+    /// The agent picked on a Connect tab this session; falls back to the
+    /// stored kind (`connectionAgents`), then Claude Code.
     var agentChoice = [String: AgentKind]()
+    /// Each connection's agent, saved in UserDefaults `ConnectionAgentKinds` (B04).
+    private(set) var connectionAgents = [String: AgentKind]()
+    /// Agents found on this Mac, for the Add a Connection sheet and setup.
+    private(set) var installedAgents = Set<AgentKind>()
+    /// The Add to <Agent>… in progress, shown in the config preview sheet.
+    private(set) var oneClick: OneClickSession?
+    /// Finished one-click setups this session, keyed "clientID|agent".
+    private(set) var oneClickDone = [String: OneClickResult]()
+    /// Connections whose Connect tab shows the setup to copy instead of the one-click card.
+    var copySetup = Set<String>()
+    /// Restart <Agent> running for this agent.
+    private(set) var restarting: AgentKind?
     /// Keyed by "clientID|agent".
     var methodChoice = [String: SetupMethod]()
 
@@ -308,7 +378,9 @@ final class BridgeAppModel {
         static let dockMode = "DockIconMode"
         static let showDeveloperTools = "ShowDeveloperTools"
         static let lastRoute = "LastPane"
+        /// 0.8.2's switch; still written, so a rollback finds a sensible value.
         static let mcpEnabled = "MCPServerEnabled"
+        static let localMCPAllowed = "LocalMCPServerAllowed"
         static let mcpPort = "MCPServerPort"
         static let approvalAgent = "ApprovalDefaultAgent"
         static let approvalCLI = "ApprovalDefaultCommandLine"
@@ -319,6 +391,8 @@ final class BridgeAppModel {
         static let remoteAutoOff = "RemoteAccessAutoOff"
         static let remoteOffAt = "RemoteAccessOffAt"
         static let keepAwake = "RemoteAccessKeepAwake"
+        static let resumeAt = "BridgeResumeAt"
+        static let tunnelChoice = "RemoteTunnelChoice"
     }
 
     init(services: BridgeServices) {
@@ -334,8 +408,7 @@ final class BridgeAppModel {
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
-        // Off by default, also after upgrading (D1).
-        mcpEnabled = defaults.bool(forKey: Keys.mcpEnabled)
+        localMCPAllowed = defaults.object(forKey: Keys.localMCPAllowed) as? Bool ?? true
         let port = defaults.integer(forKey: Keys.mcpPort)
         mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
         newAgentApproval = ApprovalMode(rawValue: defaults.string(forKey: Keys.approvalAgent) ?? "") ?? .ask
@@ -351,12 +424,28 @@ final class BridgeAppModel {
         let offAt = defaults.double(forKey: Keys.remoteOffAt)
         remoteOffAt = offAt > 0 ? Date(timeIntervalSinceReferenceDate: offAt) : nil
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
+        if let tunnel = defaults.string(forKey: Keys.tunnelChoice).flatMap(TunnelProvider.init(rawValue:)) {
+            tunnelChoice = tunnel
+        }
+        connectionAgents = ConnectionAgentKinds.load(defaults)
+        let resume = defaults.double(forKey: Keys.resumeAt)
+        resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
         switch defaults.string(forKey: Keys.lastRoute) {
         case "activity": route = .activity
         case "settings": route = .settings
+        case "remote": route = .remoteAccess
         default: route = .overview
         }
         refresh()
+        // First launch of 0.9: the local server follows EK Bridge unless the
+        // user turned it off and no connection uses MCP.
+        if defaults.object(forKey: Keys.localMCPAllowed) == nil {
+            localMCPAllowed = MCPRunPolicy.migratedAllowed(
+                old: defaults.object(forKey: Keys.mcpEnabled) as? Bool,
+                hasMCPConnections: activeClients.contains(where: \.hasMCPToken))
+            defaults.set(localMCPAllowed, forKey: Keys.localMCPAllowed)
+            defaults.set(localMCPAllowed, forKey: Keys.mcpEnabled)
+        }
         // On the first launch with this setting, history counts as seen, so
         // only problems from now on raise the badge.
         if activityLastViewed == nil, let latest = activity.first?.at {
@@ -366,7 +455,7 @@ final class BridgeAppModel {
         // Installs that already served a request never see the checklist,
         // even if the bridge is off right now. Right after the rename they do:
         // macOS asks for access again under the new bundle ID.
-        if !setupCompleted, !renameAccessRecheck, SetupChecklist.isDone(.testRequest, checklistInput) {
+        if !setupCompleted, !renameAccessRecheck, SetupChecklist.isDone(.connect, checklistInput) {
             setupCompleted = true
             defaults.set(true, forKey: Keys.setupCompleted)
         }
@@ -374,7 +463,7 @@ final class BridgeAppModel {
 
     func start() {
         started = true
-        if mcpEnabled { services.mcp.start(mcpPort) }
+        syncMCPServer()
         if remoteEnabled {
             if let offAt = remoteOffAt, offAt <= Date() {
                 applyRemoteEnabled(false)
@@ -439,6 +528,7 @@ final class BridgeAppModel {
             if clients != current { clients = current }
             let entries = ActivityEntry.entries(from: services.registry.activity() ?? [])
             if entries != activity { activity = entries }
+            pruneConnectionAgents()
         } else {
             policyStoreAvailable = false
             clients = []
@@ -452,15 +542,19 @@ final class BridgeAppModel {
             isInstalledInApplications = services.isInstalledInApplications()
             refreshCommandLineTool()
             refreshUpdater()
+            let agents = services.installedAgents()
+            if agents != installedAgents { installedAgents = agents }
         }
         reconcileDraft()
         reconcileRoute()
         updateTestCollectionsState()
         if route == .activity && windowIsVisible() { markActivityViewed() }
+        syncMCPServer()
         checkSetupCompletion()
     }
 
-    private func tick() {
+    /// Every 2 s (internal for the behavior test).
+    func tick() {
         let before = (calendarAccess, remindersAccess)
         updateAccess()
         if before.0 != calendarAccess || before.1 != remindersAccess {
@@ -469,6 +563,7 @@ final class BridgeAppModel {
             now = Date()
         }
         if let saved = savedToastAt, Date().timeIntervalSince(saved) > 2.5 { savedToastAt = nil }
+        if let resume = resumeAt, resume <= Date() { resumeAsScheduled() }
         if remoteEnabled, let offAt = remoteOffAt, offAt <= Date() {
             applyRemoteEnabled(false)
             showBanner(Banner(kind: .info, title: String(localized: "Remote Access turned off, as scheduled.")))
@@ -489,6 +584,127 @@ final class BridgeAppModel {
     func bridgeDidChange(_ state: BridgeRunState) {
         if bridge != state { bridge = state }
         refresh()
+    }
+
+    // MARK: Agents (B04)
+
+    /// The agent a connection's Connect tab sets up.
+    func agent(for clientID: String) -> AgentKind {
+        agentChoice[clientID] ?? connectionAgents[clientID] ?? .claudeCode
+    }
+
+    /// Remembers a connection's agent: when it's added, and when the user
+    /// picks another agent in Connect.
+    func setAgent(_ kind: AgentKind, for clientID: String) {
+        agentChoice[clientID] = kind
+        guard connectionAgents[clientID] != kind else { return }
+        connectionAgents[clientID] = kind
+        ConnectionAgentKinds.save(connectionAgents, services.defaults)
+    }
+
+    /// Removed connections forget their agent.
+    private func pruneConnectionAgents() {
+        let kept = ConnectionAgentKinds.pruned(connectionAgents, activeIDs: Set(activeClients.map(\.id)))
+        guard kept != connectionAgents else { return }
+        connectionAgents = kept
+        ConnectionAgentKinds.save(kept, services.defaults)
+    }
+
+    // MARK: One-click setup (B07)
+
+    /// What a connection's agent setup points at: this app's launcher and token file.
+    func setupContext(_ clientID: String) -> SetupContext {
+        SetupContext(url: mcpURL, launcherPath: launcherPath, clientID: clientID,
+                     tokenPath: tokenFileURL(clientID)?.path ?? "")
+    }
+
+    func oneClickResult(_ clientID: String, _ agent: AgentKind) -> OneClickResult? {
+        oneClickDone["\(clientID)|\(agent.rawValue)"]
+    }
+
+    /// Add to <Agent>…: builds the change and opens the preview sheet. Nothing
+    /// is written until the user clicks Add there.
+    func beginOneClick(_ clientID: String, agent: AgentKind? = nil) {
+        let agent = agent ?? self.agent(for: clientID)
+        guard agent.oneClick, client(clientID)?.hasMCPToken == true else { return }
+        oneClick = OneClickSession(clientID: clientID, agent: agent, phase: .loading)
+        sheet = .configPreview
+        services.agentSetup.preview(agent, setupContext(clientID)) { [weak self] result in
+            guard let self, self.oneClick?.clientID == clientID, self.oneClick?.phase == .loading else { return }
+            switch result {
+            case .success(let preview): self.oneClick?.phase = .preview(preview)
+            case .failure(let failure): self.oneClick?.phase = .failed(failure)
+            }
+        }
+    }
+
+    /// Add (or Replace) in the preview sheet.
+    func confirmOneClick() {
+        guard let session = oneClick, case .preview(let preview) = session.phase else { return }
+        oneClick?.phase = .running(preview)
+        services.agentSetup.apply(preview) { [weak self] result in
+            guard let self, self.oneClick?.clientID == session.clientID else { return }
+            switch result {
+            case .success(let done):
+                self.oneClickDone["\(session.clientID)|\(session.agent.rawValue)"] = done
+                self.setAgent(session.agent, for: session.clientID)
+                if case .file = preview {
+                    // A file agent is done: close the sheet and say where the backup is.
+                    self.oneClick = nil
+                    self.sheet = nil
+                    self.showBanner(Banner(
+                        kind: .success,
+                        title: done.alreadySetUp ? String(localized: "\(session.agent.displayName) was already set up.")
+                                                 : String(localized: "Added to \(session.agent.displayName)."),
+                        message: done.backup.map { String(localized: "Backup: \($0.lastPathComponent)") },
+                        actionTitle: done.backup == nil ? nil : String(localized: "Show in Finder"),
+                        action: done.backup.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } }))
+                } else {
+                    self.oneClick?.phase = .done(done)
+                }
+            case .failure(let failure):
+                self.oneClick?.phase = .failed(failure)
+            }
+        }
+    }
+
+    func closeOneClick() {
+        oneClick = nil
+        if sheet == .configPreview { sheet = nil }
+    }
+
+    /// Restart Claude Desktop: quits it, waits up to 5 s, opens it again.
+    func restartAgent(_ agent: AgentKind) {
+        guard restarting == nil else { return }
+        restarting = agent
+        services.agentSetup.restart(agent) { [weak self] restarted in
+            guard let self else { return }
+            self.restarting = nil
+            if !restarted {
+                self.showBanner(Banner(kind: .warning,
+                                       title: String(localized: "\(agent.displayName) didn't quit."),
+                                       message: String(localized: "Quit \(agent.displayName) and open it again.")))
+            }
+        }
+    }
+
+    /// The Remote Access page (B10).
+    func showRemoteAccess() { show(.remoteAccess) }
+
+    var remoteGuideStep: RemoteGuide.Step {
+        let reachable: Bool = if case .reachable = remoteTest { true } else { false }
+        return RemoteGuide.step(tunnelChosen: tunnelChosen, remoteOn: remoteEnabled,
+                                // Editing the address means the tunnel was started.
+                                started: remoteTunnelStarted || remoteEditingAddress,
+                                origin: remoteEditingAddress ? nil : remoteOrigin,
+                                reachable: reachable)
+    }
+
+    /// Guide step 1: forget the choice, so the tunnel chips show again.
+    func chooseTunnelAgain() {
+        services.defaults.removeObject(forKey: Keys.tunnelChoice)
+        remoteTunnelStarted = false
+        remoteGuideActive = true
     }
 
     // MARK: Derived state
@@ -524,9 +740,9 @@ final class BridgeAppModel {
 
     /// Names are resolved at display time, so renames show everywhere at once.
     func clientName(_ id: String?) -> String {
-        guard let id else { return String(localized: "Unknown client") }
-        guard let client = client(id) else { return String(localized: "Removed client") }
-        return client.revoked ? String(localized: "\(client.name) (revoked)") : client.name
+        guard let id else { return String(localized: "Unknown connection") }
+        guard let client = client(id) else { return String(localized: "Removed connection") }
+        return client.revoked ? String(localized: "\(client.name) (removed)") : client.name
     }
 
     var problems: [AttentionProblem] {
@@ -538,6 +754,48 @@ final class BridgeAppModel {
     }
 
     var needsAttention: Bool { !problems.isEmpty }
+
+    /// Overview's Needs you (B12). Problems Overview already shows as a
+    /// banner or in its header (settings unreadable, MCP or EK Bridge
+    /// failing to start) aren't repeated.
+    var needsYouItems: [NeedsYouItem] {
+        let shown = problems.filter {
+            switch $0 {
+            case .policyStoreUnavailable, .mcpServerFailed, .bridgeFailed: false
+            default: true
+            }
+        }
+        let unavailable = activeClients.flatMap { client in
+            unavailableGrants(client, staged: false).map { key in
+                NeedsYou.Unavailable(connectionID: client.id, connectionName: client.name, key: key,
+                                     name: unavailableName(key),
+                                     mask: client.grants.first { $0.resource == key.resource && $0.targetID == key.targetID }?.mask ?? 0)
+            }
+        }
+        return NeedsYou.items(pendingApprovals: pendingApprovalCount, problems: shown, unavailable: unavailable,
+                              unseenProblems: unseenProblemCount, lastViewed: activityLastViewed,
+                              update: foundUpdate.map { ($0.version, $0.critical) }, updateCardShown: showsUpdateCard)
+    }
+
+    /// Needs you ▸ refused requests: Activity with Problems only.
+    func openProblems() {
+        openActivity()
+        activityProblemsOnly = true
+    }
+
+    /// The fix for a problem, shared by the menu bar and Overview's Needs you.
+    func fix(_ problem: AttentionProblem) {
+        switch problem {
+        case .calendarAccess: openPrivacySettings(.calendar)
+        case .remindersAccess: openPrivacySettings(.reminderList)
+        case .policyStoreUnavailable, .bridgeFailed: show(.overview)
+        case .mcpServerFailed:
+            settingsScrollTarget = "mcp"
+            show(.settings)
+        case .remoteAccessFailed:
+            show(.remoteAccess)
+        }
+    }
 
     func lastRequest(for clientID: String) -> Date? {
         ActivityStats.lastRequest(for: clientID, in: activity)
@@ -574,10 +832,12 @@ final class BridgeAppModel {
 
     /// The header subtitle for the menu and the status item tooltip.
     var statusSubtitle: String {
-        if !policyStoreAvailable { return String(localized: "Client settings can't be read") }
+        if !policyStoreAvailable { return String(localized: "Connection settings can't be read") }
         switch bridge {
-        case .failed: return String(localized: "Off · the bridge couldn't start")
-        case .off: return String(localized: "Off · requests are refused")
+        case .failed: return String(localized: "Paused · \(AppIdentity.displayName) couldn't start")
+        case .off:
+            guard let resumeAt else { return String(localized: "Paused · agents and scripts are refused") }
+            return String(localized: "Paused \(PauseSchedule.untilText(resumeAt, now: now)) · agents and scripts are refused")
         case .on:
             let failing = problems.compactMap { problem -> String? in
                 switch problem {
@@ -586,10 +846,10 @@ final class BridgeAppModel {
                 default: nil
                 }
             }
-            if let first = failing.first { return String(localized: "On · \(first)") }
+            if let first = failing.first { return first.capitalizingFirstLetter }
+            // The header already says "EK Bridge is on".
             let count = activeClients.count - pausedCount
-            var parts = [String(localized: "On"),
-                         count == 1 ? String(localized: "1 client") : String(localized: "\(count) clients")]
+            var parts = [count == 1 ? String(localized: "1 connection") : String(localized: "\(count) connections")]
             if pausedCount > 0 { parts.append(String(localized: "\(pausedCount) paused")) }
             if let last = activity.first?.at {
                 parts.append(String(localized: "last request \(RelativeTime.ago(last, now: now).lowercased())"))
@@ -624,6 +884,7 @@ final class BridgeAppModel {
         case .overview: services.defaults.set("overview", forKey: Keys.lastRoute)
         case .activity: services.defaults.set("activity", forKey: Keys.lastRoute)
         case .settings: services.defaults.set("settings", forKey: Keys.lastRoute)
+        case .remoteAccess: services.defaults.set("remote", forKey: Keys.lastRoute)
         case .client: break
         }
         reconcileDraft()
@@ -728,14 +989,55 @@ final class BridgeAppModel {
 
     // MARK: Bridge
 
+    /// The switch and Turn On EK Bridge. Any manual change ends a scheduled pause.
     func setBridgeEnabled(_ on: Bool) {
         confirmUnsaved { [weak self] in
             guard let self else { return }
+            self.setResumeAt(nil)
             let state = self.services.setBridge(on)
             // Changes waiting for approval are refused when the bridge goes off.
             if !state.isOn { self.services.approvals?.withdrawAll() }
             self.bridgeDidChange(state)
         }
+    }
+
+    /// Pause EK Bridge ▸ For 1 Hour, Until Tomorrow (8:00) or Until I Turn
+    /// It On (`date` nil).
+    func pause(until date: Date?) {
+        confirmUnsaved { [weak self] in
+            guard let self else { return }
+            let state = self.services.setBridge(false)
+            if !state.isOn { self.services.approvals?.withdrawAll() }
+            self.setResumeAt(date)
+            self.bridgeDidChange(state)
+        }
+    }
+
+    func pause(for choice: PauseChoice) {
+        pause(until: PauseSchedule.resumeDate(choice, now: Date()))
+    }
+
+    private func setResumeAt(_ date: Date?) {
+        resumeAt = date
+        services.defaults.set(date?.timeIntervalSinceReferenceDate ?? 0, forKey: Keys.resumeAt)
+    }
+
+    /// The scheduled end of a pause. Turning on needs no unsaved-edits guard.
+    private func resumeAsScheduled() {
+        setResumeAt(nil)
+        guard !bridge.isOn else { return }
+        let state = services.setBridge(true)
+        bridgeDidChange(state)
+        if state.isOn {
+            showBanner(Banner(kind: .info, title: String(localized: "\(AppIdentity.displayName) turned back on, as scheduled.")))
+        }
+    }
+
+    /// "EK Bridge is on", "EK Bridge is paused" or "EK Bridge is paused until 3:40 PM".
+    var bridgeTitle: String {
+        if bridge.isOn { return String(localized: "\(AppIdentity.displayName) is on") }
+        guard let resumeAt else { return String(localized: "\(AppIdentity.displayName) is paused") }
+        return String(localized: "\(AppIdentity.displayName) is paused \(PauseSchedule.untilText(resumeAt, now: now))")
     }
 
     // MARK: macOS access
@@ -766,12 +1068,28 @@ final class BridgeAppModel {
 
     // MARK: Clients
 
-    func beginNewClient() {
+    /// The tile Add a Connection opens with (setup's "Add a command-line connection…").
+    var newConnectionPreset: AddConnectionTile?
+    /// The starting access the sheet opens with (UI review snapshots).
+    var newConnectionAccessPreset: StartingAccessChoice?
+
+    func beginNewClient(preset: AddConnectionTile? = nil) {
         guard policyStoreAvailable, activeClients.count < ClientRegistry.maxActiveClients else { return }
         confirmUnsaved { [weak self] in
             self?.showWindow()
+            self?.newConnectionPreset = preset
             self?.sheet = .newClient
         }
+    }
+
+    /// "Claude Code", or "Claude Code 2", "Claude Code 3"… when taken.
+    func suggestedName(_ base: String) -> String {
+        if nameIssue(base) == nil { return base }
+        for number in 2...99 {
+            let candidate = "\(base) \(number)"
+            if nameIssue(candidate) == nil { return candidate }
+        }
+        return base
     }
 
     var canCreateClient: Bool {
@@ -787,10 +1105,12 @@ final class BridgeAppModel {
         kind == .cli ? newCLIApproval : newAgentApproval
     }
 
-    /// Creates a client and its credential files. Returns an issue only for
-    /// name problems the sheet shows inline; every other outcome closes it.
-    func createClient(name: String, kind: ClientKind = .agent,
-                      askBeforeChanges: Bool? = nil) -> ClientNameIssue? {
+    /// Creates a connection, its credential files and its starting access
+    /// (B05). Returns an issue only for name problems the sheet shows inline;
+    /// every other outcome closes it. `cloud` opens Connect at From the cloud.
+    func createClient(name: String, kind: ClientKind = .agent, askBeforeChanges: Bool? = nil,
+                      startingAccess: StartingAccess = .nothing, agent: AgentKind? = nil,
+                      cloud: Bool = false) -> ClientNameIssue? {
         if let issue = nameIssue(name) { return issue }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let approval = askBeforeChanges.map { $0 ? ApprovalMode.ask : .allow } ?? defaultApproval(for: kind)
@@ -819,22 +1139,41 @@ final class BridgeAppModel {
                 return nil
             }
             refresh()
+            if let agent { setAgent(agent, for: issued.id) }
+            let listed = collections.sortedForDisplay().map { (key: $0.key, writable: $0.writable) }
+            let starting = StartingAccess.grants(startingAccess, listed: listed)
+            var saveFailure: ClientRegistryError?
+            if !starting.grants.isEmpty,
+               case .failure(let error) = services.registry.replaceGrants(clientID: issued.id, grants: starting.grants) {
+                saveFailure = error
+            }
+            refresh()
             go(.client(issued.id))
-            clientScrollTarget = "access"
             connectTab[issued.id] = kind == .cli ? .cli : .agent
-            showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was created."),
-                              message: kind == .cli
-                                ? String(localized: "It has no access yet. Choose calendars and lists below, then Save.")
-                                : String(localized: "Choose what it can use below, then Save. Then connect your agent from Connect ▸ AI agent.")))
+            if let saveFailure {
+                clientScrollTarget = "access"
+                showBanner(Banner(kind: .error, title: String(localized: "\(trimmed) was added, but its starting access couldn't be saved."),
+                                  message: String(localized: "Choose what it can use, then Save."),
+                                  code: saveFailure.rawValue))
+            } else if startingAccess == .nothing || starting.grants.isEmpty {
+                clientScrollTarget = "access"
+                showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
+                                  message: String(localized: "Choose what it can use, then Save.")))
+            } else if starting.capped {
+                showBanner(Banner(kind: .info, title: String(localized: "\(trimmed) was added."),
+                                  message: String(localized: "Read access was given to \(starting.grants.count) of \(listed.count) calendars and lists; choose the rest in Access.")))
+            } else if cloud {
+                clientScrollTarget = "cloud"
+            }
         case .failure(.duplicateName):
             return .duplicate(trimmed)
         case .failure(.invalidName):
             return ClientRegistry.nameShapeIssue(name) ?? .empty
         case .failure(let error):
             sheet = nil
-            showBanner(Banner(kind: .error, title: String(localized: "Couldn't create the client."),
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't add the connection."),
                               message: error == .limitReached
-                                ? String(localized: "You have 32 active clients, the maximum. Revoke one to add another.")
+                                ? String(localized: "You have 32 connections, the maximum. Remove one to add another.")
                                 : String(localized: "Nothing was changed."),
                               code: error.rawValue))
         }
@@ -866,7 +1205,7 @@ final class BridgeAppModel {
             return ClientRegistry.nameShapeIssue(name) ?? .empty
         case .failure(let error):
             sheet = nil
-            showBanner(Banner(kind: .error, title: String(localized: "Couldn't rename the client."),
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't rename the connection."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
             return nil
         }
@@ -902,7 +1241,7 @@ final class BridgeAppModel {
         }
         if fileStatus == .unsafe {
             showBanner(Banner(kind: .warning, title: String(localized: "The key file isn't safe to replace."),
-                              message: String(localized: "Check its permissions in Finder, or revoke this client and create a new one."),
+                              message: String(localized: "Check its permissions in Finder, or remove this connection and add a new one."),
                               actionTitle: String(localized: "Show in Finder"),
                               action: { [weak self] in self?.showKeyFile(client.id) }))
             return
@@ -956,8 +1295,8 @@ final class BridgeAppModel {
                          message: String(localized: "Its next request is handled as before.")))
         case .failure(let error):
             showBanner(Banner(kind: .error,
-                              title: paused ? String(localized: "Couldn't pause the client.")
-                                            : String(localized: "Couldn't resume the client."),
+                              title: paused ? String(localized: "Couldn't pause the connection.")
+                                            : String(localized: "Couldn't resume the connection."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
         }
     }
@@ -970,9 +1309,9 @@ final class BridgeAppModel {
     private func confirmRevoke(_ client: ClientView) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "Revoke “\(client.name)”?")
-        alert.informativeText = String(localized: "Its key and MCP token stop working and all of its access is removed. You can’t undo this. To reconnect this tool later, create a new client.")
-        let revoke = alert.addButton(withTitle: String(localized: "Revoke"))
+        alert.messageText = String(localized: "Remove “\(client.name)”?")
+        alert.informativeText = String(localized: "The agent or script using it stops working: its key and MCP token are deleted and all of its access is removed. You can’t undo this. To reconnect it later, add a new connection.")
+        let revoke = alert.addButton(withTitle: String(localized: "Remove"))
         revoke.hasDestructiveAction = true
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -987,17 +1326,17 @@ final class BridgeAppModel {
                 self.go(.overview)
                 switch removed {
                 case .success:
-                    self.showBanner(Banner(kind: .success, title: String(localized: "“\(client.name)” was revoked."),
+                    self.showBanner(Banner(kind: .success, title: String(localized: "“\(client.name)” was removed."),
                                            message: String(localized: "Its credential files were removed.")))
                 case .failure(let error):
                     self.showBanner(Banner(
-                        kind: .warning, title: String(localized: "“\(client.name)” was revoked, but a credential file couldn’t be removed."),
+                        kind: .warning, title: String(localized: "“\(client.name)” was removed, but a credential file couldn’t be deleted."),
                         message: String(localized: "Its key no longer works. Check the file before continuing."),
                         code: error.rawValue, actionTitle: String(localized: "Show in Finder"),
                         action: { [weak self] in self?.showKeyFile(client.id) }))
                 }
             case .failure(let error):
-                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't revoke the client."),
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't remove the connection."),
                                        message: String(localized: "Nothing was changed."), code: error.rawValue))
             }
         }
@@ -1011,11 +1350,11 @@ final class BridgeAppModel {
         if case .failure = removed { cleanedUp = false }
         if cleanedUp {
             showBanner(Banner(kind: .warning, title: title,
-                              message: String(localized: "The client was removed so no unused key is left behind. Check that Application Support isn’t full or locked, then try again."),
+                              message: String(localized: "The connection was removed so no unused key is left behind. Check that Application Support isn’t full or locked, then try again."),
                               code: code))
         } else {
             showBanner(Banner(kind: .warning, title: title,
-                              message: String(localized: "Cleanup didn’t finish. Turn off the bridge and check this client’s key file before continuing."),
+                              message: String(localized: "Cleanup didn’t finish. Pause \(AppIdentity.displayName) and check this connection’s key file before continuing."),
                               code: code, actionTitle: String(localized: "Show in Finder"),
                               action: { [weak self] in self?.showKeyFile(clientID) }))
         }
@@ -1040,6 +1379,62 @@ final class BridgeAppModel {
         case .noAccess: mask = 0
         }
         setMask(collection.key, mask, actionName: String(localized: "Change Access"))
+    }
+
+    /// Turn On for All / Turn Off for All in an access table header (B06):
+    /// `bit` on every visible row that allows it. On implies Read; turning
+    /// Read off clears the write actions too, after a confirmation when that
+    /// clears more than 5 write cells. One undo step.
+    func applyColumn(bit: Int, on: Bool, rows: [CollectionInfo]) {
+        guard let draft else { return }
+        var changes = [GrantKey: Int]()
+        for row in rows {
+            let allowed = ClientGrantEditing.allowedMask(resource: row.resource, writable: row.writable)
+            guard allowed & bit != 0 else { continue }
+            let old = draft.mask(row.key)
+            let next = on ? ClientGrantEditing.toggling(old, bit: bit, on: true)
+                : bit == ClientGrant.read ? 0 : old & ~bit
+            if next != old { changes[row.key] = next }
+        }
+        guard !changes.isEmpty else { return }
+        let clearedWrites = changes.filter { key, mask in
+            draft.mask(key) & ~ClientGrant.read != 0 && mask & ~ClientGrant.read == 0
+        }
+        let writeCells = clearedWrites.reduce(0) { $0 + (draft.mask($1.key) & ~ClientGrant.read).nonzeroBitCount }
+        guard !on, bit == ClientGrant.read, writeCells > 5 else {
+            setMasks(changes, actionName: String(localized: "Change Access"))
+            return
+        }
+        let resource = rows.first?.resource ?? .calendar
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Turn off Read for all?")
+        alert.informativeText = resource == .calendar
+            ? String(localized: "This also turns off Create, Edit and Delete on \(clearedWrites.count) calendars.")
+            : String(localized: "This also turns off Create, Edit, Delete and Complete on \(clearedWrites.count) lists.")
+        alert.addButton(withTitle: String(localized: "Turn Off"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.setMasks(changes, actionName: String(localized: "Change Access"))
+        }
+    }
+
+    /// Several rows at once, undone together.
+    private func setMasks(_ changes: [GrantKey: Int], actionName: String) {
+        guard var current = draft else { return }
+        var old = [GrantKey: Int]()
+        for (key, mask) in changes {
+            old[key] = current.mask(key)
+            current.set(key, mask: mask)
+        }
+        draft = current
+        savedToastAt = nil
+        if let undo = window?.undoManager {
+            undo.registerUndo(withTarget: self) { model in
+                MainActor.assumeIsolated { model.setMasks(old, actionName: actionName) }
+            }
+            undo.setActionName(actionName)
+        }
     }
 
     func removeUnavailable(_ key: GrantKey) {
@@ -1086,7 +1481,7 @@ final class BridgeAppModel {
         case .failure(.unavailable):
             // The registry stops all access after a write failure until the app restarts.
             showBanner(Banner(kind: .error, title: String(localized: "Couldn't save."),
-                              message: String(localized: "Client settings can't be written, so nothing was changed and clients can't connect. Quit and reopen the app, then make the changes again."),
+                              message: String(localized: "Connection settings can't be written, so nothing was changed and agents and scripts can't connect. Quit and reopen the app, then make the changes again."),
                               code: ClientRegistryError.unavailable.rawValue))
             return false
         case .failure(let error):
@@ -1138,6 +1533,7 @@ final class BridgeAppModel {
         confirmUnsaved { [weak self] in
             guard let self else { return }
             self.go(.client(clientID))
+            self.clientTab[clientID] = .access
             self.clientScrollTarget = "access"
             if let key {
                 self.accessTab[clientID] = key.resource
@@ -1271,8 +1667,30 @@ final class BridgeAppModel {
 
     func copyTestCommand() {
         guard let client = SetupChecklist.focusClient(checklistInput) else { return }
+        if !bridge.isOn { setBridgeEnabled(true) }
         Pasteboard.copy(ConnectCommand.scopeStatus(for: client, among: clients, program: cliProgram))
         waitingForTestRequest = true
+    }
+
+    /// Setup's Connect step (B09): turns EK Bridge on, then Add to <Agent>…
+    /// for one-click agents, or the connection's Connect tab.
+    func connectFromSetup(_ client: ClientView) {
+        if !bridge.isOn { setBridgeEnabled(true) }
+        waitingForTestRequest = true
+        if agent(for: client.id).oneClick {
+            beginOneClick(client.id)
+        } else {
+            clientTab[client.id] = .connect
+            connectTab[client.id] = .agent
+            navigate(to: .client(client.id))
+        }
+    }
+
+    /// Setup's "Copy the setup instead": the connection's Connect tab with the snippet.
+    func copySetupFromSetup(_ client: ClientView) {
+        copySetup.insert(client.id)
+        clientTab[client.id] = .connect
+        navigate(to: .client(client.id))
     }
 
     private func checkSetupCompletion() {
@@ -1432,9 +1850,32 @@ final class BridgeAppModel {
         return nil
     }
 
-    /// Text for an enabled server that failed; nil otherwise.
+    /// Whether the local MCP server should be listening (D1): EK Bridge is
+    /// on, the user allows it, and a connection uses MCP.
+    var mcpShouldRun: Bool {
+        MCPRunPolicy.shouldRun(bridgeOn: bridge.isOn, allowed: localMCPAllowed,
+                               hasMCPConnections: activeClients.contains(where: \.hasMCPToken))
+    }
+
+    /// Starts or stops the listener when `mcpShouldRun` changes. Called on
+    /// every refresh (connections, tokens and the bridge state change there).
+    private func syncMCPServer() {
+        guard started else { return }
+        let should = mcpShouldRun
+        guard should != mcpStarted else { return }
+        mcpStarted = should
+        if should {
+            mcpStatus = .starting
+            services.mcp.start(mcpPort)
+        } else {
+            services.mcp.stop()
+            mcpStatus = .off
+        }
+    }
+
+    /// Text for a running server that failed; nil otherwise.
     var mcpFailureText: String? {
-        guard mcpEnabled, case .failed(let failure) = mcpStatus else { return nil }
+        guard mcpStarted, case .failed(let failure) = mcpStatus else { return nil }
         switch failure {
         case .portInUse(let port):
             return String(localized: "Port \(String(port)) is in use by another app.")
@@ -1444,18 +1885,21 @@ final class BridgeAppModel {
     }
 
     var mcpPortInUse: Bool {
-        if case .failed(.portInUse) = mcpStatus { return mcpEnabled }
+        if case .failed(.portInUse) = mcpStatus { return mcpStarted }
         return false
     }
 
-    /// The short line for Overview and the menu bar.
-    var mcpStatusLine: String {
-        if !mcpEnabled { return String(localized: "MCP server · Off") }
+    /// The short line for Overview and the menu bar; nil while EK Bridge is
+    /// paused (the header says so) or when no connection uses MCP.
+    var mcpStatusLine: String? {
+        guard bridge.isOn else { return nil }
+        if !localMCPAllowed { return String(localized: "Local MCP server is off (Settings ▸ Advanced)") }
+        guard mcpStarted else { return nil }
         switch mcpStatus {
-        case .listening(let port): return String(localized: "MCP server · Listening on port \(String(port))")
-        case .failed(.portInUse(let port)): return String(localized: "MCP server · Port \(String(port)) is in use")
-        case .failed: return String(localized: "MCP server · Couldn't start")
-        case .starting, .off: return String(localized: "MCP server · Starting…")
+        case .listening(let port): return String(localized: "MCP on port \(String(port))")
+        case .failed(.portInUse(let port)): return String(localized: "MCP couldn't start · port \(String(port)) is in use")
+        case .failed: return String(localized: "MCP couldn't start")
+        case .starting, .off: return String(localized: "MCP starting…")
         }
     }
 
@@ -1474,17 +1918,18 @@ final class BridgeAppModel {
         }
     }
 
-    /// `confirm: false` skips the "agents used it recently" question (UI review).
-    func setMCPServerEnabled(_ on: Bool, confirm: Bool = true) {
-        guard on != mcpEnabled else { return }
+    /// Settings ▸ Advanced ▸ Local MCP server. `confirm: false` skips the
+    /// "agents used it recently" question (UI review, live-test automation).
+    func setLocalMCPAllowed(_ on: Bool, confirm: Bool = true) {
+        guard on != localMCPAllowed else { return }
         if on || !confirm {
-            applyMCPEnabled(on)
+            applyLocalMCPAllowed(on)
             return
         }
         let recent = Set(mcpConnections.filter { now.timeIntervalSince($0.value.at) < 600 }.map(\.key))
-        guard !recent.isEmpty else { applyMCPEnabled(false); return }
+        guard !recent.isEmpty else { applyLocalMCPAllowed(false); return }
         let alert = NSAlert()
-        alert.messageText = String(localized: "Turn off the MCP server?")
+        alert.messageText = String(localized: "Turn off the local MCP server?")
         alert.informativeText = recent.count == 1
             ? String(localized: "1 agent used it in the last 10 minutes; it'll lose access until you turn it back on.")
             : String(localized: "\(recent.count) agents used it in the last 10 minutes; they'll lose access until you turn it back on.")
@@ -1492,24 +1937,20 @@ final class BridgeAppModel {
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            self?.applyMCPEnabled(false)
+            self?.applyLocalMCPAllowed(false)
         }
     }
 
-    private func applyMCPEnabled(_ on: Bool) {
-        mcpEnabled = on
+    private func applyLocalMCPAllowed(_ on: Bool) {
+        localMCPAllowed = on
+        services.defaults.set(on, forKey: Keys.localMCPAllowed)
         services.defaults.set(on, forKey: Keys.mcpEnabled)
-        if on {
-            services.mcp.start(mcpPort)
-        } else {
-            services.mcp.stop()
-            mcpStatus = .off
-        }
-        announce(on ? String(localized: "MCP server on") : String(localized: "MCP server off"))
+        syncMCPServer()
+        announce(on ? String(localized: "Local MCP server on") : String(localized: "Local MCP server off"))
     }
 
     func retryMCPServer() {
-        guard mcpEnabled else { return }
+        guard mcpStarted else { return }
         services.mcp.start(mcpPort)
     }
 
@@ -1534,7 +1975,7 @@ final class BridgeAppModel {
         guard port != mcpPort || !mcpIsListening else { return nil }
         mcpPort = port
         services.defaults.set(port, forKey: Keys.mcpPort)
-        if mcpEnabled { services.mcp.start(port) }
+        if mcpStarted { services.mcp.start(port) }
         showBanner(Banner(kind: .success, title: String(localized: "The MCP server now uses port \(String(port))."),
                           message: String(localized: "Agents set up with a direct URL need the new address. Launcher setups keep working.")))
         return nil
@@ -1589,17 +2030,17 @@ final class BridgeAppModel {
     func applyApprovalToAll(_ mode: ApprovalMode) {
         let changing = activeClients.filter { $0.approval != mode }
         guard !changing.isEmpty else {
-            showBanner(Banner(kind: .info, title: String(localized: "Every client already uses this setting.")))
+            showBanner(Banner(kind: .info, title: String(localized: "Every connection already uses this setting.")))
             return
         }
         let alert = NSAlert()
         alert.messageText = mode == .ask
-            ? String(localized: "Ask before every change from all clients?")
-            : String(localized: "Allow changes from all clients without asking?")
+            ? String(localized: "Ask before every change from all connections?")
+            : String(localized: "Allow changes from all connections without asking?")
         alert.informativeText = changing.count == 1
-            ? String(localized: "1 client changes. Each client can still be changed on its page.")
-            : String(localized: "\(changing.count) clients change. Each client can still be changed on its page.")
-        alert.addButton(withTitle: String(localized: "Apply to All Clients"))
+            ? String(localized: "1 connection changes. Each one can still be changed on its page.")
+            : String(localized: "\(changing.count) connections change. Each one can still be changed on its page.")
+        alert.addButton(withTitle: String(localized: "Apply to All Connections"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
@@ -1613,7 +2054,7 @@ final class BridgeAppModel {
             }
             self.refresh()
             if let failed {
-                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't change every client."),
+                self.showBanner(Banner(kind: .error, title: String(localized: "Couldn't change every connection."),
                                        code: failed.rawValue))
             } else {
                 self.showBanner(Banner(kind: .success, title: String(localized: "Saved. Applies to the next change.")))
@@ -1656,19 +2097,63 @@ final class BridgeAppModel {
         }
     }
 
-    /// The agent subtitle on Overview: "claude-code 2.4.1". The time is in its
-    /// own column. "Waiting for the agent…" only until the client's first
-    /// request by any transport.
-    func agentSubtitle(_ client: ClientView) -> String? {
-        guard client.hasMCPToken else { return nil }
-        switch mcpConnection(for: client) {
-        case .waiting:
-            return lastRequest(for: client.id) == nil ? String(localized: "Waiting for the agent…") : nil
-        case .connected(let agent, _):
-            return agent
-        case .refused(let code, _):
-            return String(localized: "Refused: \(OutcomePresentation.of(code).label)")
+    /// Connect until the connection's first successful request, then Access.
+    func defaultTab(_ client: ClientView) -> ClientTab {
+        activity.contains { $0.clientID == client.id && $0.code == "success" } ? .access : .connect
+    }
+
+    func tab(_ client: ClientView) -> ClientTab { clientTab[client.id] ?? defaultTab(client) }
+
+    /// View ▸ Previous Tab / Next Tab on a connection's page.
+    func stepClientTab(_ offset: Int) {
+        guard case .client(let id) = route, let client = client(id), !client.revoked else { return }
+        let all = ClientTab.allCases
+        guard let index = all.firstIndex(of: tab(client)) else { return }
+        clientTab[id] = all[(index + offset + all.count) % all.count]
+    }
+
+    var canStepClientTab: Bool {
+        if case .client(let id) = route, client(id)?.revoked == false { return true }
+        return false
+    }
+
+    /// The header's one status line (B08): connected, waiting, paused or refused.
+    func connectionStatusLine(_ client: ClientView) -> (dot: StatusDot, text: String) {
+        if client.paused {
+            guard let at = client.pausedAt else { return (.neutral, String(localized: "Paused")) }
+            return (.neutral, String(localized: "Paused since \(at.formatted(.dateTime.month(.abbreviated).day().hour().minute()))"))
         }
+        let last = activity.first { $0.clientID == client.id }
+        if let last, last.isProblem {
+            return (.warning, String(localized: "Last request was refused: \(last.outcome.label)"))
+        }
+        let lastText = last.map { String(localized: "last request \(RelativeTime.ago($0.at, now: now).lowercased())") }
+        if client.hasMCPToken, case .connected(let agent, _) = mcpConnection(for: client) {
+            return (.ok, ([String(localized: "Connected")] + [agent, lastText].compactMap { $0 }).joined(separator: " · "))
+        }
+        if let lastText { return (.ok, ([String(localized: "Connected")] + [lastText]).joined(separator: " · ")) }
+        let waiting = client.hasMCPToken
+            ? String(localized: "Waiting for \(agent(for: client.id).displayName)")
+            : String(localized: "Waiting for its first request")
+        return (.waiting, ([waiting] + [startingSummary(client)]).joined(separator: " · "))
+    }
+
+    /// "reads all calendars and lists · asks before changes".
+    func startingSummary(_ client: ClientView) -> String {
+        let readable = Set(client.grants.filter { $0.mask & ClientGrant.read != 0 }
+            .map { GrantKey(resource: $0.resource, targetID: $0.targetID) })
+        let reads: String
+        if client.grants.isEmpty {
+            reads = String(localized: "no access yet")
+        } else if !collections.isEmpty, collections.allSatisfy({ readable.contains($0.key) }) {
+            reads = String(localized: "reads all calendars and lists")
+        } else {
+            reads = AccessSummary.counts(client.grants).lowercasedFirst
+        }
+        let writes = client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
+        guard writes || client.approval == .ask else { return reads }
+        return reads + " · " + (client.approval == .ask ? String(localized: "asks before changes")
+                                                        : String(localized: "changes without asking"))
     }
 
     func turnOnMCPAccess(_ clientID: String) {
@@ -1710,7 +2195,7 @@ final class BridgeAppModel {
                 _ = services.credentialFiles.remove(clientID: client.id, kind: .mcpToken)
                 refresh()
                 showBanner(Banner(kind: .warning, title: String(localized: "Couldn't save the token file."),
-                                  message: String(localized: "MCP access is off for this client. Check that Application Support isn’t full or locked, then try again."),
+                                  message: String(localized: "MCP access is off for this connection. Check that Application Support isn’t full or locked, then try again."),
                                   code: error.rawValue))
                 return
             }
@@ -1816,7 +2301,7 @@ final class BridgeAppModel {
         guard let client = client(clientID), client.hasMCPToken, let url = tokenFileURL(clientID) else { return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Copy the MCP token for “\(client.name)”?")
-        alert.informativeText = String(localized: "Anyone with this token can use \(client.name)'s access while the bridge is on. Paste it only into the agent's settings, and don't share it. The clipboard is cleared in 90 seconds.")
+        alert.informativeText = String(localized: "Anyone with this token can use \(client.name)'s access while \(AppIdentity.displayName) is on. Paste it only into the agent's settings, and don't share it. The clipboard is cleared in 90 seconds.")
         alert.addButton(withTitle: String(localized: "Copy Token"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -1862,8 +2347,8 @@ final class BridgeAppModel {
     /// "Remote Access on · 2 cloud clients", for the menu bar.
     var remoteMenuLine: String {
         let count = cloudClients.count
-        return count == 1 ? String(localized: "Remote Access on · 1 cloud client")
-                          : String(localized: "Remote Access on · \(count) cloud clients")
+        return count == 1 ? String(localized: "Remote Access on · 1 cloud connection")
+                          : String(localized: "Remote Access on · \(count) cloud connections")
     }
 
     /// Overview's line: "Remote Access · Reachable · my-mac.tail1234.ts.net".
@@ -1907,7 +2392,7 @@ final class BridgeAppModel {
         guard on else { applyRemoteEnabled(false); return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Turn on Remote Access?")
-        alert.informativeText = String(localized: "Cloud agents you allow will be able to reach this Mac through a tunnel you set up. Nothing is reachable until you set up a tunnel and allow a client.")
+        alert.informativeText = String(localized: "Cloud agents you allow will be able to reach this Mac through a tunnel you set up. Nothing is reachable until you set up a tunnel and allow a connection.")
         alert.addButton(withTitle: String(localized: "Turn On"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in
@@ -1973,6 +2458,7 @@ final class BridgeAppModel {
     func setRemoteAddress(_ text: String) -> String? {
         if let issue = remoteAddressIssue(text) { return issue }
         sheet = nil
+        remoteEditingAddress = false
         let previous = remoteOrigin
         remoteOrigin = RemoteConfiguration.normalizedOrigin(text)
         services.defaults.set(remoteOrigin, forKey: Keys.remoteOrigin)
@@ -2066,7 +2552,7 @@ final class BridgeAppModel {
         let text = AccessSummary.text(grants: client.grants, collections: collections, hidden: hiddenResources,
                                       unavailableName: unavailableName)
         return client.grants.isEmpty
-            ? String(localized: "This client has no access yet, so cloud agents can't use anything.")
+            ? String(localized: "This connection has no access yet, so cloud agents can't use anything.")
             : String(localized: "Cloud agents can use this from the internet: \(text).")
     }
 
@@ -2113,7 +2599,7 @@ final class BridgeAppModel {
         guard let client = client(clientID), client.cloudAccess else { return }
         let alert = NSAlert()
         alert.messageText = String(localized: "Copy the remote token for “\(client.name)”?")
-        alert.informativeText = String(localized: "Anyone with this token and the URL can use \(client.name)'s access from the internet while Remote Access and the bridge are on. Paste it only into the cloud agent's settings. The clipboard is cleared in 90 seconds.")
+        alert.informativeText = String(localized: "Anyone with this token and the URL can use \(client.name)'s access from the internet while Remote Access and \(AppIdentity.displayName) are on. Paste it only into the cloud agent's settings. The clipboard is cleared in 90 seconds.")
         alert.addButton(withTitle: String(localized: "Copy Remote Token"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         present(alert) { [weak self] response in

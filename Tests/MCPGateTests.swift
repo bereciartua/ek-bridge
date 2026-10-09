@@ -197,7 +197,7 @@ struct MCPGateTests {
         precondition(header(response, "Content-Type") == "application/json")
         precondition(response.headers.count == 2)
         precondition(!response.headers.contains { $0.value.contains("resource_metadata") })
-        let expected = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"EK Bridge doesn't recognize this agent's token. Copy the setup again from the client's page in EK Bridge."}}"#
+        let expected = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"EK Bridge doesn't recognize this agent's token. Copy the setup again from the connection's page in EK Bridge."}}"#
         precondition(NSDictionary(dictionary: object(response.body))
                      .isEqual(to: object(Data(expected.utf8))), "A.4 body")
         precondition((object(response.body)["id"] as? NSNull) != nil, "id is null, not missing")

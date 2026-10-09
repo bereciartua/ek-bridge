@@ -50,6 +50,46 @@ struct SetupSnippet {
     var extraSnippets: [(title: String, kind: Kind, text: String)] = []
 }
 
+/// What Add to <Agent>… does (B07): merge an entry into a JSON config file,
+/// or run the agent's own command. Never contains a token: entries start
+/// the launcher, which reads the token file.
+enum OneClickSetup: Equatable {
+    /// `file` in tilde form; the entry goes under `root` ▸ `key`.
+    case jsonMerge(file: String, root: String, key: String, entry: SetupJSON)
+    /// `claude` with these arguments (an argument array, never a shell string).
+    case claudeCode(key: String, arguments: [String])
+}
+
+extension AgentKind {
+    /// Agents with one-click setup. Others keep Copy (C07 adds more).
+    var oneClick: Bool { [.claudeDesktop, .cursor, .claudeCode].contains(self) }
+
+    /// The one-click setup for the recommended method, matching its snippet.
+    func oneClickSetup(_ c: SetupContext) -> OneClickSetup? {
+        let stdio: [(String, SetupJSON)] = [
+            ("command", .string(c.launcherPath)), ("args", .strings(["--client", c.clientID])),
+        ]
+        switch self {
+        case .claudeDesktop:
+            return .jsonMerge(file: "~/Library/Application Support/Claude/claude_desktop_config.json",
+                              root: "mcpServers", key: c.serverKey, entry: .object(stdio))
+        case .cursor:
+            return .jsonMerge(file: "~/.cursor/mcp.json", root: "mcpServers", key: c.serverKey,
+                              entry: .object([("type", .string("stdio"))] + stdio))
+        case .claudeCode:
+            let helper = "\(ConnectCommand.shellQuoted(c.launcherPath)) headers --client "
+                + "\(SetupShell.word(c.clientID)) --url \(SetupShell.word(c.url))"
+            let json = SetupJSON.object([
+                ("type", .string("http")), ("url", .string(c.url)), ("headersHelper", .string(helper)),
+            ]).text
+            return .claudeCode(key: c.serverKey,
+                               arguments: ["mcp", "add-json", "--scope", "user", c.serverKey, json])
+        default:
+            return nil
+        }
+    }
+}
+
 enum AgentSetup {
     static let tokenEnvironmentVariable = "EK_BRIDGE_TOKEN"
 
@@ -439,7 +479,7 @@ extension CloudAgentKind {
 
     var warnings: [String] {
         let apiRunsTools = String(localized: """
-            The API calls tools without asking you, so this client's grants are the only limit. Give \
+            The API calls tools without asking you, so this connection's grants are the only limit. Give \
             it only the lists it needs.
             """)
         var list: [String]
@@ -453,7 +493,7 @@ extension CloudAgentKind {
                 """)]
         case .copilotAgent:
             list = [String(localized: """
-                Copilot runs MCP tools without asking for approval. Give this client Read-only grants \
+                Copilot runs MCP tools without asking for approval. Give this connection Read-only grants \
                 and keep the tools list to the read tools.
                 """)]
         case .cursorCloud, .devin, .claudeAI, .chatGPT, .geminiEnterprise:
@@ -498,7 +538,7 @@ extension CloudAgentKind {
         case .geminiEnterprise:
             return String(localized: """
                 Gemini Enterprise needs an OAuth client set up ahead of time: Set Up OAuth Client… \
-                creates one for this client. Clicking it again replaces a client that hasn't connected.
+                creates one for this connection. Clicking it again replaces one that hasn't connected.
                 """)
         case .codexCloud:
             return String(localized: """
@@ -511,14 +551,14 @@ extension CloudAgentKind {
     func snippet(_ c: CloudSetupContext) -> SetupSnippet {
         let placeholder = AgentSetup.remoteTokenPlaceholder
         let copyToken = String(localized: """
-            Paste the token from Copy Remote Token… on the “\(c.clientName)” client.
+            Paste the token from Copy Remote Token… on the “\(c.clientName)” connection.
             """)
         let exportToken = String(localized: """
             In Terminal, set \(AgentSetup.remoteTokenEnvironmentVariable) to the remote token (Copy \
             Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
             """)
         let pairing = String(localized: """
-            When it asks you to sign in, open the client “\(c.clientName)” in \(AppIdentity.displayName), \
+            When it asks you to sign in, open the connection “\(c.clientName)” in \(AppIdentity.displayName), \
             choose Connect a Cloud App…, and approve the code you see in both places.
             """)
 
@@ -777,6 +817,22 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
         }
     }
 
+    /// One line for the guide's tunnel choice.
+    var summary: String {
+        switch self {
+        case .tailscaleFunnel:
+            return String(localized: "Free; TLS ends on this Mac. Needs Tailscale installed and signed in.")
+        case .cloudflareTunnel:
+            return String(localized: "Free with your own domain on Cloudflare. TLS ends at Cloudflare.")
+        case .ngrok:
+            return String(localized: "A free dev domain with an ngrok account. TLS ends at ngrok.")
+        case .cloudflareQuick:
+            return String(localized: "No account, but a random address each time. For testing only.")
+        case .other:
+            return String(localized: "Any HTTPS tunnel that forwards to the Remote Access port.")
+        }
+    }
+
     /// Start commands, then `offCommands`, to run in order in Terminal.
     func commands(port: Int, hostname: String?) -> [String] {
         let name = Self.cloudflareTunnelName
@@ -826,7 +882,7 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
 
     var steps: [String] {
         let paste = { (address: String) in
-            String(localized: "Paste \(address) under Address, then click Test.")
+            String(localized: "Paste \(address) in step 3.")
         }
         let controlC = { (tool: String) in
             String(localized: "To turn it off, press Control-C in the Terminal window running \(tool).")
@@ -878,8 +934,8 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
                     local agents use.
                     """),
                 String(localized: """
-                    Have it rewrite Host to 127.0.0.1 and the port, or add its public hostname under \
-                    Address.
+                    Have it rewrite Host to 127.0.0.1 and the port, or keep its public hostname, which \
+                    must then be the address you paste.
                     """),
                 paste(String(localized: "its HTTPS address")),
             ]
@@ -1004,7 +1060,8 @@ private enum SetupValues {
 
 /// Compact JSON with a fixed key order, so snippets match the goldens byte for byte.
 /// Strings go through JSONSerialization; only the punctuation is assembled here.
-private indirect enum SetupJSON {
+/// Also used by one-click setup (`AgentConfigWriter`).
+indirect enum SetupJSON: Equatable {
     case string(String), number(Int), bool(Bool), array([SetupJSON]), object([(String, SetupJSON)])
 
     static func strings(_ values: [String]) -> SetupJSON { .array(values.map { .string($0) }) }
@@ -1023,6 +1080,28 @@ private indirect enum SetupJSON {
                 .joined(separator: ",") + "}"
         }
     }
+
+    /// Pretty text: `unit` per level, starting at `level` (the first line isn't indented).
+    func pretty(unit: String, level: Int) -> String {
+        let inner = String(repeating: unit, count: level + 1)
+        let outer = String(repeating: unit, count: level)
+        switch self {
+        case .array(let items) where !items.isEmpty:
+            // Short arrays of plain values stay on one line, as editors write them.
+            if items.allSatisfy({ if case .array = $0 { false } else if case .object = $0 { false } else { true } }) {
+                return "[" + items.map(\.text).joined(separator: ", ") + "]"
+            }
+            return "[\n" + items.map { inner + $0.pretty(unit: unit, level: level + 1) }
+                .joined(separator: ",\n") + "\n" + outer + "]"
+        case .object(let pairs) where !pairs.isEmpty:
+            return "{\n" + pairs.map { inner + SetupJSON.string($0.0).text + ": " + $0.1.pretty(unit: unit, level: level + 1) }
+                .joined(separator: ",\n") + "\n" + outer + "}"
+        default:
+            return text
+        }
+    }
+
+    static func == (lhs: SetupJSON, rhs: SetupJSON) -> Bool { lhs.text == rhs.text }
 }
 
 private enum SetupTOML {

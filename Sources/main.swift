@@ -8,15 +8,15 @@ enum BridgeErrorText {
         case .alreadyActive?:
             String(localized: "Another copy of \(AppIdentity.displayName) is already running.")
         case .unsafePath?:
-            String(localized: "The bridge's folder in /tmp has unsafe permissions. Quit other copies and try again.")
+            String(localized: "\(AppIdentity.displayName)'s folder in /tmp has unsafe permissions. Quit other copies and try again.")
         case .directoryFailed?, .writeFailed?:
-            String(localized: "The bridge couldn't create its working folder.")
+            String(localized: "\(AppIdentity.displayName) couldn't create its working folder.")
         case nil:
             String(localized: "Something unexpected stopped it.")
         }
     }
 
-    static let policyUnavailable = String(localized: "Client settings can't be read.")
+    static let policyUnavailable = String(localized: "Connection settings can't be read.")
 }
 
 @MainActor
@@ -109,7 +109,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.mcpEnabled, !self.model.mcpIsListening else { return }
+                guard let self, self.model.mcpShouldRun, !self.model.mcpIsListening else { return }
                 self.model.retryMCPServer()
             }
         }
@@ -253,8 +253,16 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 setKeepAwake: { [weak self] in self?.keepAwake.set($0) },
                 onACPower: { KeepAwake.onACPower },
                 oauth: oauth),
-            updater: updater.controls)
+            updater: updater.controls,
+            installedAgents: { [weak self] in self?.installedAgents.current() ?? [] },
+            agentSetup: Self.agentSetup)
     }
+
+    private lazy var installedAgents: InstalledAgentsCache = {
+        let cache = InstalledAgentsCache()
+        cache.changed = { [weak self] in self?.model.scheduleRefresh(collections: true) }
+        return cache
+    }()
 
     private func liveCollections() -> [CollectionInfo] {
         var result = [CollectionInfo]()
@@ -274,6 +282,29 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 
     private static var installedLocation: Bool { AppMover.location == .applications }
+
+    /// One-click setup. The live-test copy writes only into a scratch home
+    /// (EKB_AGENT_HOME) and runs Claude Code only with its own config folder
+    /// (CLAUDE_CONFIG_DIR), so a live test can never change the owner's agents.
+    private static var agentSetup: AgentSetupControls {
+        #if EVENTKIT_LIVE_TEST
+        let environment = ProcessInfo.processInfo.environment
+        guard let home = environment["EKB_AGENT_HOME"], home.hasPrefix("/"), home != NSHomeDirectory() else {
+            return .refusing(String(localized: "The test copy sets agents up only in a scratch home (EKB_AGENT_HOME)."))
+        }
+        let live = OneClickAgents.live(home: home)
+        return AgentSetupControls(
+            preview: { agent, context, done in
+                guard agent != .claudeCode || environment["CLAUDE_CONFIG_DIR"]?.hasPrefix("/") == true else {
+                    return done(.failure(OneClickFailure(message: "The test copy runs Claude Code only with CLAUDE_CONFIG_DIR set.")))
+                }
+                live.preview(agent, context, done)
+            },
+            apply: live.apply, restart: { _, done in done(false) })
+        #else
+        return OneClickAgents.live()
+        #endif
+    }
 
     private var quitGate: UpdateRelaunchGate?
 
@@ -340,6 +371,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func showOverviewPane(_ sender: Any?) { model.show(.overview) }
     @objc func showActivityPane(_ sender: Any?) { model.show(.activity) }
     @objc func findInActivity(_ sender: Any?) { model.focusActivitySearch() }
+    @objc func previousTab(_ sender: Any?) { model.stepClientTab(-1) }
+    @objc func nextTab(_ sender: Any?) { model.stepClientTab(1) }
     @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
@@ -362,8 +395,42 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
         case #selector(checkForUpdates(_:)): model.updaterAvailable
         case #selector(findInActivity(_:)): model.windowIsVisible()
+        case #selector(previousTab(_:)), #selector(nextTab(_:)): model.canStepClientTab
         default: true
         }
+    }
+}
+
+/// Finds installed agents (B04) off the main thread, at most once a minute;
+/// the model reads the last answer on each full refresh.
+@MainActor
+final class InstalledAgentsCache {
+    private var value = Set<AgentKind>()
+    private var checkedAt: Date?
+    private var running = false
+    var changed: () -> Void = {}
+
+    func current() -> Set<AgentKind> {
+        if !running, checkedAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
+            running = true
+            DispatchQueue.global(qos: .utility).async {
+                let probe = AgentProbe(
+                    appURL: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) },
+                    fileExists: { FileManager.default.fileExists(atPath: $0) },
+                    home: NSHomeDirectory())
+                let found = AgentDetection.installed(probe)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        self.running = false
+                        self.checkedAt = Date()
+                        guard found != self.value else { return }
+                        self.value = found
+                        self.changed()
+                    }
+                }
+            }
+        }
+        return value
     }
 }
 
@@ -393,7 +460,7 @@ enum MainMenu {
         app.addItem(item(String(localized: "Quit \(name)"), #selector(NSApplication.terminate(_:)), "q"))
 
         let file = submenu(String(localized: "File"), in: main)
-        file.addItem(item(String(localized: "New Client…"), #selector(BridgeAppDelegate.newClient(_:)), "n", target: target))
+        file.addItem(item(String(localized: "Add a Connection…"), #selector(BridgeAppDelegate.newClient(_:)), "n", target: target))
         file.addItem(.separator())
         file.addItem(item(String(localized: "Save Access"), #selector(BridgeAppDelegate.saveAccess(_:)), "s", target: target))
         file.addItem(item(String(localized: "Revert Access"), #selector(BridgeAppDelegate.revertAccess(_:)), target: target))
@@ -417,6 +484,15 @@ enum MainMenu {
         view.addItem(item(String(localized: "Overview"), #selector(BridgeAppDelegate.showOverviewPane(_:)), "1", target: target))
         view.addItem(item(String(localized: "Activity"), #selector(BridgeAppDelegate.showActivityPane(_:)), "2", target: target))
         view.addItem(item(String(localized: "Settings"), #selector(BridgeAppDelegate.showSettingsPane(_:)), "3", target: target))
+        view.addItem(.separator())
+        for (title, selector, arrow) in [
+            (String(localized: "Previous Tab"), #selector(BridgeAppDelegate.previousTab(_:)), NSLeftArrowFunctionKey),
+            (String(localized: "Next Tab"), #selector(BridgeAppDelegate.nextTab(_:)), NSRightArrowFunctionKey),
+        ] {
+            let tab = item(title, selector, String(Character(UnicodeScalar(arrow)!)), target: target)
+            tab.keyEquivalentModifierMask = [.command, .option]
+            view.addItem(tab)
+        }
 
         let window = submenu(String(localized: "Window"), in: main)
         window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"))
@@ -542,7 +618,7 @@ enum RenameMigrationLaunch {
             withBundleIdentifier: LegacyIdentity.bundleID).first(where: { !$0.isTerminated }) {
             if !asked {
                 let message = beforeMigration
-                    ? String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName). Its settings, clients and Activity move over once the old app has quit.")
+                    ? String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName). Its settings, connections and Activity move over once the old app has quit.")
                     : String(localized: "\(AppIdentity.displayName) is the new name of \(LegacyIdentity.displayName), and the two share their data, so only one can run. Delete the old app so it doesn't start again.")
                 guard alert(String(localized: "Quit \(LegacyIdentity.displayName) to continue"), message,
                             buttons: [String(localized: "Quit \(LegacyIdentity.displayName)"),

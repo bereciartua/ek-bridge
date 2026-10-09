@@ -144,7 +144,7 @@ enum ApprovalSummaries {
         case .failure(let error):
             rows.append(.init(label: String(localized: "Event"), value: p["title"] as? String ?? current?.title ?? "–"))
             rows.append(.init(label: String(localized: "Problem"),
-                              value: String(localized: "The bridge will refuse this change (\(error.code)).")))
+                              value: String(localized: "\(AppIdentity.displayName) will refuse this change (\(error.code)).")))
             return rows
         }
         func row(_ label: String, _ value: (EventFields) -> String, field: Bool) {
@@ -251,7 +251,7 @@ enum ApprovalSummaries {
         switch recurrence {
         case .none: String(localized: "Never")
         case .rule(let spec): RecurrenceText.summary(spec, zone: zone)
-        case .unsupported: String(localized: "A rule the bridge can't show")
+        case .unsupported: String(localized: "A rule \(AppIdentity.displayName) can't show")
         }
     }
 
@@ -299,7 +299,7 @@ enum ApprovalSummaries {
                 return proximity == .arrive ? String(localized: "arriving at \(place.title)")
                     : String(localized: "leaving \(place.title)")
             case nil:
-                return String(localized: "an alert the bridge can't show")
+                return String(localized: "an alert \(AppIdentity.displayName) can't show")
             }
         }
         let text = parts.joined(separator: ", ")
@@ -362,7 +362,7 @@ enum ApprovalSummaries {
         case .failure(let error):
             rows.append(.init(label: String(localized: "Reminder"), value: p["title"] as? String ?? current?.title ?? "–"))
             rows.append(.init(label: String(localized: "Problem"),
-                              value: String(localized: "The bridge will refuse this change (\(error.code)).")))
+                              value: String(localized: "\(AppIdentity.displayName) will refuse this change (\(error.code)).")))
             return rows
         }
         func row(_ label: String, _ value: (ReminderFields) -> String, field: Bool) {

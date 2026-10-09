@@ -1,6 +1,8 @@
 # Local CLI and command reference
 
-The command-line client, `bridge-client`, runs on the **same Mac and macOS user** as the app. It ships inside the app (`Contents/MacOS/bridge-client`); **Settings ▸ Developer ▸ Install Command-Line Tool** links it into `~/.local/bin`, and from a source checkout `python3 client.py` runs it. The examples use `python3 client.py`; `bridge-client` takes the same arguments. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. AI agents use the same commands through the app's local MCP server instead; its tools, time formats and agent error texts are in [MCP](MCP.md). Cloud agents can reach that MCP server only through the optional Remote Access port and a tunnel the user runs ([MCP](MCP.md#use-from-cloud-agents)); the CLI and its file exchange have no remote route.
+The command-line client, `bridge-client`, runs on the **same Mac and macOS user** as the app. It ships inside the app (`Contents/MacOS/bridge-client`); **Settings ▸ Advanced ▸ Install Command-Line Tool** links it into `~/.local/bin`, and from a source checkout `python3 client.py` runs it. The examples use `python3 client.py`; `bridge-client` takes the same arguments. It reads a private credential file, signs a version-2 request, writes it to the bridge's private local file exchange, waits for a JSON response, and prints that response. AI agents use the same commands through the app's local MCP server instead; its tools, time formats and agent error texts are in [MCP](MCP.md). Cloud agents can reach that MCP server only through the optional Remote Access port and a tunnel the user runs ([MCP](MCP.md#use-from-cloud-agents)); the CLI and its file exchange have no remote route.
+
+A *client* in the CLI and API is what the app calls a *connection*.
 
 ```sh
 python3 client.py COMMAND --client 'NAME or ID' [--params-file '/private/path/parameters.json']
@@ -23,13 +25,13 @@ Only the response JSON goes to stdout. Errors go to stderr as `error: …`, some
 | Exit | Meaning | Example stderr |
 | --- | --- | --- |
 | 0 | ok | none |
-| 1 | request denied or failed; JSON on stdout | `hint: Grant it in the client's Access, only if the tool should be able to do this.` |
+| 1 | request denied or failed; JSON on stdout | `hint: Turn it on in the connection's Access, only if the tool should be able to do this.` |
 | 2 | usage error | `error: unknown command "read_reminder". Did you mean read_reminders?`, `error: params must be a JSON object under 30 KB.`, `error: no active client named "…". Clients: …` |
 | 3 | bridge unavailable | `error: EK Bridge isn't running, or the bridge is off. Turn it on from the menu bar.`, `error: the bridge session changed. Run the command again.` |
 | 4 | missing or unsafe local file | `error: key file not found: …`, `error: … can be read by other users (mode 644).` |
 | 5 | no response in time | `error: no response after 60 s. The write may still have happened.` |
 
-The client can't tell "app not running" from "bridge off"; both print the exit 3 message. Outcome codes added in 0.4.0 are ordinary exit-1 results with a hint: `bridge_off` (the bridge turned off while the request was being handled), `rate_limited`, and `approval_denied` and `approval_timed_out` (the client is set to **Ask me first** and you declined or didn't answer within 45 seconds). The other new codes, `cancelled` and `timeout`, come only from MCP requests and show in Activity. 0.7.0 adds `client_paused` (exit 1): the client is paused in the app; its key still works once it's resumed. A write from a client set to Ask me first waits for the approval panel, which fits inside the client's 60-second write wait. In this reference, a **grant** is what the app calls **access**, and a **collection** is a calendar or reminder list.
+The client can't tell "app not running" from "bridge off"; both print the exit 3 message. Outcome codes added in 0.4.0 are ordinary exit-1 results with a hint: `bridge_off` (EK Bridge is paused: it was turned off in the menu bar while the request was being handled), `rate_limited`, and `approval_denied` and `approval_timed_out` (the client is set to **Ask me first** and you declined or didn't answer within 45 seconds). The other new codes, `cancelled` and `timeout`, come only from MCP requests and show in Activity. 0.7.0 adds `client_paused` (exit 1): the client is paused in the app; its key still works once it's resumed. A write from a client set to Ask me first waits for the approval panel, which fits inside the client's 60-second write wait. In this reference, a **grant** is what the app calls **access**, and a **collection** is a calendar or reminder list.
 
 ## Commands
 

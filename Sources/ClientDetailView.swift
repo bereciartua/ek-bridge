@@ -10,32 +10,47 @@ struct ClientDetailView: View {
     let client: ClientView
 
     var body: some View {
+        let tab = model.tab(client)
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 26) {
-                        ClientHeader(model: model, client: client)
-                        if client.paused {
-                            PausedNotice(model: model, client: client)
-                        }
-                        ConnectSection(model: model, client: client)
-                        if model.remoteEnabled {
-                            CloudSection(model: model, client: client)
-                                .id("cloud")
-                        } else if client.cloudAccess {
-                            CloudOffNote(model: model)
-                                .id("cloud")
-                        }
-                        AccessSection(model: model, client: client)
-                            .id("access")
-                    }
-                    .padding(24)
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .onAppear { scroll(proxy) }
-                .onChange(of: model.clientScrollTarget) { _, _ in scroll(proxy) }
+            VStack(alignment: .leading, spacing: 14) {
+                ClientHeader(model: model, client: client)
+                ClientTabBar(model: model, client: client, selection: tab)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if tab == .activity {
+                ActivityList(model: model, scope: .client(client.id))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .onAppear { model.markActivityViewed() }
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            if client.paused {
+                                PausedNotice(model: model, client: client)
+                            }
+                            if tab == .access {
+                                AccessSection(model: model, client: client)
+                                    .id("access")
+                            } else {
+                                ConnectSection(model: model, client: client)
+                                FromTheCloud(model: model, client: client)
+                                    .id("cloud")
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 18)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onAppear { scroll(proxy) }
+                    .onChange(of: model.clientScrollTarget) { _, _ in scroll(proxy) }
+                }
+            }
+            // Edits made on Access stay visible from every tab until saved or reverted.
             if model.hasUnsavedChanges || model.showSavedToast {
                 SaveBar(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -44,8 +59,11 @@ struct ClientDetailView: View {
         .animation(.easeOut(duration: 0.18), value: model.hasUnsavedChanges || model.showSavedToast)
     }
 
+    /// "access" and "cloud" (deep links) choose the tab, then scroll to the anchor.
     private func scroll(_ proxy: ScrollViewProxy) {
         guard let target = model.clientScrollTarget else { return }
+        let wanted: ClientTab = target == "cloud" ? .connect : .access
+        if model.tab(client) != wanted { model.clientTab[client.id] = wanted }
         DispatchQueue.main.async {
             withAnimation {
                 if let focus = model.accessFocus {
@@ -59,7 +77,81 @@ struct ClientDetailView: View {
     }
 }
 
-/// A client keeps cloud access while Remote Access is off: one line, not a
+/// Access · Connect · Activity, with an underline under the current tab
+/// (mockup 03). View ▸ Previous Tab / Next Tab (⌘⌥← ⌘⌥→) switch tabs.
+struct ClientTabBar: View {
+    let model: BridgeAppModel
+    let client: ClientView
+    let selection: ClientTab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                ForEach(ClientTab.allCases, id: \.self) { tab in
+                    Button { select(tab) } label: {
+                        VStack(spacing: 7) {
+                            Text(title(tab))
+                                .font(.body.weight(tab == selection ? .semibold : .regular))
+                                .foregroundStyle(tab == selection ? Color.primary : Color.secondary)
+                                .padding(.horizontal, 12)
+                            Rectangle()
+                                .fill(tab == selection ? Color.accentColor : Color.clear)
+                                .frame(height: 2.5)
+                        }
+                        .fixedSize()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(title(tab))
+                    .accessibilityAddTraits(tab == selection ? [.isButton, .isSelected] : .isButton)
+                }
+                Spacer()
+            }
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "Connection tabs"))
+    }
+
+    private func title(_ tab: ClientTab) -> String {
+        switch tab {
+        case .access: String(localized: "Access")
+        case .connect: String(localized: "Connect")
+        case .activity: String(localized: "Activity")
+        }
+    }
+
+    private func select(_ tab: ClientTab) { model.clientTab[client.id] = tab }
+}
+
+/// Connect ▸ From the cloud: the Cloud section while Remote Access is on;
+/// otherwise one line.
+struct FromTheCloud: View {
+    let model: BridgeAppModel
+    let client: ClientView
+
+    var body: some View {
+        if model.remoteEnabled {
+            CloudSection(model: model, client: client)
+        } else if client.cloudAccess {
+            CloudOffNote(model: model)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "globe")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(String(localized: "Use from a cloud agent (claude.ai, ChatGPT…)?"))
+                    .foregroundStyle(.secondary)
+                Button(String(localized: "Set Up Remote Access…")) { model.showRemoteAccess() }
+                    .buttonStyle(.link)
+                    .fixedSize()
+            }
+            .font(.callout)
+        }
+    }
+}
+
+/// A connection keeps cloud access while Remote Access is off: one line, not a
 /// whole Cloud section.
 struct CloudOffNote: View {
     let model: BridgeAppModel
@@ -72,15 +164,11 @@ struct CloudOffNote: View {
             Text(String(localized: "Cloud access is on for this connection, but Remote Access is off, so cloud agents can't reach this Mac."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(String(localized: "Remote Access…")) {
-                model.settingsScrollTarget = "remote"
-                model.navigate(to: .settings)
-            }
-            .buttonStyle(.link)
-            .fixedSize()
+            Button(String(localized: "Remote Access…")) { model.showRemoteAccess() }
+                .buttonStyle(.link)
+                .fixedSize()
         }
         .font(.callout)
-        .padding(.top, -14)
     }
 }
 
@@ -89,44 +177,47 @@ struct ClientHeader: View {
     let client: ClientView
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        let status = model.connectionStatusLine(client)
+        HStack(alignment: .center, spacing: 14) {
+            AvatarView(name: client.name, id: client.id, size: 40)
+                .opacity(client.paused ? 0.5 : 1)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     PaneTitle(title: client.name)
                     if client.paused {
                         Pill(label: String(localized: "Paused"), tone: .neutral)
                     }
                 }
-                Text(subtitle).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Circle().fill(color(status.dot)).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(status.text)
+                        .foregroundStyle(status.dot == .warning ? Color.orange : Color.secondary)
+                        .lineLimit(2)
+                }
             }
             Spacer(minLength: 12)
-            HStack(spacing: 8) {
-            Button {
-                model.openActivity(client: client.id)
-            } label: {
-                Label(String(localized: "Activity"), systemImage: "list.bullet")
-            }
-            .help(String(localized: "Show this client's requests"))
             ActionMenuButton(accessibilityLabel: String(localized: "More actions for \(client.name)"),
                              help: String(localized: "More actions")) {
                 ClientMenu.items(model: model, client: client)
             }
             .fixedSize()
-            }
-            .padding(.top, 4)
         }
+        .accessibilityElement(children: .contain)
     }
 
-    private var subtitle: String {
-        let last = model.lastRequest(for: client.id)
-            .map { String(localized: "Last request \(RelativeTime.ago($0, now: model.now).lowercased())") }
-            ?? String(localized: "No requests yet")
-        return "\(last) · \(AccessSummary.counts(client.grants))"
+    private func color(_ dot: StatusDot) -> Color {
+        switch dot {
+        case .ok: .green
+        case .waiting: .orange
+        case .warning: .orange
+        case .neutral: .secondary
+        }
     }
 }
 
-/// Shown at the top of a paused client's page: what pausing means, and the
-/// way back.
+/// Shown at the top of a paused connection's tabs: what pausing keeps, and
+/// the way back. The header says since when.
 struct PausedNotice: View {
     let model: BridgeAppModel
     let client: ClientView
@@ -138,24 +229,16 @@ struct PausedNotice: View {
                     .foregroundStyle(.secondary)
                     .font(.body.weight(.semibold))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).bold()
-                    Text(String(localized: "Every request from it is refused and shows in Activity as Client was paused. Its keys, tokens, access and cloud connections are kept, so it works again as soon as you resume it."))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(String(localized: "Its requests are refused and show in Activity as Connection was paused. Its keys, tokens, access and cloud connections are kept."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
                 Button(String(localized: "Resume")) { model.setPaused(client.id, false) }
-                    .help(String(localized: "Let this client's requests through again"))
+                    .help(String(localized: "Let this connection's requests through again"))
             }
-            .padding(16)
+            .padding(14)
         }
         .accessibilityElement(children: .contain)
-    }
-
-    private var title: String {
-        guard let pausedAt = client.pausedAt else { return String(localized: "This client is paused.") }
-        return String(localized: "Paused since \(pausedAt.formatted(date: .abbreviated, time: .shortened)).")
     }
 }
 
@@ -199,11 +282,11 @@ enum ClientMenu {
         items += [
             .separator,
             client.paused
-                ? .init(title: String(localized: "Resume Client"), systemImage: "play.circle",
+                ? .init(title: String(localized: "Resume Connection"), systemImage: "play.circle",
                         action: { model.setPaused(client.id, false) })
-                : .init(title: String(localized: "Pause Client"), systemImage: "pause.circle",
+                : .init(title: String(localized: "Pause Connection"), systemImage: "pause.circle",
                         action: { model.setPaused(client.id, true) }),
-            .init(title: String(localized: "Revoke Client…"), destructive: true,
+            .init(title: String(localized: "Remove Connection…"), destructive: true,
                   action: { model.revokeClient(client.id) }),
         ]
         return items
@@ -220,29 +303,21 @@ struct ConnectSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionTitle(title: String(localized: "Connect"))
-                Spacer()
+            // Only a connection with both credentials chooses between them.
+            if client.hasMCPToken && client.hasSigningKey {
                 Picker(String(localized: "Connects from"), selection: Binding(
                     get: { tab }, set: { model.connectTab[client.id] = $0 })) {
-                    Label(String(localized: "AI agent (MCP)"), systemImage: "sparkles").tag(ConnectTab.agent)
+                    Label(String(localized: "AI agent"), systemImage: "sparkles").tag(ConnectTab.agent)
                     Label(String(localized: "Command line"), systemImage: "terminal").tag(ConnectTab.cli)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
             }
-            switch tab {
-            case .agent: ConnectAgentTab(model: model, client: client)
-            case .cli:
-                if client.hasSigningKey {
-                    CommandLineConnect(model: model, client: client)
-                } else {
-                    EmptyConnectCard(text: String(localized: "This client has no command-line key."),
-                                     button: String(localized: "Add Command-Line Key")) {
-                        model.addSigningKey(client.id)
-                    }
-                }
+            if client.hasSigningKey && (!client.hasMCPToken || tab == .cli) {
+                CommandLineConnect(model: model, client: client)
+            } else {
+                ConnectAgentTab(model: model, client: client)
             }
         }
     }
@@ -279,7 +354,7 @@ struct CommandLineConnect: View {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         Text(keyStatus == .missing
                              ? String(localized: "The key file is missing. Rotate the key to create a new one.")
-                             : String(localized: "The key file has unsafe permissions or isn't a regular file. Check it in Finder, or revoke this client."))
+                             : String(localized: "The key file has unsafe permissions or isn't a regular file. Check it in Finder, or remove this connection."))
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
@@ -303,7 +378,7 @@ struct CommandLineConnect: View {
                 } actions: {
                     CopyButton(text: ConnectCommand.scopeStatus(for: client, among: model.clients, program: model.cliProgram),
                                title: String(localized: "Copy Command"),
-                               help: String(localized: "Copy a command that checks this client's access"))
+                               help: String(localized: "Copy a command that checks this connection's access"))
                 }
             }
             Label(String(localized: "The key is never shown here. Apps running as you can read the key file, so keep it out of repositories, chats and screenshots."),
@@ -320,7 +395,7 @@ struct CommandLineConnect: View {
         case .onPath:
             String(localized: "Run it in Terminal.")
         case .bundled:
-            String(localized: "Run it in Terminal. To type just bridge-client, install the command-line tool from Settings ▸ Developer.")
+            String(localized: "Run it in Terminal. To type just bridge-client, install the command-line tool from Settings ▸ Advanced.")
         case .source:
             String(localized: "Run it in Terminal, in the ek-bridge folder.")
         }
@@ -378,16 +453,14 @@ struct ApprovalControl: View {
                 .fixedSize()
                 .accessibilityLabel(String(localized: "Ask before changes"))
             } else {
-                Text(String(localized: "Changes: none allowed. Ask me first applies once you allow a change."))
+                Text(String(localized: "Changes: none allowed"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
             }
+            InfoButton(text: writes
+                ? String(localized: "Ask me first shows a panel for every add, change, completion or delete from this connection. Reads never ask.")
+                : String(localized: "Ask me first applies once you allow a change. Reads never ask."))
         }
-        .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this client. Reads never ask."))
     }
 }
 
@@ -401,11 +474,7 @@ struct AccessSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionTitle(title: String(localized: "Access"))
-                Spacer()
-                ApprovalControl(model: model, client: client)
-            }
+            // The tab is called Access, so no section title (mockup 03).
             HStack(spacing: 12) {
                 Picker(String(localized: "Type"), selection: Binding(
                     get: { tab }, set: { model.accessTab[client.id] = $0 })) {
@@ -415,6 +484,10 @@ struct AccessSection: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                Spacer(minLength: 12)
+                ApprovalControl(model: model, client: client)
+            }
+            HStack(spacing: 12) {
                 Spacer()
                 SearchField(text: $filter, prompt: String(localized: "Filter"),
                             accessibilityLabel: String(localized: "Filter calendars and lists"))
@@ -481,14 +554,15 @@ struct AccessTable: View {
                 Text(resource == .calendar ? String(localized: "Calendar") : String(localized: "List"))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(actions, id: \.bit) { action in
-                    Text(action.title).frame(width: Self.cellWidth)
+                    ColumnMenu(model: model, action: action, rows: rows)
+                        .frame(width: Self.cellWidth)
                 }
+                Color.clear.frame(width: AccessRow.moreWidth, height: 1)
             }
             .font(.callout.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .accessibilityHidden(true)
             Divider()
             if rows.isEmpty {
                 Text(emptyText)
@@ -534,6 +608,28 @@ struct AccessTable: View {
     }
 }
 
+/// A header cell: the action's name with ▾, and Turn On / Turn Off for All
+/// on the rows that are visible (Filter and Granted only apply).
+struct ColumnMenu: View {
+    let model: BridgeAppModel
+    let action: (bit: Int, word: String, title: String)
+    let rows: [CollectionInfo]
+
+    var body: some View {
+        // AppKit, like the rows' ⋯: SwiftUI menus here slowed the page enough to delay sheets.
+        ActionMenuButton(accessibilityLabel: String(localized: "\(action.title) for all rows shown"),
+                         help: String(localized: "Turn \(action.title) on or off for every row shown"),
+                         title: action.title) {
+            [.init(title: String(localized: "Turn On for All"),
+                   action: { model.applyColumn(bit: action.bit, on: true, rows: rows) }),
+             .init(title: String(localized: "Turn Off for All"),
+                   action: { model.applyColumn(bit: action.bit, on: false, rows: rows) })]
+        }
+        .fixedSize()
+        .disabled(rows.isEmpty)
+    }
+}
+
 struct AccessRow: View {
     let model: BridgeAppModel
     let collection: CollectionInfo
@@ -576,25 +672,46 @@ struct AccessRow: View {
                 cell(action, mask: mask)
                     .frame(width: AccessTable.cellWidth)
             }
+            // An AppKit menu button: a SwiftUI Menu per row makes long tables slow to draw.
+            ActionMenuButton(accessibilityLabel: String(localized: "Access presets for \(collection.name)"),
+                             help: String(localized: "Read Only, Full Access, No Access"),
+                             borderless: true) { presetItems }
+                .frame(width: Self.moreWidth, height: 20)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(background(changed: changed))
         .contentShape(Rectangle())
-        .contextMenu {
-            Button(String(localized: "Read Only")) { model.apply(.readOnly, to: collection) }
-            Button(String(localized: "Full Access")) { model.apply(.fullAccess, to: collection) }
-            Button(String(localized: "No Access")) { model.apply(.noAccess, to: collection) }
-            Divider()
-            Button(collection.resource == .calendar ? String(localized: "Copy Calendar ID")
-                                                    : String(localized: "Copy List ID")) {
-                Pasteboard.copy(collection.id)
-            }
-        }
+        .contextMenu { presets }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(rowLabel)
         .onAppear { flashIfFocused() }
         .onChange(of: model.accessFocus) { _, _ in flashIfFocused() }
+    }
+
+    static let moreWidth: CGFloat = 24
+
+    /// The row's ⋯ menu; the same items as the right-click menu.
+    private var presetItems: [ActionMenuButton.Item] {
+        [.init(title: String(localized: "Read Only"), action: { model.apply(.readOnly, to: collection) }),
+         .init(title: String(localized: "Full Access"), action: { model.apply(.fullAccess, to: collection) }),
+         .init(title: String(localized: "No Access"), action: { model.apply(.noAccess, to: collection) }),
+         .separator,
+         .init(title: collection.resource == .calendar ? String(localized: "Copy Calendar ID")
+                                                       : String(localized: "Copy List ID"),
+               action: { Pasteboard.copy(collection.id) })]
+    }
+
+    /// The right-click menu.
+    @ViewBuilder private var presets: some View {
+        Button(String(localized: "Read Only")) { model.apply(.readOnly, to: collection) }
+        Button(String(localized: "Full Access")) { model.apply(.fullAccess, to: collection) }
+        Button(String(localized: "No Access")) { model.apply(.noAccess, to: collection) }
+        Divider()
+        Button(collection.resource == .calendar ? String(localized: "Copy Calendar ID")
+                                                : String(localized: "Copy List ID")) {
+            Pasteboard.copy(collection.id)
+        }
     }
 
     @ViewBuilder
@@ -621,7 +738,7 @@ struct AccessRow: View {
                 : String(localized: "Write access will be removed when you save, because this list is now read only.")
         }
         if ClientGrantEditing.writeWithoutRead(mask) {
-            return String(localized: "Without Read, this client can't look up items to edit, complete or delete them.")
+            return String(localized: "Without Read, this connection can't look up items to edit, complete or delete them.")
         }
         return nil
     }
@@ -691,7 +808,7 @@ struct RevokedClientView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     PaneTitle(title: client.name)
-                    Pill(label: String(localized: "Revoked"), tone: .neutral)
+                    Pill(label: String(localized: "Removed"), tone: .neutral)
                 }
                 Card {
                     ConnectRow(label: String(localized: "Client ID")) {
@@ -701,12 +818,12 @@ struct RevokedClientView: View {
                     }
                     if let revokedAt = client.revokedAt {
                         Divider().padding(.leading, 16)
-                        ConnectRow(label: String(localized: "Revoked")) {
+                        ConnectRow(label: String(localized: "Removed")) {
                             Text(RelativeTime.full(revokedAt))
                         } actions: { EmptyView() }
                     }
                 }
-                Text(String(localized: "Its key no longer works and it has no access. Revoked clients are kept so Activity stays understandable. To reconnect this tool, create a new client."))
+                Text(String(localized: "Its key no longer works and it has no access. Removed connections are kept so Activity stays understandable. To reconnect this tool, add a new connection."))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(String(localized: "Show Activity")) { model.openActivity(client: client.id) }
@@ -720,113 +837,7 @@ struct RevokedClientView: View {
 
 // MARK: - Sheets
 
-struct NewClientSheet: View {
-    let model: BridgeAppModel
-    @State private var name = ""
-    @State private var kind = ClientKind.agent
-    @State private var ask: Bool?
-    @State private var submitted: ClientNameIssue?
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        let issue = model.nameIssue(name)
-        VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "New Client")).font(.headline)
-            Text(String(localized: "Name the agent or script that will connect. It starts with no access."))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "Name"))
-                TextField(String(localized: "Name"), text: $name,
-                          prompt: Text(String(localized: "For example, Claude Code")))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focused)
-                    .onSubmit { create() }
-                    .accessibilityLabel(String(localized: "Name"))
-                if let shown = visibleIssue(issue) {
-                    Text(NameIssueText.message(shown)).font(.callout).foregroundStyle(.red)
-                } else {
-                    Text(String(localized: "Shown in Activity and the menu bar. Use one client per tool."))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "Connects from"))
-                Picker(String(localized: "Connects from"), selection: $kind) {
-                    ForEach(ClientKind.allCases) { option in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(title(option))
-                            if let caption = caption(option) {
-                                Text(caption)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(.bottom, 4)
-                        .tag(option)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                .accessibilityLabel(String(localized: "Connects from"))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle(String(localized: "Ask me before each change"), isOn: Binding(
-                    get: { ask ?? (model.defaultApproval(for: kind) == .ask) }, set: { ask = $0 }))
-                    .toggleStyle(.checkbox)
-                Text(String(localized: "Preset from Settings. You can change this later on the client's page."))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 20)
-            }
-            HStack {
-                Spacer()
-                Button(String(localized: "Cancel")) { model.sheet = nil }
-                    .keyboardShortcut(.cancelAction)
-                Button(String(localized: "Create")) { create() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(issue != nil)
-            }
-            .padding(.top, 4)
-        }
-        .padding(20)
-        .frame(width: 480)
-        .onAppear { focused = true }
-    }
-
-    private func title(_ option: ClientKind) -> String {
-        switch option {
-        case .agent: String(localized: "AI agent (MCP)")
-        case .cli: String(localized: "Command line")
-        case .both: String(localized: "Both")
-        }
-    }
-
-    private func caption(_ option: ClientKind) -> String? {
-        switch option {
-        case .agent: String(localized: "For Claude Code, Codex, Claude Desktop, Cursor and other agents. What the agent reads is sent to its AI provider.")
-        case .cli: String(localized: "For scripts that run bridge-client or client.py.")
-        case .both: nil
-        }
-    }
-
-    // Empty is shown as a disabled button, not an error.
-    private func visibleIssue(_ issue: ClientNameIssue?) -> ClientNameIssue? {
-        if let submitted { return submitted }
-        guard let issue, issue != .empty else { return nil }
-        return issue
-    }
-
-    private func create() {
-        guard model.nameIssue(name) == nil else { return }
-        // Untouched, the checkbox follows the default for the chosen kind.
-        submitted = model.createClient(name: name, kind: kind, askBeforeChanges: ask)
-    }
-}
-
-/// Settings ▸ MCP Server ▸ Port ▸ Change…
+/// Settings ▸ Advanced ▸ Port ▸ Change…
 struct MCPPortSheet: View {
     let model: BridgeAppModel
     @State private var text = ""
@@ -885,7 +896,7 @@ struct RenameClientSheet: View {
         let issue = model.nameIssue(name, excluding: clientID)
         let unchanged = name.trimmingCharacters(in: .whitespacesAndNewlines) == original
         VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "Rename Client")).font(.headline)
+            Text(String(localized: "Rename Connection")).font(.headline)
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(localized: "Name"))
                 TextField(String(localized: "Name"), text: $name)

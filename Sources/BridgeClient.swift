@@ -32,7 +32,7 @@ struct CLIError: Error {
     private static let launcher = CLIIdentity.launcher
     private static let retryAdvice = "Read the item before retrying, and reuse the same idempotencyKey."
     private static let rebuildAdvice =
-        "Use the bridge-client inside the running app (Settings ▸ Developer ▸ Install Command-Line Tool), or rebuild with: sh build.sh"
+        "Use the bridge-client inside the running app (Settings ▸ Advanced ▸ Install Command-Line Tool), or rebuild with: sh build.sh"
 
     static func usage(_ message: String) -> CLIError {
         CLIError(exitCode: ExitCode.usage, message: message)
@@ -49,7 +49,7 @@ struct CLIError: Error {
     static let invalidParams = usage("params must be a JSON object under 30 KB.")
     static let bridgeNotRunning = CLIError(
         exitCode: ExitCode.bridgeUnavailable,
-        message: "\(CLIIdentity.productName) isn't running, or the bridge is off. Turn it on from the menu bar.")
+        message: "\(CLIIdentity.productName) isn't running, or it's paused. Turn it on from the menu bar.")
     static let sessionChanged = CLIError(
         exitCode: ExitCode.bridgeUnavailable,
         message: "the bridge session changed. Run the command again.")

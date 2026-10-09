@@ -175,8 +175,8 @@ struct LauncherInvocation {
             // the registry, so only the ID is accepted.
             guard let uuid = UUID(uuidString: clientValue.trimmingCharacters(in: .whitespaces)) else {
                 throw LauncherError.usage(
-                    "--client takes the client's ID (a UUID), not its name. "
-                        + "Copy the setup from the client's page in \(AppIdentity.displayName).")
+                    "--client takes the connection's ID (a UUID), not its name. "
+                        + "Copy the setup from the connection's page in \(AppIdentity.displayName).")
             }
             result.client = uuid
         } else if result.tokenFile == nil {
@@ -196,7 +196,7 @@ enum LauncherHelp {
 
         Connects an agent on this Mac to \(AppIdentity.displayName)'s MCP server. The relay reads one
         JSON-RPC message per stdin line, posts it to the server and writes each reply as one
-        stdout line. Problems go to stderr. Copy the setup for your agent from the client's
+        stdout line. Problems go to stderr. Copy the setup for your agent from the connection's
         page in \(AppIdentity.displayName).
 
         Options:
@@ -582,18 +582,18 @@ enum RPC {
 
 enum RelayText {
     private static let app = AppIdentity.displayName
-    static let notRunning = "\(app) isn't running, or its MCP server is off. "
-        + "Open \(app) and turn on Settings ▸ MCP Server."
+    static let notRunning = "\(app) isn't running, or it's paused. "
+        + "Open \(app) and turn it on."
     static let timeout = "No response from \(app) after 60 s. If this was a change, it may have happened. "
         + "Read before retrying."
     static let lost = "\(app) closed the connection before replying. If this was a change, it may have "
         + "happened. Read before retrying."
     static let squatter = "Another program is using \(app)'s port. "
-        + "Open \(app) and check Settings ▸ MCP Server."
+        + "Open \(app) and check Settings ▸ Advanced."
     static let badEndpoint = "\(app)'s endpoint file isn't valid, so nothing was sent. "
         + "Quit and reopen \(app)."
-    static let rejected = "\(app) doesn't recognize this client's token. "
-        + "Open the client in \(app) and check MCP access."
+    static let rejected = "\(app) doesn't recognize this connection's token. "
+        + "Open the connection in \(app) and check MCP access."
 
     static func refused(_ status: Int, _ explanation: String) -> String {
         "\(app) refused the request (HTTP \(status)): \(explanation)"
@@ -817,7 +817,7 @@ final class Relay: @unchecked Sendable {
             return
         }
         Log.line(reason.map { "\(AppIdentity.displayName) isn't reachable: \($0)." }
-                 ?? "\(AppIdentity.displayName) isn't running, or its MCP server is off.")
+                 ?? "\(AppIdentity.displayName) isn't running, or it's paused.")
         finish(message, entry, RPC.error(id: message.id, code: -32000, message: RelayText.notRunning))
     }
 
@@ -985,7 +985,7 @@ enum SetupCheck {
         case .success(let read): endpoint = read
         case .failure(.missing):
             let file = LauncherPaths.display(LauncherPaths.endpointFile)
-            return fail("\(app) isn't running, or its MCP server is off (no \(file))",
+            return fail("\(app) isn't running, or it's paused (no \(file))",
                         LauncherExit.unavailable)
         case .failure(.invalid(let reason)):
             return fail("\(reason); nothing was sent", LauncherExit.unavailable)
@@ -1036,14 +1036,14 @@ enum SetupCheck {
                 let text = ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
                 if result["isError"] as? Bool == true {
                     if text.contains("(code: bridge_off)") {
-                        warn("the bridge is off: tool calls will be refused until it's turned on")
+                        warn("\(app) is paused: tool calls will be refused until it's turned on")
                     } else if text.contains("(code: client_paused)") {
                         warn("this client is paused: tool calls will be refused until it's resumed in \(app)")
                     } else {
                         warn("list_collections failed: \(text)")
                     }
                 } else {
-                    good("the bridge is on")
+                    good("\(app) is on")
                 }
             }
         }
@@ -1068,7 +1068,7 @@ enum SetupCheck {
                                    version: Wire.modernVersion)
         switch Wire.postAndWait(endpoint.url, body: body, headers: headers) {
         case .failure(.refused):
-            return .failure(Failure(text: "\(app) isn't running, or its MCP server is off "
+            return .failure(Failure(text: "\(app) isn't running, or it's paused "
                                         + "(connection refused on port \(endpoint.port))",
                                     exit: LauncherExit.unavailable))
         case .failure(.timedOut):

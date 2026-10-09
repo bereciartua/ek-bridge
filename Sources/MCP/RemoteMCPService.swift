@@ -196,7 +196,7 @@ enum RemoteHTTPGate {
     static func notFound() -> HTTPResponse { MCPHTTPGate.text(404, "Not found.\n") }
 }
 
-/// Nonces issued for Settings ▸ Remote Access ▸ Test. The health endpoint
+/// Nonces issued for the Remote Access page ▸ Test. The health endpoint
 /// answers only for a nonce issued in the last 30 seconds, which proves the
 /// public URL reaches this app. Thread-safe.
 final class RemoteNonces: @unchecked Sendable {

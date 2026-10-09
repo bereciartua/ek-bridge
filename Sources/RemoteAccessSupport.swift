@@ -29,7 +29,7 @@ final class KeepAwake {
     }
 }
 
-/// Settings ▸ Remote Access ▸ Test: one HTTPS request to this app's own
+/// the Remote Access page ▸ Test: one HTTPS request to this app's own
 /// health URL through the tunnel. The nonce proves the reply came from this
 /// app, not from something else answering at that address.
 enum RemoteProbe {

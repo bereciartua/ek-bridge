@@ -23,6 +23,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     var button: NSStatusBarButton? { statusItem.button }
 
+    /// The menu's appearance (UI review screenshots); nil follows the menu bar.
+    var menuAppearance: NSAppearance? {
+        get { menu.appearance }
+        set { menu.appearance = newValue }
+    }
+
     private func observe() {
         withObservationTracking {
             _ = model.bridge
@@ -30,6 +36,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.statusSubtitle
             _ = model.pendingApprovalCount
             _ = model.remoteEnabled
+            _ = model.resumeAt
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 self?.updateIcon()
@@ -45,7 +52,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let state = switch glyph {
         case .attention: String(localized: "needs attention")
         case .on: String(localized: "on")
-        case .paused: String(localized: "off")
+        case .paused: String(localized: "paused")
         }
         let pending = model.pendingApprovalCount
         var label = String(localized: "\(AppIdentity.displayName), \(state)")
@@ -95,6 +102,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         header = nil
     }
 
+    /// Header; Pause EK Bridge ▸ or Turn On EK Bridge; MCP and Remote lines;
+    /// Needs you; Recent changes; then the app items (mockup 09).
     private func rebuild() {
         menu.removeAllItems()
 
@@ -105,24 +114,39 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let headerItem = NSMenuItem()
         headerItem.view = headerView
         menu.addItem(headerItem)
-        let mcpLine = model.mcpEnabled
-            ? (model.mcpListeningPort.map { String(localized: "MCP server · port \(String($0))") }
-                ?? (model.mcpFailureText != nil ? String(localized: "MCP server · couldn't start")
-                                                : String(localized: "MCP server · starting")))
-            : String(localized: "MCP server · off")
-        let mcpItem = item(mcpLine) { [weak self] in
-            self?.model.settingsScrollTarget = "mcp"
-            self?.model.show(.settings)
+        if model.bridge.isOn {
+            let pause = NSMenuItem(title: String(localized: "Pause \(AppIdentity.displayName)"), action: nil,
+                                   keyEquivalent: "")
+            let choices = NSMenu()
+            for choice in PauseChoice.allCases {
+                let title = switch choice {
+                case .oneHour: String(localized: "For 1 Hour")
+                case .untilTomorrow: String(localized: "Until Tomorrow")
+                case .untilTurnedOn: String(localized: "Until I Turn It On")
+                }
+                choices.addItem(item(title) { [weak self] in self?.pauseBridge(choice) })
+            }
+            pause.submenu = choices
+            menu.addItem(pause)
+        } else if model.policyStoreAvailable {
+            menu.addItem(item(String(localized: "Turn On \(AppIdentity.displayName)")) { [weak self] in
+                self?.toggleBridge(true)
+            })
         }
-        mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: .secondaryLabelColor), mcpLine)
-        mcpItem.toolTip = String(localized: "Open Settings ▸ MCP Server")
-        menu.addItem(mcpItem)
-        if model.remoteEnabled {
-            let line = model.remoteMenuLine
-            let remoteItem = item(line) { [weak self] in
-                self?.model.settingsScrollTarget = "remote"
+        // Nothing while paused (the header says so) or when no connection uses MCP.
+        if let mcpLine = model.mcpStatusLine {
+            let mcpItem = item(mcpLine) { [weak self] in
+                self?.model.settingsScrollTarget = "mcp"
                 self?.model.show(.settings)
             }
+            mcpItem.attributedTitle = iconTitle(symbol("server.rack", color: model.mcpFailureText == nil
+                                                       ? .secondaryLabelColor : .systemOrange), mcpLine)
+            mcpItem.toolTip = String(localized: "Open Settings ▸ Advanced")
+            menu.addItem(mcpItem)
+        }
+        if model.remoteEnabled {
+            let line = model.remoteMenuLine
+            let remoteItem = item(line) { [weak self] in self?.model.show(.remoteAccess) }
             remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)
             menu.addItem(remoteItem)
             // One click cuts all cloud access (R5).
@@ -134,46 +158,16 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        let pending = model.pendingApprovalCount
-        if pending > 0 {
-            let title = pending == 1 ? String(localized: "1 change waiting for approval…")
-                                     : String(localized: "\(pending) changes waiting for approval…")
-            let approvals = item(title) { [weak self] in self?.model.showApprovals() }
-            approvals.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
-            menu.addItem(approvals)
+        let needsYou = needsYouItems()
+        if !needsYou.isEmpty {
+            menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Needs you")))
+            needsYou.forEach(menu.addItem)
             menu.addItem(.separator())
         }
 
-        if let update = model.foundUpdate {
-            let title = update.critical
-                ? String(localized: "Security Update Available: \(update.version)…")
-                : String(localized: "Update Available: \(update.version)…")
-            let updateItem = item(title) { [weak self] in self?.model.checkForUpdates() }
-            updateItem.attributedTitle = iconTitle(
-                symbol("arrow.down.circle.fill", color: update.critical ? .systemRed : .systemBlue), title)
-            menu.addItem(updateItem)
-            menu.addItem(.separator())
-        }
-
-        let problems = model.problems
-        for problem in problems {
-            let title = item(problem.title) { [weak self] in self?.fix(problem) }
-            title.attributedTitle = iconTitle(symbol("exclamationmark.triangle.fill", color: .systemOrange),
-                                              problem.title)
-            menu.addItem(title)
-            let fixTitle = problem.opensPrivacySettings
-                ? String(localized: "Open Privacy Settings…")
-                : String(localized: "Open \(AppIdentity.displayName)…")
-            let fixItem = item(fixTitle) { [weak self] in self?.fix(problem) }
-            // Indented to line up with the problem's text, after its icon.
-            fixItem.attributedTitle = iconTitle(nil, fixTitle)
-            menu.addItem(fixItem)
-        }
-        if !problems.isEmpty { menu.addItem(.separator()) }
-
-        let recent = Array(model.activity.prefix(3))
+        let recent = Array(model.activity.filter(\.isWrite).prefix(3))
         if !recent.isEmpty {
-            menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Recent requests")))
+            menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Recent changes")))
             for entry in recent {
                 let row = item("") { [weak self] in
                     self?.model.openActivity(selecting: entry.id)
@@ -182,6 +176,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                 row.setAccessibilityLabel(String(localized: "\(model.clientName(entry.clientID)), \(CommandPresentation.label(entry.command)), \(entry.outcome.label), \(RelativeTime.ago(entry.at, now: model.now))"))
                 menu.addItem(row)
             }
+        }
+        if !model.activity.isEmpty {
             menu.addItem(item(String(localized: "Show All Activity…")) { [weak self] in
                 self?.model.openActivity()
             })
@@ -205,6 +201,52 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         })
     }
 
+    /// Changes waiting for approval, problems with their fix, and an update.
+    private func needsYouItems() -> [NSMenuItem] {
+        var items = [NSMenuItem]()
+        let pending = model.pendingApprovalCount
+        if pending > 0 {
+            let title = pending == 1 ? String(localized: "1 change waiting for approval…")
+                                     : String(localized: "\(pending) changes waiting for approval…")
+            let approvals = item(title) { [weak self] in self?.model.showApprovals() }
+            approvals.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
+            items.append(approvals)
+        }
+        for problem in model.problems {
+            let title = item(problem.title) { [weak self] in self?.model.fix(problem) }
+            title.attributedTitle = iconTitle(symbol("exclamationmark.triangle.fill", color: .systemOrange),
+                                              problem.title)
+            items.append(title)
+            let fixTitle = problem.opensPrivacySettings
+                ? String(localized: "Open Privacy Settings…")
+                : String(localized: "Open \(AppIdentity.displayName)…")
+            let fixItem = item(fixTitle) { [weak self] in self?.model.fix(problem) }
+            // Indented to line up with the problem's text, after its icon.
+            fixItem.attributedTitle = iconTitle(nil, fixTitle)
+            items.append(fixItem)
+        }
+        if let update = model.foundUpdate {
+            let title = update.critical
+                ? String(localized: "Security Update Available: \(update.version)…")
+                : String(localized: "Update Available: \(update.version)…")
+            let updateItem = item(title) { [weak self] in self?.model.checkForUpdates() }
+            updateItem.attributedTitle = iconTitle(
+                symbol("arrow.down.circle.fill", color: update.critical ? .systemRed : .systemBlue), title)
+            items.append(updateItem)
+        }
+        return items
+    }
+
+    private func pauseBridge(_ choice: PauseChoice) {
+        if model.hasUnsavedChanges {
+            // The save prompt can't run inside menu tracking.
+            menu.cancelTracking()
+            DispatchQueue.main.async { [weak self] in self?.model.pause(for: choice) }
+        } else {
+            model.pause(for: choice)
+        }
+    }
+
     private func toggleBridge(_ on: Bool) {
         if model.hasUnsavedChanges {
             // The save prompt can't run inside menu tracking.
@@ -216,24 +258,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func fix(_ problem: AttentionProblem) {
-        switch problem {
-        case .calendarAccess: model.openPrivacySettings(.calendar)
-        case .remindersAccess: model.openPrivacySettings(.reminderList)
-        case .policyStoreUnavailable, .bridgeFailed: model.show(.overview)
-        case .mcpServerFailed:
-            model.settingsScrollTarget = "mcp"
-            model.show(.settings)
-        case .remoteAccessFailed:
-            model.settingsScrollTarget = "remote"
-            model.show(.settings)
-        }
-    }
-
     // Menu item images aren't shown on every macOS version, so status icons
     // are drawn as text attachments inside the title.
     private static let iconWidth: CGFloat = 16
-    private static let ageTab: CGFloat = 288
+    private static let ageTab: CGFloat = 334
 
     private func iconTitle(_ image: NSImage?, _ text: String, trailing: String? = nil) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
@@ -258,10 +286,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return result
     }
 
+    /// "Update event · Work", then "Claude Code · 2 min" on the right (mockup 09;
+    /// item names come with Activity's item IDs).
     private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
-        iconTitle(outcomeImage(entry.outcome.tone),
-                  "\(model.clientName(entry.clientID)) · \(CommandPresentation.label(entry.command))",
-                  trailing: RelativeTime.short(entry.at, now: model.now))
+        let target = entry.targetID.flatMap { id in model.collections.first { $0.id == id }?.name }
+        let text = [CommandPresentation.label(entry.command), target].compactMap { $0 }.joined(separator: " · ")
+        return iconTitle(outcomeImage(entry.outcome.tone), text,
+                         trailing: "\(model.clientName(entry.clientID)) · \(RelativeTime.short(entry.at, now: model.now))")
     }
 
     private func item(_ title: String, key: String = "", image: NSImage? = nil,
@@ -315,7 +346,7 @@ final class StatusHeaderView: NSView {
     private let subtitle = NSTextField(wrappingLabelWithString: "")
     private let toggle = NSSwitch()
     private var widthConstraint: NSLayoutConstraint!
-    static let width: CGFloat = 360
+    static let width: CGFloat = 390
 
     init(model: BridgeAppModel, onToggle: @escaping (Bool) -> Void) {
         self.model = model
@@ -328,7 +359,7 @@ final class StatusHeaderView: NSView {
         subtitle.preferredMaxLayoutWidth = Self.width - 110
         toggle.target = self
         toggle.action = #selector(toggled)
-        toggle.setAccessibilityLabel(String(localized: "Bridge"))
+        toggle.setAccessibilityLabel(AppIdentity.displayName)
         let labels = NSStackView(views: [title, subtitle])
         labels.orientation = .vertical
         labels.alignment = .leading
@@ -360,6 +391,7 @@ final class StatusHeaderView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     func update() {
+        title.stringValue = model.bridgeTitle
         subtitle.stringValue = model.statusSubtitle
         toggle.state = model.bridge.isOn ? .on : .off
         toggle.isEnabled = model.policyStoreAvailable || model.bridge.isOn

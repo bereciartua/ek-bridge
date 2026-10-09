@@ -6,6 +6,34 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
+A structure release. The app calls clients **connections**, and one switch runs everything: when EK Bridge is on, the local MCP server runs for the connections that use it, and **Pause EK Bridge** (for an hour, until tomorrow or until you turn it on) stops all of it. Adding an agent is a tile and a starting access, and for Claude Desktop, Cursor and Claude Code one click writes the setup for you, with a preview and a backup. Setup takes three steps, a connection's page has Access · Connect · Activity tabs, Remote Access has its own guided page, Settings has tabs, and Overview shows today and what needs you. Agents and scripts need no changes; their messages say EK Bridge is paused instead of off. The client registry stays at **version 4** and the old MCP setting is kept in step, so going back to 0.8.3 means installing its DMG over this one.
+
+### Added
+
+- **Pause EK Bridge ▸ For 1 Hour / Until Tomorrow / Until I Turn It On** in the menu bar. A timed pause turns EK Bridge back on by itself (8:00 the next morning for Until Tomorrow), and Overview and the menu say until when.
+- **Add a Connection** sheet: a tile per agent (agents found on this Mac first, marked **Installed**), a name filled in from it, and a **Starting access** (read everything, read everything and change one calendar or list, or nothing yet), so a new agent doesn't start from a blank grid. It replaces New Client and its Connects from choice.
+- Access presets you can see: each column header in the access table has **Turn On for All** / **Turn Off for All** (for the rows shown), and each row has a **⋯** button with Read Only, Full Access and No Access.
+- **Add to Claude Desktop… / Cursor… / Claude Code…** on a connection's Connect tab: EK Bridge shows the exact change first, keeps a backup of the config file, keeps every other setting and the file's layout, and never writes the token. Claude Code's own `claude mcp add-json` runs for you. **Restart Claude Desktop** quits and reopens it. The copyable setups stay under **Copy the setup instead**.
+
+### Changed
+
+- The app calls clients **connections** (sidebar, menus, Activity, Settings), and the master switch reads **EK Bridge is on** / **EK Bridge is paused**. The CLI, the API, file names and `--client` keep "client".
+- One switch: the local MCP server runs whenever EK Bridge is on and a connection uses MCP, and stops when you pause it. There's no MCP step in setup; **Settings ▸ Advanced ▸ Local MCP server** turns it off for a Mac where no agent should connect. Upgrading keeps it running if it was on or a connection uses MCP. Overview and the menu bar say **MCP on port 47615**, and agents, `bridge-client` and `bridge-mcp check` say EK Bridge is paused instead of off.
+- The menu bar menu is reordered: the switch and Pause, the MCP and Remote Access lines, **Needs you** (approvals, problems, an update), then **Recent changes**, which lists only adds, edits, completions and deletes.
+- A connection's page has **Access · Connect · Activity** tabs. It opens on Connect until the first request arrives, then on Access, so the access table isn't below the fold any more. The header has one status line (Connected, Waiting for <agent>, Paused since…, or why the last request was refused), and the Activity tab replaces the Activity button. Agent setup moves the method choice under **Advanced options** and the agent list under **Set up a different agent…**.
+- Setup takes three steps instead of seven: allow Calendar and Reminders (skip the one you don't need), add your agent, connect it. Connecting turns EK Bridge on and, for Claude Desktop, Cursor and Claude Code, is one click; the step is done when the agent's first request arrives. Its wording leads with AI agents; **Add a command-line connection…** is there for scripts.
+- **Remote Access** has its own page in the sidebar (with an **On** label) and a guided setup: choose a tunnel, turn it on and start the tunnel, paste its address, and a test that runs by itself. Once set up, the page shows its status and settings and the connections with cloud access; the tunnel's steps and notes are behind ⓘ.
+- Settings has **General · Advanced · About** tabs. General: start at login, Dock, updates and the Ask before changes defaults. Advanced: the local MCP server, the command-line tool and developer tools. About: version, links and the setup checklist.
+- Overview is about today: a compact on/paused card, **Needs you** (changes waiting for approval, problems, unavailable calendars, refused requests you haven't seen, an update) only when something does, and **Today** with the day's requests, changes and problems and the latest changes. The connection list moved to the sidebar only, and the macOS access card shows only when access is missing.
+- Less text on screen: explanations that don't prevent a mistake moved behind ⓘ buttons (Start at login, Dock, Ask before changes, developer tools, agent and tunnel notes), and notes that appeared more than once now appear once.
+
+### Fixed
+
+- A connection used only from the command line no longer says "Waiting for the agent…" next to its last request time; it reads **Connected · last request …**, and the time appears once.
+- Setup's **Copy Test Command** turns EK Bridge on first, so the test doesn't fail because the bridge is off.
+
 ## [0.8.3] - 2026-10-08
 
 A polish release: Activity's columns fit, Overview's client rows agree with themselves, a delete EK Bridge can't show is never the default, the menu bar shows the day-arc icon, the app offers to move itself to Applications, and unavailable calendars keep their names. Nothing changes for agents or scripts. The client registry stays at **version 4**, so going back to 0.8.2 means installing its DMG over this one; 0.8.2 ignores the new `collection-labels.json`.

@@ -7,7 +7,7 @@ cloudflared tunnel --url http://127.0.0.1:47616 --http-host-header 127.0.0.1:476
 
 steps:
 1. Run the command. cloudflared prints a random https://….trycloudflare.com address.
-2. Paste that address under Address, then click Test.
+2. Paste that address in step 3.
 3. To turn it off, press Control-C in the Terminal window running cloudflared.
 
 notes:

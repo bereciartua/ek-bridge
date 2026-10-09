@@ -78,16 +78,16 @@ enum AgentOutcomeText {
             let grant = c.action.map { "grant \($0.grant)" } ?? "grant that access"
             return ("Not allowed", "this agent can't \(c.action?.words ?? "do that") in that "
                 + "\(c.collection). If it should be able to, ask the user to \(grant) for this "
-                + "client in \(app). Don't retry.")
+                + "connection in \(app). Don't retry.")
         case "unauthorized":
             return ("Access removed", "this agent's access was removed in \(app). "
                 + "Tell the user; don't retry.")
         case "bridge_off":
-            return ("Bridge off", "\(app) is turned off. Ask the user to turn it on from the "
-                + "menu bar; don't retry until they do.")
+            return ("Paused", "\(app) is paused. Ask the user to turn it on from the menu bar; "
+                + "don't retry until they do.")
         case "client_paused":
             return ("Paused", "the user paused this agent's access in \(app). Its access isn't "
-                + "removed; ask the user to resume this client if they want you to continue, and "
+                + "removed; ask the user to resume this connection if they want you to continue, and "
                 + "don't retry until they do.")
         case "full_access_required":
             return ("Needs Full Access", "macOS isn't giving \(app) Full Access to \(c.access). "

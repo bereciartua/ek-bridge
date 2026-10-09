@@ -11,7 +11,7 @@ Header: Authorization: Bearer <remote token from Copy Remote Token…>
 steps:
 1. At cursor.com/agents, open the MCP menu and add a server.
 2. Choose HTTP and enter these values.
-3. Paste the token from Copy Remote Token… on the “claude.ai” client.
+3. Paste the token from Copy Remote Token… on the “claude.ai” connection.
 
 warnings:
 - Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.

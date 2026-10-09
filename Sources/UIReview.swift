@@ -14,7 +14,7 @@ import SwiftUI
 //   --ui-snapshots <dir>         write PNGs of every screen, light and dark
 //   --ui-visual-review           show the window and print its window number
 //     --ui-route overview|activity|client|settings, --ui-hold <seconds>,
-//     --ui-size <width>x<height>, --ui-select-problem, --ui-open-menu
+//     --ui-size <width>x<height>, --ui-select-problem, --ui-open-menu, --ui-appearance light|dark
 //   --ui-fresh                   start with no clients (setup checklist)
 //   --ui-calendar / --ui-reminders notDetermined|denied|writeOnly|restricted|fullAccess
 //   --ui-many-collections        60 calendars and lists
@@ -61,6 +61,11 @@ final class UIReview {
     let many: Bool
     /// "listening", "off" or "port-in-use".
     var mcpMode: String
+    /// What the fake Remote Access test answers.
+    var remoteReachable = true
+    /// Calls to the fake MCP server, for the behavior test.
+    var mcpStarts = 0
+    var mcpStops = 0
     weak var model: BridgeAppModel?
     private(set) lazy var approvals = ApprovalCenter(summarize: { request in
         ApprovalSummaries.build(request, lookup: Self.fixtureLookup(request),
@@ -84,7 +89,8 @@ final class UIReview {
         bridgeOn = fresh == true ? false : !CommandLine.arguments.contains("--ui-bridge-off")
         many = CommandLine.arguments.contains("--ui-many-collections")
         mcpMode = Self.value(CommandLine.arguments, "--ui-mcp") ?? "listening"
-        if mcpMode != "off" && fresh != true { defaults.set(true, forKey: "MCPServerEnabled") }
+        // The local server follows EK Bridge; "--ui-mcp off" is the Advanced switch turned off.
+        if mcpMode == "off" { defaults.set(false, forKey: "LocalMCPServerAllowed") }
         if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if renamed ?? CommandLine.arguments.contains("--ui-renamed") {
             defaults.set(true, forKey: RenameMigration.noticeKey)
@@ -92,6 +98,7 @@ final class UIReview {
         }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
             seed()
+            ConnectionAgentKinds.save([Self.claudeID: .claudeCode, Self.cursorID: .cursor], defaults)
             // Requests from the last day and a half count as unseen.
             defaults.set(Date().addingTimeInterval(-129_600).timeIntervalSinceReferenceDate,
                          forKey: "ActivityLastViewed")
@@ -164,10 +171,14 @@ final class UIReview {
             testCollections: nil,
             mcp: MCPControls(
                 start: { [unowned self] _ in
+                    self.mcpStarts += 1
                     if self.mcpMode == "off" { self.mcpMode = "listening" }
                     DispatchQueue.main.async { self.reportMCP() }
                 },
-                stop: { [unowned self] in self.mcpMode = "off" },
+                stop: { [unowned self] in
+                    self.mcpStops += 1
+                    self.mcpMode = "off"
+                },
                 counters: { MCPTrafficCounters.Snapshot(requests: 41, byStatus: [401: 2, 421: 1],
                                                          authFailures: 2) },
                 launcherURL: URL(fileURLWithPath: "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp"),
@@ -179,9 +190,10 @@ final class UIReview {
                 },
                 update: { _ in },
                 stop: {},
-                test: { _, completion in
+                test: { [unowned self] _, completion in
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        completion(.success((rtt: 0.18, tunnel: "Tailscale Funnel")))
+                        completion(self.remoteReachable ? .success((rtt: 0.18, tunnel: "Tailscale Funnel"))
+                            : .failure(RemoteTestFailure(reason: "The tunnel answered with HTTP 502. Check that it's running and points at port 47616.")))
                     }
                 },
                 portIsFree: { $0 != 47615 },
@@ -198,7 +210,61 @@ final class UIReview {
                 },
                 automaticChecks: { [unowned self] in self.automaticUpdateChecks },
                 setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
-                lastCheck: { [unowned self] in self.lastUpdateCheck }))
+                lastCheck: { [unowned self] in self.lastUpdateCheck }),
+            installedAgents: { [.claudeCode, .claudeDesktop, .cursor] },
+            agentSetup: fakeAgentSetup())
+    }
+
+    /// Add to <Agent>… without touching any real file: Claude Desktop's file
+    /// already has another server; applying "writes" nothing.
+    var oneClickApplies = 0
+    var restarts = 0
+    func fakeAgentSetup() -> AgentSetupControls {
+        AgentSetupControls(
+            preview: { agent, context, done in
+                guard let setup = agent.oneClickSetup(context) else { return }
+                switch setup {
+                case .jsonMerge(let file, let root, let key, let entry):
+                    let before = Data("""
+                        {
+                          "mcpServers": {
+                            "filesystem": {
+                              "command": "npx",
+                              "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Desktop"]
+                            }
+                          }
+                        }
+
+                        """.utf8)
+                    let merged = try! AgentConfigWriter.merge(current: before, root: root, key: key, entry: entry)
+                    let change = ConfigChange(
+                        fileURL: OneClickAgents.expand(file, home: NSHomeDirectory()), before: before,
+                        after: merged.after, outcome: merged.outcome,
+                        summary: String(localized: "Adds “\(key)” to \(root)"),
+                        diffLines: AgentConfigWriter.diff(before, merged.after))
+                    DispatchQueue.main.async { done(.success(.file(agent: agent, change: change))) }
+                case .claudeCode(let key, let arguments):
+                    DispatchQueue.main.async {
+                        done(.success(.command(agent: agent, executable: NSHomeDirectory() + "/.local/bin/claude",
+                                               arguments: arguments, key: key, replacing: false)))
+                    }
+                }
+            },
+            apply: { [unowned self] preview, done in
+                self.oneClickApplies += 1
+                let result: OneClickResult = switch preview {
+                case .file(let agent, let change):
+                    OneClickResult(agent: agent, backup: URL(fileURLWithPath: change.fileURL.path
+                        + ".ekbridge-backup-20261008-154210"))
+                case .command(let agent, _, _, let key, _):
+                    OneClickResult(agent: agent, output: "Added stdio MCP server \(key) to user config\nFile modified: ~/.claude.json")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { done(.success(result)) }
+            },
+            restart: { [unowned self] _, done in
+                self.restarts += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done(true) }
+            })
     }
 
     /// Starts a pairing request the way claude.ai would: register (DCR),
@@ -489,7 +555,6 @@ final class UIReview {
         model.showApprovals = { [weak self] in self?.approvalPanel.bringForward() }
         model.mcpDidConnect(Self.claudeID, MCPServer.Connection(at: Date().addingTimeInterval(-120),
                                                                agent: "claude-code 2.4.1"))
-        reportMCP()
         model.bridgeDidChange(bridgeOn ? .on : .off)
         if let version = Self.value(arguments, "--ui-update-found") {
             model.updateFound(FoundUpdate(version: version, critical: arguments.contains("--ui-update-critical")))
@@ -519,6 +584,7 @@ final class UIReview {
             switch value("--ui-route") {
             case "activity": model.navigate(to: .activity)
             case "settings": model.navigate(to: .settings)
+            case "remote": model.navigate(to: .remoteAccess)
             case "client": model.navigate(to: .client(Self.claudeID))
             default: model.navigate(to: .overview)
             }
@@ -528,6 +594,15 @@ final class UIReview {
             }
             if arguments.contains("--ui-select-problem") {
                 model.activitySelection = model.activity.first { $0.code == "forbidden" }?.id
+            }
+            switch value("--ui-appearance") {
+            case "dark":
+                NSApp.appearance = NSAppearance(named: .darkAqua)
+                statusMenu.menuAppearance = NSAppearance(named: .darkAqua)
+            case "light":
+                NSApp.appearance = NSAppearance(named: .aqua)
+                statusMenu.menuAppearance = NSAppearance(named: .aqua)
+            default: break
             }
             if arguments.contains("--ui-open-menu") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { statusMenu.button?.performClick(nil) }
@@ -568,12 +643,30 @@ final class UIReview {
     /// A second, empty environment for the setup checklist snapshots.
     func makeFreshWindow(calendar: EKAuthorizationStatus, reminders: EKAuthorizationStatus)
         -> (BridgeAppModel, MainWindowController) {
+        let (_, model, controller) = makeFreshEnvironment(calendar: calendar, reminders: reminders)
+        return (model, controller)
+    }
+
+    /// The same, with its fake services, so a test can record requests.
+    func makeFreshEnvironment(calendar: EKAuthorizationStatus, reminders: EKAuthorizationStatus)
+        -> (UIReview, BridgeAppModel, MainWindowController) {
         let fresh = UIReview(fresh: true, calendar: calendar, reminders: reminders)
         extraReviews.append(fresh)
         let model = BridgeAppModel(services: fresh.services())
+        fresh.model = model
         let controller = MainWindowController(model: model)
         extraWindows.append(controller)
-        return (model, controller)
+        return (fresh, model, controller)
+    }
+
+    /// Records a successful request from a connection, as the pipeline would.
+    func recordSuccess(_ clientID: String) {
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: .scopeStatus, parameters: [:])
+        if case .success(let call) = registry.authorize(clientID: clientID, request: request,
+                                                        origin: .mcp(agent: "claude-desktop 1.0")) {
+            _ = registry.recordResult(call, outcome: "success")
+        }
+        model?.refresh()
     }
 }
 
@@ -606,11 +699,12 @@ final class WindowLifecycleReview {
 
     private func cycle(_ number: Int) {
         let routes: [Route] = [.overview, .activity, .client(UIReview.claudeID), .settings,
-                               .client(UIReview.revokedID)]
+                               .client(UIReview.revokedID), .remoteAccess]
         model.navigate(to: routes[number % routes.count])
         model.sheet = number.isMultiple(of: 2) ? .newClient : .rename(UIReview.claudeID)
-        // Generous: the window server is slower with the display asleep.
-        after(0.6) {
+        // Generous: the window server is slower with the display asleep, and the
+        // first launch after a rebuild draws its first sheet slowly.
+        whenSheet(waited: 0) {
             guard let window = self.controller.window, window.isVisible, window.attachedSheet != nil,
                   !window.isReleasedWhenClosed else { return self.report("sheet_missing", number) }
             self.model.sheet = nil
@@ -631,6 +725,12 @@ final class WindowLifecycleReview {
                 }
             }
         }
+    }
+
+    /// Runs `work` once the sheet is attached, or after 3 s.
+    private func whenSheet(waited: Double, _ work: @escaping @MainActor () -> Void) {
+        if controller.window?.attachedSheet != nil && waited >= 0.6 || waited >= 3 { return work() }
+        after(0.1) { self.whenSheet(waited: waited + 0.1, work) }
     }
 
     private func after(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
@@ -814,6 +914,27 @@ final class BehaviorReview {
             self.model.navigate(to: .client(claude))
             return self.model.route == .client(claude)
         }
+        step("column Turn On for All sets Read on the rows shown and stages them") {
+            guard let draft = self.model.draft, !draft.hasChanges else { return false }
+            let calendars = self.model.collections(.calendar)
+            let unread = calendars.filter { draft.mask($0.key) & ClientGrant.read == 0 }.count
+            self.model.applyColumn(bit: ClientGrant.read, on: true, rows: calendars)
+            guard let after = self.model.draft, after.changedCells == unread,
+                  calendars.allSatisfy({ after.mask($0.key) & ClientGrant.read != 0 }) else { return false }
+            self.window.undoManager?.undo()
+            return self.model.draft?.hasChanges == false
+        }
+        step("column Delete for all skips read-only calendars, write implies Read") {
+            let calendars = self.model.collections(.calendar)
+            self.model.applyColumn(bit: ClientGrant.delete, on: true, rows: calendars)
+            guard let draft = self.model.draft else { return false }
+            let ok = calendars.allSatisfy { row in
+                row.writable ? draft.mask(row.key) & (ClientGrant.delete | ClientGrant.read) == (ClientGrant.delete | ClientGrant.read)
+                    : draft.mask(row.key) & ClientGrant.delete == 0
+            }
+            self.model.revertDraft()
+            return ok
+        }
         step("unavailable grant removal is staged") {
             let gone = GrantKey(resource: .calendar, targetID: "cal-signed-out")
             guard let client = self.model.client(claude),
@@ -829,6 +950,41 @@ final class BehaviorReview {
             return self.model.clientName(claude) == "claude code (laptop)" &&
                 self.model.activity.contains { $0.clientID == claude } &&
                 self.model.rename(UIReview.obsidianID, to: "CLAUDE CODE (LAPTOP)") == .duplicate("claude code (laptop)")
+        }
+        step("Claude Code tile: an MCP connection that reads everything") {
+            let name = self.model.suggestedName(AddConnectionTile.agent(.claudeCode).suggestedName)
+            // The fixture's Claude Code was renamed above, so the name is free.
+            guard name == "Claude Code",
+                  self.model.createClient(name: name, kind: .agent, askBeforeChanges: true,
+                                          startingAccess: .readAll, agent: .claudeCode) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == name }) else { return false }
+            let listed = self.model.collections.count
+            return created.hasMCPToken && !created.hasSigningKey && created.grants.count == listed &&
+                created.grants.allSatisfy { $0.mask == ClientGrant.read } && created.approval == .ask &&
+                self.model.agent(for: created.id) == .claudeCode && self.model.route == .client(created.id)
+        }
+        step("a new connection opens on Connect") {
+            guard case .client(let id) = self.model.route, let client = self.model.client(id) else { return false }
+            return self.model.tab(client) == .connect &&
+                self.model.connectionStatusLine(client).text.hasPrefix("Waiting for Claude Code")
+        }
+        step("the next one is numbered") {
+            self.model.suggestedName("Claude Code") == "Claude Code 2"
+        }
+        step("read all plus one: full access on the chosen list only") {
+            let groceries = GrantKey(resource: .reminderList, targetID: "list-groceries")
+            guard self.model.createClient(name: "Cursor 2", kind: .agent, startingAccess: .readAllPlusOne(groceries),
+                                          agent: .cursor) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == "Cursor 2" }) else { return false }
+            return created.grants.first { $0.targetID == "list-groceries" }?.mask == 31 &&
+                created.grants.filter { $0.targetID != "list-groceries" }.allSatisfy { $0.mask == ClientGrant.read }
+        }
+        step("Script tile: a command-line connection with no access") {
+            let name = self.model.suggestedName(AddConnectionTile.script.suggestedName)
+            guard self.model.createClient(name: name, kind: AddConnectionTile.script.kind) == nil,
+                  let created = self.model.activeClients.first(where: { $0.name == name }) else { return false }
+            return created.hasSigningKey && !created.hasMCPToken && created.grants.isEmpty &&
+                self.model.banner?.message == "Choose what it can use, then Save."
         }
         step("create client") {
             guard self.model.createClient(name: "Shortcuts") == nil,
@@ -846,13 +1002,13 @@ final class BehaviorReview {
                   self.window.attachedSheet == nil, self.model.banner?.kind == .success,
                   self.model.activeClients.contains(where: { $0.id == created.id }),
                   self.model.tokenFileStatus(created.id) == .present,
-                  ClientMenu.items(model: self.model, client: paused).contains(where: { $0.title == "Resume Client" })
+                  ClientMenu.items(model: self.model, client: paused).contains(where: { $0.title == "Resume Connection" })
             else { return false }
             self.model.setPaused(created.id, false)
             guard let resumed = self.model.client(created.id) else { return false }
             return !resumed.paused && resumed.pausedAt == nil && resumed.approval == created.approval &&
                 self.model.tokenFileStatus(created.id) == .present &&
-                ClientMenu.items(model: self.model, client: resumed).contains(where: { $0.title == "Pause Client" })
+                ClientMenu.items(model: self.model, client: resumed).contains(where: { $0.title == "Pause Connection" })
         }
         step("revoke asks first") {
             guard let created = self.model.activeClients.first(where: { $0.name == "Shortcuts" }) else { return false }
@@ -872,6 +1028,69 @@ final class BehaviorReview {
                 self.model.tokenFileStatus(created.id) == .missing && created.approval == .allow &&
                 self.model.connectTab[created.id] == .cli
         }
+        step("a connection's agent is remembered") {
+            let stored = self.model.agent(for: UIReview.cursorID) == .cursor
+            self.model.setAgent(.claudeDesktop, for: UIReview.cursorID)
+            let saved = ConnectionAgentKinds.load(self.review.defaults)[UIReview.cursorID] == .claudeDesktop
+            self.model.setAgent(.cursor, for: UIReview.cursorID)
+            return stored && saved && self.model.installedAgents.contains(.claudeDesktop)
+        }
+        step("Add to Claude Desktop shows the preview") {
+            self.model.navigate(to: .client(claude))
+            self.model.beginOneClick(claude, agent: .claudeDesktop)
+            return self.model.sheet == .configPreview
+        }
+        step("the preview holds the change, no token") {
+            guard case .preview(.file(_, let change))? = self.model.oneClick?.phase else { return false }
+            let text = String(decoding: change.after, as: UTF8.self)
+            return change.outcome == .added && text.contains("\"filesystem\"") && text.contains("--client") &&
+                !text.contains("ekb_mcp_v1_") && self.review.oneClickApplies == 0
+        }
+        step("Add applies through the fake") {
+            self.model.confirmOneClick()
+            return self.review.oneClickApplies == 1
+        }
+        step("added: the sheet closes with the backup's name") {
+            self.model.sheet == nil && self.model.oneClickResult(claude, .claudeDesktop) != nil &&
+                self.model.banner?.message?.contains(".ekbridge-backup-") == true &&
+                self.model.agent(for: claude) == .claudeDesktop
+        }
+        step("Restart Claude Desktop") {
+            self.model.restartAgent(.claudeDesktop)
+            return self.review.restarts == 1 && self.model.restarting == .claudeDesktop
+        }
+        step("restarted") {
+            self.model.setAgent(.claudeCode, for: claude)
+            return self.model.restarting == nil
+        }
+        step("a connection with a successful request opens on Access") {
+            self.model.navigate(to: .client(claude))
+            guard let client = self.model.client(claude) else { return false }
+            return self.model.tab(client) == .access
+        }
+        step("edits survive switching tabs; the save bar shows on Connect") {
+            self.model.setAction(self.family, bit: ClientGrant.delete, on: true)
+            self.model.clientTab[claude] = .connect
+            return self.model.hasUnsavedChanges && ((self.model.draft?.mask(self.family) ?? 0) & ClientGrant.delete) != 0
+        }
+        step("⌘⌥→ switches tab") {
+            let arrow = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                               modifierFlags: [.command, .option, .function, .numericPad],
+                                               timestamp: 0, windowNumber: self.window.windowNumber, context: nil,
+                                               characters: arrow, charactersIgnoringModifiers: arrow,
+                                               isARepeat: false, keyCode: 124) else { return false }
+            self.window.makeKey()
+            return NSApp.mainMenu?.performKeyEquivalent(with: event) == true &&
+                self.model.clientTab[claude] == .activity
+        }
+        step("the Activity tab shows only this connection's rows") {
+            let rows = ActivityScope.client(claude).entries(self.model)
+            self.model.revertDraft()
+            self.model.clientTab[claude] = nil
+            return !rows.isEmpty && rows.allSatisfy { $0.clientID == claude } &&
+                rows.count < self.model.activity.count
+        }
         step("switch Connect tabs") {
             self.model.navigate(to: .client(claude))
             self.model.connectTab[claude] = .cli
@@ -885,7 +1104,7 @@ final class BehaviorReview {
             let context = SetupContext(url: self.model.mcpURL, launcherPath: self.model.launcherPath,
                                        clientID: claude, tokenPath: url.path)
             for agent in AgentKind.allCases {
-                self.model.agentChoice[claude] = agent
+                self.model.setAgent(agent, for: claude)
                 for method in agent.methods {
                     self.model.methodChoice["\(claude)|\(agent.rawValue)"] = method
                     let snippet = agent.snippet(method, context)
@@ -893,7 +1112,7 @@ final class BehaviorReview {
                     if texts.contains(where: { $0.contains(token) || $0.contains("ekb_mcp_v1_") }) { return false }
                 }
             }
-            self.model.agentChoice[claude] = .claudeCode
+            self.model.setAgent(.claudeCode, for: claude)
             return true
         }
         step("Install Command-Line Tool links bridge-client") {
@@ -998,14 +1217,51 @@ final class BehaviorReview {
                 self.model.portIssue("70000") != nil && self.model.portIssue("47616") != nil &&
                 self.model.portIssue("47620") == nil
         }
-        step("turning the MCP server off with recent agents asks first") {
+        step("pausing EK Bridge stops MCP") {
+            let stops = self.review.mcpStops
+            self.model.setBridgeEnabled(false)
+            return !self.model.bridge.isOn && self.review.mcpStops == stops + 1 && !self.model.mcpStarted &&
+                self.model.mcpStatus == .off && self.model.mcpStatusLine == nil
+        }
+        step("turning on with an MCP connection starts MCP") {
+            let starts = self.review.mcpStarts
+            self.model.setBridgeEnabled(true)
+            return self.model.bridge.isOn && self.review.mcpStarts == starts + 1 && self.model.mcpStarted
+        }
+        step("MCP is listening again") { self.model.mcpIsListening }
+        step("turning the local MCP server off with recent agents asks first") {
             self.model.mcpDidConnect(claude, MCPServer.Connection(at: Date(), agent: "claude-code 2.4.1"))
             self.model.refresh()
-            self.model.setMCPServerEnabled(false)
+            self.model.setLocalMCPAllowed(false)
             return self.window.attachedSheet != nil
         }
         step("cancel keeps it on") {
-            self.answer(.alertSecondButtonReturn) && self.model.mcpEnabled && self.model.mcpIsListening
+            self.answer(.alertSecondButtonReturn) && self.model.localMCPAllowed && self.model.mcpIsListening
+        }
+        step("pause for an hour sets resumeAt and turns off") {
+            self.model.pause(for: .oneHour)
+            guard let resume = self.model.resumeAt else { return false }
+            return !self.model.bridge.isOn && abs(resume.timeIntervalSinceNow - 3_600) < 5 &&
+                self.model.bridgeTitle.hasPrefix("\(AppIdentity.displayName) is paused until")
+        }
+        step("tick after resumeAt turns on") {
+            self.model.pause(until: Date().addingTimeInterval(-1))
+            self.model.tick()
+            return self.model.bridge.isOn && self.model.resumeAt == nil && self.model.banner?.kind == .info
+        }
+        step("manual turn on clears resumeAt") {
+            self.model.pause(for: .untilTomorrow)
+            guard self.model.resumeAt != nil, !self.model.bridge.isOn else { return false }
+            self.model.setBridgeEnabled(true)
+            return self.model.bridge.isOn && self.model.resumeAt == nil
+        }
+        step("Advanced switch off keeps MCP off") {
+            self.model.setLocalMCPAllowed(false, confirm: false)
+            self.model.setBridgeEnabled(false)
+            self.model.setBridgeEnabled(true)
+            let off = !self.model.mcpStarted && self.model.mcpStatus == .off
+            self.model.setLocalMCPAllowed(true)
+            return off && self.model.mcpStarted
         }
         step("turning on Remote Access asks first") {
             self.model.setRemoteAccessEnabled(true)
@@ -1080,6 +1336,31 @@ final class BehaviorReview {
             return self.model.client(claude)?.cloudAccess == false &&
                 self.model.client(claude)?.hasRemoteToken == false &&
                 self.model.remoteTokenStatus(claude) == .missing
+        }
+        step("Remote Access page reachable from the menu's problem line") {
+            self.model.fix(.remoteAccessFailed("x"))
+            return self.model.route == .remoteAccess
+        }
+        step("guide: starting over shows the tunnels; a set-up address skips to done") {
+            self.model.chooseTunnelAgain()
+            let choosing = self.model.remoteGuideStep == .chooseTunnel
+            self.model.tunnelChoice = .tailscaleFunnel
+            return choosing && self.model.remoteGuideStep == .done
+        }
+        step("guide advances on address save") {
+            self.model.remoteEditingAddress = true
+            guard self.model.remoteGuideStep == .pasteAddress,
+                  self.model.setRemoteAddress("https://other-mac.tail1234.ts.net") == nil,
+                  self.model.remoteGuideStep == .test else { return false }
+            self.model.testRemoteAccess()
+            return true
+        }
+        step("the test makes it done") {
+            self.model.remoteGuideStep == .done
+        }
+        step("turning off from the page") {
+            self.model.setRemoteAccessEnabled(false)
+            return !self.model.remoteEnabled && self.model.remoteStatus == .off
         }
         step("Remote Access off from the menu") {
             self.model.applyRemoteEnabled(false)
@@ -1170,6 +1451,49 @@ final class BehaviorReview {
             return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
                 && widths[0].request >= ActivityColumns.widestRequestLabel
         }
+        // A fresh run, end to end (B09): allow both, add Claude Desktop, one-click, first request.
+        let (fresh, freshModel, _) = review.makeFreshEnvironment(calendar: .notDetermined, reminders: .notDetermined)
+        step("fresh run: three steps, the first current") {
+            freshModel.start()
+            let states = SetupChecklist.states(freshModel.checklistInput)
+            freshModel.requestAccess(.calendar)
+            freshModel.requestAccess(.reminderList)
+            return states == [.macOSAccess: .current, .addConnection: .pending, .connect: .pending]
+        }
+        step("wait for the macOS prompts") { true }
+        step("allowing both finishes macOS access") {
+            SetupChecklist.states(freshModel.checklistInput)[.macOSAccess] == .done
+        }
+        step("adding Claude Desktop with Read all finishes Add your agent") {
+            guard freshModel.createClient(name: "Claude Desktop", startingAccess: .readAll, agent: .claudeDesktop) == nil
+            else { return false }
+            return SetupChecklist.states(freshModel.checklistInput)[.addConnection] == .done &&
+                SetupChecklist.states(freshModel.checklistInput)[.connect] == .current
+        }
+        step("Connect turns EK Bridge on and opens Add to Claude Desktop") {
+            guard let focus = SetupChecklist.focusClient(freshModel.checklistInput) else { return false }
+            freshModel.connectFromSetup(focus)
+            return freshModel.bridge.isOn && freshModel.sheet == .configPreview && freshModel.waitingForTestRequest
+        }
+        step("Add applies through the fake") {
+            freshModel.confirmOneClick()
+            return true
+        }
+        step("the first request completes setup") {
+            guard let id = freshModel.activeClients.first?.id,
+                  freshModel.oneClickResult(id, .claudeDesktop) != nil else { return false }
+            fresh.recordSuccess(id)
+            return SetupChecklist.isComplete(freshModel.checklistInput) &&
+                freshModel.setupJustCompletedName == "Claude Desktop"
+        }
+        step("Needs you lists a waiting change and the unavailable calendar") {
+            self.queue(.createReminder, ["listID": "list-errands", "title": "x"])
+            let items = self.model.needsYouItems
+            self.review.approvals.withdrawAll()
+            return items.first == .approvals(1) && items.contains {
+                if case .unavailable(_, _, let key, _, _) = $0 { key.targetID == "cal-signed-out" } else { false }
+            }
+        }
         step("a copy built from source can't check") {
             self.review.updaterAvailable = false
             self.model.refresh()
@@ -1255,6 +1579,8 @@ final class SnapshotReview {
     let folder: URL
     private var steps = [(String, @MainActor () -> NSWindow?)]()
     private var written = [String]()
+    /// Claude Code's grants while `overview-quiet` hides its unavailable one.
+    private var quietGrants: [ClientGrant]?
 
     init(review: UIReview, model: BridgeAppModel, controller: MainWindowController, folder: URL) {
         self.review = review
@@ -1266,7 +1592,6 @@ final class SnapshotReview {
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         controller.present()
-        let (freshModel, freshController) = review.makeFreshWindow(calendar: .fullAccess, reminders: .notDetermined)
         let (renamedModel, renamedController) = review.makeRenamedWindow()
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let suffix = appearance == .aqua ? "light" : "dark"
@@ -1282,11 +1607,37 @@ final class SnapshotReview {
                 return window
             }
             step("overview") {
+                // Needs you: a change waiting for approval and an unavailable calendar.
                 self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
+                self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": "Buy oat milk"],
+                                          agent: "claude-code 2.4.1")
                 return main
+            }
+            step("overview-quiet") {
+                // Nothing needs you: no approvals, Activity seen, every granted calendar listed.
+                self.review.approvals.withdrawAll()
+                self.model.markActivityViewed()
+                self.quietGrants = self.review.registry.clients()?.first { $0.id == UIReview.claudeID }?.grants
+                _ = self.review.registry.replaceGrants(
+                    clientID: UIReview.claudeID,
+                    grants: (self.quietGrants ?? []).filter { $0.targetID != "cal-signed-out" })
+                self.model.refresh()
+                return main
+            }
+            step("overview-paused") {
+                self.model.setBridgeEnabled(false)
+                return main
+            }
+            step("restore-overview") {
+                self.model.setBridgeEnabled(true)
+                if let grants = self.quietGrants {
+                    _ = self.review.registry.replaceGrants(clientID: UIReview.claudeID, grants: grants)
+                }
+                self.model.refresh()
+                return nil
             }
             step("client") {
                 self.model.navigate(to: .client(UIReview.claudeID))
@@ -1330,13 +1681,26 @@ final class SnapshotReview {
             step("settings") {
                 main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
+                self.model.settingsTab = .general
                 self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-advanced") {
+                self.model.settingsTab = .advanced
                 return main
             }
             step("overview-mcp") {
                 self.model.setShowDeveloperTools(false)
                 self.model.navigate(to: .overview)
                 return main
+            }
+            step("overview-paused-until") {
+                self.model.pause(for: .oneHour)
+                return main
+            }
+            step("restore-paused") {
+                self.model.setBridgeEnabled(true)
+                return nil
             }
             step("overview-update") {
                 self.model.updateFound(FoundUpdate(version: "0.8.1", critical: false))
@@ -1348,6 +1712,7 @@ final class SnapshotReview {
             }
             step("settings-updates") {
                 self.model.updateFound(nil)
+                self.model.settingsTab = .general
                 self.model.navigate(to: .settings)
                 return main
             }
@@ -1371,6 +1736,7 @@ final class SnapshotReview {
             }
             step("client-connect-agent-claude-code") {
                 self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientTab[UIReview.claudeID] = .connect
                 self.model.connectTab[UIReview.claudeID] = .agent
                 self.model.agentChoice[UIReview.claudeID] = .claudeCode
                 return main
@@ -1379,28 +1745,45 @@ final class SnapshotReview {
                 self.model.agentChoice[UIReview.claudeID] = .claudeDesktop
                 return main
             }
+            step("sheet-config-preview") {
+                self.model.beginOneClick(UIReview.claudeID, agent: .claudeDesktop)
+                return main
+            }
+            step("client-connect-one-click-done") {
+                self.model.confirmOneClick()
+                return main
+            }
+            step("sheet-config-preview-claude-code") {
+                self.model.dismissBanner()
+                self.model.beginOneClick(UIReview.claudeID, agent: .claudeCode)
+                return main
+            }
+            step("client-connect-copy") {
+                self.model.closeOneClick()
+                self.model.copySetup.insert(UIReview.claudeID)
+                return main
+            }
             step("client-connect-direct-other") {
+                self.model.copySetup.remove(UIReview.claudeID)
                 self.model.agentChoice[UIReview.claudeID] = .other
                 return main
             }
-            step("client-connect-no-token") {
+            step("client-connect-cli") {
                 self.model.agentChoice[UIReview.claudeID] = .claudeCode
                 self.model.navigate(to: .client(UIReview.briefingID))
-                self.model.connectTab[UIReview.briefingID] = .agent
-                return main
-            }
-            step("client-connect-cli") {
-                self.model.connectTab[UIReview.briefingID] = .cli
+                self.model.clientTab[UIReview.briefingID] = .connect
                 return main
             }
             step("client-connect-server-off") {
+                // EK Bridge paused: the Connect tab offers to turn it on.
                 self.model.navigate(to: .client(UIReview.cursorID))
-                self.review.mcpMode = "off"
-                self.model.setMCPServerEnabled(false, confirm: false)
+                self.model.clientTab[UIReview.cursorID] = .connect
+                self.model.setBridgeEnabled(false)
                 return main
             }
             step("settings-mcp-listening") {
-                self.model.setMCPServerEnabled(true)
+                self.model.setBridgeEnabled(true)
+                self.model.settingsScrollTarget = "mcp"
                 self.model.navigate(to: .settings)
                 return main
             }
@@ -1480,17 +1863,34 @@ final class SnapshotReview {
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window
             }
-            step("settings-remote") {
+            // Remote Access (B10): the page before setup, the guide, then set up.
+            step("remote-not-set-up") {
                 self.review.approvals.withdrawAll()
-                self.model.applyRemoteEnabled(true)
-                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
-                self.model.testRemoteAccess()
-                self.model.settingsScrollTarget = "remote"
-                self.model.navigate(to: .settings)
+                self.model.navigate(to: .remoteAccess)
                 return main
             }
-            step("settings-remote-more") {
-                self.model.settingsScrollTarget = "developer"
+            step("remote-guide-1") {
+                self.model.remoteGuideActive = true
+                return main
+            }
+            step("remote-guide-2") {
+                self.model.tunnelChoice = .tailscaleFunnel
+                self.model.applyRemoteEnabled(true)
+                return main
+            }
+            step("remote-guide-3") {
+                self.model.remoteTunnelStarted = true
+                return main
+            }
+            step("remote-guide-4-failed") {
+                self.review.remoteReachable = false
+                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-set-up") {
+                self.review.remoteReachable = true
+                self.model.testRemoteAccess()
                 return main
             }
             step("client-cloud") {
@@ -1517,20 +1917,54 @@ final class SnapshotReview {
                                             redirectURI: CloudAgentKind.geminiEnterprise.preRegisteredRedirectURI!)
                 return main?.attachedSheet ?? main
             }
-            step("new-client-sheet-mcp") {
+            step("sheet-new-client-cloud") {
+                // Remote Access is on here, so the sheet offers a Cloud agent tile.
                 self.model.oauthClientDetails = nil
                 self.model.sheet = nil
-                self.model.applyRemoteEnabled(false)
                 self.review.approvals.withdrawAll()
                 self.model.navigate(to: .overview)
-                self.model.sheet = .newClient
-                return main?.attachedSheet ?? main
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
             }
             step("sheet-new-client") {
+                self.model.sheet = nil
+                self.model.applyRemoteEnabled(false)
                 self.model.setShowDeveloperTools(false)
                 self.model.navigate(to: .overview)
-                self.model.sheet = .newClient
-                return main?.attachedSheet ?? main
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-write") {
+                self.model.sheet = nil
+                self.model.newConnectionAccessPreset = .readAllPlusOne
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-script") {
+                self.model.sheet = nil
+                self.model.newConnectionPreset = .script
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("sheet-new-client-no-access") {
+                self.model.sheet = nil
+                self.review.calendarStatus = .notDetermined
+                self.review.remindersStatus = .notDetermined
+                self.model.refresh()
+                // On the next turn, so SwiftUI builds a fresh sheet.
+                DispatchQueue.main.async { self.model.sheet = .newClient }
+                return main
+            }
+            step("restore-access") {
+                self.model.sheet = nil
+                self.review.calendarStatus = .fullAccess
+                self.review.remindersStatus = .fullAccess
+                self.model.refresh()
+                return nil
             }
             step("sheet-rename") {
                 self.model.sheet = nil
@@ -1563,6 +1997,17 @@ final class SnapshotReview {
                 self.model.dismissBanner()
                 return nil
             }
+            step("client-tab-activity") {
+                self.model.sheet = nil
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientTab[UIReview.claudeID] = .activity
+                return main
+            }
+            step("client-connect-cloud-off") {
+                // Cloud access on, Remote Access off: one line under Connect (A08).
+                self.model.clientTab[UIReview.claudeID] = .connect
+                return main
+            }
             step("client-access") {
                 // The README's Access picture: Claude Code's calendars, scrolled to the table.
                 self.model.sheet = nil
@@ -1571,20 +2016,48 @@ final class SnapshotReview {
                 self.model.clientScrollTarget = "access"
                 return main
             }
+            // Setup in three steps (B09), in fresh environments of its own.
+            let (freshReview, freshModel, freshController) = self.review.makeFreshEnvironment(
+                calendar: .fullAccess, reminders: .notDetermined)
+            let (_, scriptModel, scriptController) = self.review.makeFreshEnvironment(
+                calendar: .fullAccess, reminders: .fullAccess)
             step("setup") {
                 self.model.sheet = nil
                 main?.orderOut(nil)
+                freshModel.start()
                 freshController.window?.appearance = NSAppearance(named: appearance)
                 freshController.present()
                 return freshController.window
             }
+            step("restore-allow-reminders") {
+                freshModel.requestAccess(.reminderList)
+                return nil
+            }
             step("setup-progress") {
-                if freshModel.activeClients.isEmpty { _ = freshModel.createClient(name: "Claude Code") }
+                if freshModel.activeClients.isEmpty {
+                    _ = freshModel.createClient(name: "Claude Code", startingAccess: .readAll, agent: .claudeCode)
+                }
                 freshModel.navigate(to: .overview)
                 freshModel.dismissBanner()
                 return freshController.window
             }
+            step("setup-complete") {
+                if let id = freshModel.activeClients.first?.id { freshReview.recordSuccess(id) }
+                return freshController.window
+            }
+            step("setup-cli") {
+                freshController.window?.orderOut(nil)
+                if scriptModel.activeClients.isEmpty {
+                    _ = scriptModel.createClient(name: "Nightly script", kind: .cli, startingAccess: .readAll)
+                }
+                scriptModel.navigate(to: .overview)
+                scriptModel.dismissBanner()
+                scriptController.window?.appearance = NSAppearance(named: appearance)
+                scriptController.present()
+                return scriptController.window
+            }
             step("overview-renamed") {
+                scriptController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
                 renamedModel.navigate(to: .overview)
                 renamedModel.bridgeDidChange(.on)
@@ -1596,6 +2069,7 @@ final class SnapshotReview {
             step("restore") {
                 renamedController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
+                scriptController.window?.orderOut(nil)
                 self.controller.present()
                 return nil
             }

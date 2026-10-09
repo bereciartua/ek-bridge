@@ -31,6 +31,12 @@ set -eu
 #   LIVE_TEST_APP           The copy to start and drive. Default:
 #                           build/live-test/EK Bridge Test.app
 #   LIVE_TEST_TIMEOUT       cmd: seconds to wait for a response. Default: 30.
+#   LIVE_TEST_AGENT_HOME    start: a scratch folder that stands in for the home
+#                           folder in one-click setup ({"command": "oneClick"}).
+#                           Without it, one-click setup refuses in the test copy.
+#   LIVE_TEST_CLAUDE_CONFIG_DIR
+#                           start: CLAUDE_CONFIG_DIR for the claude command, so
+#                           one-click setup never touches the real ~/.claude.json.
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 bundle_id=io.github.bereciartua.ekbridge.livetest
 app=${LIVE_TEST_APP:-"$project_dir/build/live-test/EK Bridge Test.app"}
@@ -124,7 +130,16 @@ start() {
     rm -f "$automation/commands.jsonl" "$automation/responses.jsonl"
     # Through LaunchServices, so macOS treats the app (not this shell) as the
     # one asking for Calendar and Reminders access.
-    open -n "$app" --args "$@"
+    # One-click setup writes only into a scratch home (LIVE_TEST_AGENT_HOME), and
+    # Claude Code runs only with its own config folder (LIVE_TEST_CLAUDE_CONFIG_DIR).
+    set -- "$app" --args "$@"
+    if [ -n "${LIVE_TEST_CLAUDE_CONFIG_DIR:-}" ]; then
+        set -- --env "CLAUDE_CONFIG_DIR=$LIVE_TEST_CLAUDE_CONFIG_DIR" "$@"
+    fi
+    if [ -n "${LIVE_TEST_AGENT_HOME:-}" ]; then
+        set -- --env "EKB_AGENT_HOME=$LIVE_TEST_AGENT_HOME" "$@"
+    fi
+    open -n "$@"
     LIVE_TEST_TIMEOUT=20 cmd '{"command": "state"}' > /dev/null || fail "the app didn't answer"
     printf 'live_test: started %s\n' "$app"
 }

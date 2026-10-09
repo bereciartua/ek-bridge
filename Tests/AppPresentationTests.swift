@@ -59,7 +59,7 @@ struct AppPresentationTests {
         precondition(OutcomePresentation.of("error:recurrence_whatever").label == "Not supported")
         let unknown = OutcomePresentation.of("error:mystery_code")
         precondition(unknown.label == "Error" && unknown.tone == .neutral &&
-                     unknown.why == "The bridge returned mystery_code.")
+                     unknown.why == "EK Bridge returned mystery_code.")
         precondition(OutcomePresentation.of("success").tone == .ok)
         precondition(!OutcomePresentation.of("already_completed").tone.isProblem)
         precondition(CommandPresentation.label("complete_reminder") == "Complete reminder")
@@ -173,61 +173,75 @@ struct AppPresentationTests {
 
     static func checklist() {
         typealias Step = SetupChecklist.Step
+        // Three steps, with raw values that never reuse 0.8's.
+        precondition(Step.macOSAccess.rawValue == 10 && Step.addConnection.rawValue == 11 &&
+                     Step.connect.rawValue == 12, "stored skipped steps keep their meaning")
+        precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6 &&
+                     Step.calendarAccess.rawValue == 1 && Step.remindersAccess.rawValue == 2)
         var input = SetupChecklist.Input(calendar: .notDetermined, reminders: .notDetermined,
                                          clients: [], bridgeOn: false, successfulClientIDs: [])
+        precondition(SetupChecklist.steps(input) == [.macOSAccess, .addConnection, .connect])
         var states = SetupChecklist.states(input)
-        precondition(states[.calendarAccess] == .current)
-        precondition(SetupChecklist.steps(input).dropFirst().allSatisfy { states[$0] == .pending })
-        precondition(states[.mcpServer] == nil, "the MCP step needs an MCP client")
+        precondition(states == [.macOSAccess: .current, .addConnection: .pending, .connect: .pending])
+        // macOS access: one type allowed and the other decided (allowed, off, or skipped).
         input.calendar = .fullAccess
+        precondition(SetupChecklist.states(input)[.macOSAccess] == .current, "Reminders still undecided")
+        for (reminders, skipped) in [(EKAuthorizationStatus.fullAccess, false), (.denied, false), (.notDetermined, true)] {
+            var decided = input
+            decided.reminders = reminders
+            if skipped { decided.skipped = [.remindersAccess] }
+            precondition(SetupChecklist.states(decided)[.macOSAccess] == .done, "reminders \(reminders) \(skipped)")
+        }
+        var onlyReminders = input
+        onlyReminders.calendar = .denied
+        onlyReminders.reminders = .fullAccess
+        precondition(SetupChecklist.isDone(.macOSAccess, onlyReminders))
+        var neither = input
+        neither.calendar = .denied
+        neither.reminders = .denied
+        precondition(!SetupChecklist.isDone(.macOSAccess, neither), "nothing allowed isn't done")
+        var skippedBoth = input
+        skippedBoth.calendar = .notDetermined
+        skippedBoth.skipped = [.calendarAccess, .remindersAccess]
+        precondition(!SetupChecklist.isDone(.macOSAccess, skippedBoth), "skipping both isn't done")
+        input.reminders = .fullAccess
         states = SetupChecklist.states(input)
-        precondition(states[.calendarAccess] == .done && states[.remindersAccess] == .current)
+        precondition(states[.macOSAccess] == .done && states[.addConnection] == .current &&
+                     states[.connect] == .pending)
+        // Add your agent: done once a connection has some access.
         var client = ClientView(id: "c", name: "Claude Code", revoked: false, grants: [])
         input.clients = [client]
-        states = SetupChecklist.states(input)
-        precondition(states[.remindersAccess] == .optional, "only Calendars is fine")
-        precondition(states[.createClient] == .done && states[.chooseAccess] == .current)
+        precondition(SetupChecklist.states(input)[.addConnection] == .current, "no access yet")
         precondition(SetupChecklist.focusClient(input)?.id == "c")
         client = ClientView(id: "c", name: "Claude Code", revoked: false, grants: [
             ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
         input.clients = [client]
-        input.bridgeOn = true
         states = SetupChecklist.states(input)
-        precondition(states[.chooseAccess] == .done && states[.turnOn] == .done &&
-                     states[.testRequest] == .current)
+        precondition(states[.addConnection] == .done && states[.connect] == .current)
         precondition(!SetupChecklist.isComplete(input))
+        // Connect: done with the first successful request (EK Bridge on or not when checked).
         input.successfulClientIDs = ["c"]
         precondition(SetupChecklist.isComplete(input))
-        input.skipped = [.remindersAccess]
-        precondition(SetupChecklist.states(input)[.remindersAccess] == .skipped)
-        // An MCP client adds "Turn on the MCP server" before "Connect your tool".
-        var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [
-            ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
+        // Out of order: a request before macOS access is decided still leaves that step.
+        var early = input
+        early.calendar = .notDetermined
+        early.reminders = .notDetermined
+        precondition(SetupChecklist.states(early) == [.macOSAccess: .current, .addConnection: .done, .connect: .done])
+        // A removed connection's request doesn't complete setup, nor does its access count.
+        let revoked = SetupChecklist.Input(
+            calendar: .fullAccess, reminders: .fullAccess,
+            clients: [ClientView(id: "r", name: "Old", revoked: true, grants: [
+                ClientGrant(resource: .calendar, targetID: "w", mask: 1)])],
+            bridgeOn: true, successfulClientIDs: ["r"])
+        precondition(SetupChecklist.states(revoked)[.addConnection] == .current &&
+                     SetupChecklist.states(revoked)[.connect] == .pending)
+        precondition(SetupChecklist.isDone(.testRequest, input), "0.8's step still answers for existing installs")
+        var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [])
         agent.hasSigningKey = false
         agent.hasMCPToken = true
-        var mcp = input
-        mcp.clients = [agent]
-        mcp.successfulClientIDs = []
-        precondition(SetupChecklist.steps(mcp).suffix(3) == [.turnOn, .mcpServer, .testRequest])
-        precondition(SetupChecklist.states(mcp)[.mcpServer] == .current)
-        mcp.mcpListening = true
-        precondition(SetupChecklist.states(mcp)[.mcpServer] == .done &&
-                     SetupChecklist.states(mcp)[.testRequest] == .current)
-        precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6,
-                     "stored skipped steps keep their meaning")
         precondition(ClientTransport(agent).badge == "MCP" && ClientTransport(client).badge == "CLI")
         agent.hasSigningKey = true
         precondition(ClientTransport(agent).badge == "MCP + CLI")
-        // Steps stay usable out of order: turning the bridge on first works.
-        let early = SetupChecklist.Input(calendar: .notDetermined, reminders: .notDetermined,
-                                         clients: [], bridgeOn: true, successfulClientIDs: [])
-        precondition(SetupChecklist.states(early)[.turnOn] == .done)
-        // A revoked client's request doesn't complete setup.
-        let revoked = SetupChecklist.Input(
-            calendar: .fullAccess, reminders: .fullAccess,
-            clients: [ClientView(id: "r", name: "Old", revoked: true, grants: [])],
-            bridgeOn: true, successfulClientIDs: ["r"])
-        precondition(SetupChecklist.states(revoked)[.createClient] == .current)
     }
 
     static func activity() {
@@ -251,6 +265,30 @@ struct AppPresentationTests {
         let today = ActivityStats.today(entries, now: now)
         let expected = Calendar.current.isDate(now.addingTimeInterval(-120), inSameDayAs: now) ? 3 : 1
         precondition(today.requests == expected && today.last == now)
+        // Changes are writes that went through; problems are any problem row.
+        let writes = ActivityEntry.entries(from: [
+            ClientActivity(at: now, clientID: "a", command: "update_event", outcome: "success", targetID: "w"),
+            ClientActivity(at: now, clientID: "a", command: "create_reminder", outcome: "forbidden", targetID: "l"),
+            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
+            ClientActivity(at: now, clientID: "a", command: "delete_event", outcome: "error:approval_denied", targetID: "w"),
+        ])
+        let counts = ActivityStats.today(writes, now: now)
+        precondition(counts.requests == 4 && counts.changes == 1 && counts.problems == 1,
+                     "\(counts.changes) changes, \(counts.problems) problems")
+        precondition(writes.filter(\.isWrite).count == 3)
+        // Needs you: order, the update only without its card, and nothing when all is well.
+        let gone = NeedsYou.Unavailable(connectionID: "c", connectionName: "Claude Code",
+                                        key: GrantKey(resource: .calendar, targetID: "x"), name: "Project", mask: 1)
+        let items = NeedsYou.items(pendingApprovals: 2, problems: [.bridgeFailed], unavailable: [gone],
+                                   unseenProblems: 3, lastViewed: now, update: ("1.0", false), updateCardShown: false)
+        precondition(items == [.approvals(2), .problem(.bridgeFailed),
+                               .unavailable(connectionID: "c", connectionName: "Claude Code",
+                                            key: GrantKey(resource: .calendar, targetID: "x"), name: "Project", mask: 1),
+                               .refused(count: 3, since: now), .update(version: "1.0", critical: false)])
+        precondition(NeedsYou.items(pendingApprovals: 0, problems: [], unavailable: [], unseenProblems: 0,
+                                    lastViewed: nil, update: ("1.0", true), updateCardShown: true).isEmpty)
+        precondition(NeedsYou.items(pendingApprovals: 0, problems: [], unavailable: [], unseenProblems: 0,
+                                    lastViewed: nil, update: nil, updateCardShown: false).isEmpty)
         precondition(ActivityStats.unseenProblems(entries, since: nil) == 3)
         precondition(ActivityStats.unseenProblems(entries, since: now.addingTimeInterval(-90)) == 1)
         let again = ActivityEntry.entries(from: [ClientActivity(at: now, clientID: "x",
@@ -292,6 +330,52 @@ struct AppPresentationTests {
         // Unlisted collections aren't flagged: they're unavailable, not read only.
         precondition(!AccessSummary.hasUngrantableBits(
             grants: [ClientGrant(resource: .calendar, targetID: "gone", mask: readCreate)], collections: [holidays]))
+        // Pause for…: an hour, 8:00 the next local morning (across DST changes), or open-ended.
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let utc = ISO8601DateFormatter()
+        let fallEve = utc.date(from: "2026-11-01T02:00:00Z")!  // Oct 31, 22:00 EDT
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: fallEve, calendar: newYork)
+                     == utc.date(from: "2026-11-01T13:00:00Z")!, "Nov 1, 8:00 EST")
+        let springEve = utc.date(from: "2026-03-08T03:00:00Z")!  // Mar 7, 22:00 EST
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: springEve, calendar: newYork)
+                     == utc.date(from: "2026-03-08T12:00:00Z")!, "Mar 8, 8:00 EDT")
+        let earlyMorning = utc.date(from: "2026-10-08T06:30:00Z")!  // 2:30 EDT: still the next day
+        precondition(PauseSchedule.resumeDate(.untilTomorrow, now: earlyMorning, calendar: newYork)
+                     == utc.date(from: "2026-10-09T12:00:00Z")!)
+        precondition(PauseSchedule.resumeDate(.oneHour, now: fallEve, calendar: newYork)
+                     == fallEve.addingTimeInterval(3_600))
+        precondition(PauseSchedule.resumeDate(.untilTurnedOn, now: fallEve, calendar: newYork) == nil)
+        let afternoon = utc.date(from: "2026-10-08T18:00:00Z")!
+        precondition(PauseSchedule.untilText(afternoon.addingTimeInterval(3_600), now: afternoon, calendar: newYork)
+                     .hasPrefix("until ") &&
+                     !PauseSchedule.untilText(afternoon.addingTimeInterval(3_600), now: afternoon,
+                                              calendar: newYork).contains("tomorrow"))
+        precondition(PauseSchedule.untilText(utc.date(from: "2026-10-09T12:00:00Z")!, now: afternoon,
+                                             calendar: newYork).hasPrefix("until tomorrow at "))
+        // The Remote Access guide's step is derived from what's done.
+        func guide(_ chosen: Bool, _ on: Bool, _ started: Bool, _ origin: String?, _ reachable: Bool) -> RemoteGuide.Step {
+            RemoteGuide.step(tunnelChosen: chosen, remoteOn: on, started: started, origin: origin, reachable: reachable)
+        }
+        precondition(guide(false, false, false, nil, false) == .chooseTunnel)
+        precondition(guide(false, true, true, "https://a", true) == .chooseTunnel, "choosing again starts over")
+        precondition(guide(true, false, false, nil, false) == .startTunnel)
+        precondition(guide(true, false, true, "https://a", false) == .startTunnel, "Remote Access off")
+        precondition(guide(true, true, false, nil, false) == .startTunnel, "on, not started yet")
+        precondition(guide(true, true, true, nil, false) == .pasteAddress)
+        precondition(guide(true, true, false, "https://a", false) == .test, "an address means it was started")
+        precondition(guide(true, true, true, "https://a", false) == .test)
+        precondition(guide(true, true, true, "https://a", true) == .done)
+        // The local MCP server runs only while EK Bridge is on, allowed, and used.
+        precondition(MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: false, allowed: true, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: true, allowed: false, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: false))
+        // 0.8's switch: never touched or on → allowed; off stays off only without MCP connections.
+        precondition(MCPRunPolicy.migratedAllowed(old: nil, hasMCPConnections: false))
+        precondition(MCPRunPolicy.migratedAllowed(old: true, hasMCPConnections: false))
+        precondition(MCPRunPolicy.migratedAllowed(old: false, hasMCPConnections: true))
+        precondition(!MCPRunPolicy.migratedAllowed(old: false, hasMCPConnections: false))
         precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: true) == .on)
         precondition(MenuBarGlyphState.for(needsAttention: false, bridgeOn: false) == .paused)
         precondition(MenuBarGlyphState.for(needsAttention: true, bridgeOn: true) == .attention)

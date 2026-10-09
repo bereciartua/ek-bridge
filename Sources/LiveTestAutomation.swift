@@ -147,6 +147,7 @@ final class LiveTestAutomation {
             case "setMCP": completion(.success(try setMCP(command)))
             case "requestAccess": completion(.success(try requestAccess(command)))
             case "answerPanel": try answerPanel(command, completion: completion)
+            case "oneClick": try oneClick(command, completion: completion)
             case "capture": completion(.success(try capture(command)))
             case "bannerAction":
                 guard let action = model.banner?.action else { throw CommandError(message: "no banner action") }
@@ -180,6 +181,7 @@ final class LiveTestAutomation {
         case .overview: route = "overview"
         case .activity: route = "activity"
         case .settings: route = "settings"
+        case .remoteAccess: route = "remote"
         case .client(let id): route = "client:\(id)"
         }
         let names = testNames()
@@ -188,6 +190,9 @@ final class LiveTestAutomation {
                 "id": client.id, "name": client.name, "revoked": client.revoked, "paused": client.paused,
                 "approval": client.approval.rawValue,
                 "kind": client.hasMCPToken && client.hasSigningKey ? "both" : client.hasMCPToken ? "agent" : "cli",
+                "agent": model.connectionAgents[client.id]?.rawValue ?? NSNull(),
+                "status": model.connectionStatusLine(client).text,
+                "tab": "\(model.tab(client))",
                 "grants": client.grants.map { grant -> [String: Any] in
                     ["resource": grant.resource.rawValue, "mask": grant.mask,
                      "collection": names[grant.targetID] ?? "(not a test collection)"]
@@ -220,10 +225,12 @@ final class LiveTestAutomation {
                 ["title": banner.title, "action": banner.actionTitle ?? NSNull()]
             } ?? NSNull(),
             "bridge": model.bridge.isOn ? "on" : "paused",
+            "bridgeTitle": model.bridgeTitle,
+            "resumeAt": model.resumeAt.map { ISO8601DateFormatter().string(from: $0) as Any } ?? NSNull(),
             "calendarAccess": accessText(model.calendarAccess),
             "remindersAccess": accessText(model.remindersAccess),
-            "mcp": ["enabled": model.mcpEnabled, "listening": model.mcpIsListening,
-                    "port": model.mcpListeningPort ?? model.mcpPort, "status": model.mcpStatusLine],
+            "mcp": ["allowed": model.localMCPAllowed, "running": model.mcpStarted, "listening": model.mcpIsListening,
+                    "port": model.mcpListeningPort ?? model.mcpPort, "status": model.mcpStatusLine ?? NSNull()],
             "connections": connections,
             "pending": pending,
             "activity": activity,
@@ -257,6 +264,7 @@ final class LiveTestAutomation {
         case "overview": route = .overview
         case "activity": route = .activity
         case "settings": route = .settings
+        case "remote": route = .remoteAccess
         default:
             guard text.hasPrefix("client:") else { throw CommandError(message: "unknown route") }
             route = .client(try client(String(text.dropFirst(7))).id)
@@ -268,6 +276,9 @@ final class LiveTestAutomation {
             case "lists": model.accessTab[id] = .reminderList
             case "agent": model.connectTab[id] = .agent
             case "cli": model.connectTab[id] = .cli
+            case "access": model.clientTab[id] = .access
+            case "connect": model.clientTab[id] = .connect
+            case "activity": model.clientTab[id] = .activity
             default: throw CommandError(message: "unknown tab")
             }
         }
@@ -462,6 +473,10 @@ final class LiveTestAutomation {
         }
         let created = try client(name)
         try saveGrants(created.id, grants)
+        if let raw = command["agent"] as? String {
+            guard let agent = AgentKind(rawValue: raw) else { throw CommandError(message: "unknown agent \(raw)") }
+            model.setAgent(agent, for: created.id)
+        }
         return ["id": created.id, "name": created.name]
     }
 
@@ -489,16 +504,25 @@ final class LiveTestAutomation {
         return mode.rawValue
     }
 
+    /// `{"on": false, "for": "oneHour"}` pauses as Pause EK Bridge ▸ does
+    /// (oneHour, untilTomorrow or untilTurnedOn).
     private func setBridge(_ command: [String: Any]) throws -> String {
         guard let on = command["on"] as? Bool else { throw CommandError(message: "needs on") }
-        model.setBridgeEnabled(on)
+        if !on, let choice = command["for"] as? String {
+            let choices: [String: PauseChoice] = ["oneHour": .oneHour, "untilTomorrow": .untilTomorrow,
+                                                  "untilTurnedOn": .untilTurnedOn]
+            guard let pause = choices[choice] else { throw CommandError(message: "for is oneHour, untilTomorrow or untilTurnedOn") }
+            model.pause(for: pause)
+        } else {
+            model.setBridgeEnabled(on)
+        }
         return model.bridge.isOn ? "on" : "paused"
     }
 
     private func setMCP(_ command: [String: Any]) throws -> Bool {
         guard let on = command["on"] as? Bool else { throw CommandError(message: "needs on") }
-        model.setMCPServerEnabled(on, confirm: false)
-        return model.mcpEnabled
+        model.setLocalMCPAllowed(on, confirm: false)
+        return model.localMCPAllowed
     }
 
     /// Asks macOS for Full Access, as the setup checklist's buttons do. The
@@ -516,6 +540,65 @@ final class LiveTestAutomation {
 
     /// Waits for a pending item, then for the panel's arming delay, then
     /// answers through the same functions as the panel's buttons.
+    /// Add to <Agent>… as a click would (B07): the preview, then Add when
+    /// `confirm` is true. Only into the scratch home the copy was started with.
+    private func oneClick(_ command: [String: Any], completion: @escaping Completion) throws {
+        let id = try clientID(command)
+        guard let agent = AgentKind(rawValue: command["agent"] as? String ?? ""), agent.oneClick else {
+            throw CommandError(message: "agent is claudeDesktop, cursor or claudeCode")
+        }
+        let confirm = command["confirm"] as? Bool ?? false
+        model.beginOneClick(id, agent: agent)
+        let deadline = Date().addingTimeInterval(command["timeout"] as? Double ?? 40)
+        var confirmed = false
+        func describe(_ preview: OneClickPreview) -> [String: Any] {
+            switch preview {
+            case .file(_, let change):
+                return ["file": (change.fileURL.path as NSString).abbreviatingWithTildeInPath,
+                        "outcome": "\(change.outcome)", "summary": change.summary,
+                        "diff": change.diffLines.map { ($0.kind == .added ? "+ " : $0.kind == .removed ? "- " : "  ") + $0.text }]
+            case .command(_, let executable, let arguments, _, let replacing):
+                return ["command": ([executable] + arguments.prefix(5)).joined(separator: " ") + " <json>",
+                        "replacing": replacing]
+            }
+        }
+        func poll() {
+            guard let session = model.oneClick else {
+                // A file agent closes the sheet when it's done.
+                if let result = model.oneClickResult(id, agent) {
+                    model.closeOneClick()
+                    return completion(.success(["done": true, "backup": (result.backup?.lastPathComponent).map { $0 as Any } ?? NSNull(),
+                                                "banner": (model.banner?.title).map { $0 as Any } ?? NSNull()]))
+                }
+                return completion(.failure(CommandError(message: "the sheet closed")))
+            }
+            switch session.phase {
+            case .preview(let preview) where !confirm:
+                model.closeOneClick()
+                completion(.success(["preview": describe(preview)]))
+            case .preview(let preview) where !confirmed:
+                confirmed = true
+                let described = describe(preview)
+                model.confirmOneClick()
+                if model.oneClick == nil { return completion(.success(["preview": described, "done": true])) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { poll() }
+            case .done(let result):
+                model.closeOneClick()
+                completion(.success(["done": true, "output": result.output.map { $0 as Any } ?? NSNull()]))
+            case .failed(let failure):
+                model.closeOneClick()
+                completion(.failure(CommandError(message: failure.message + (failure.output.map { "\n" + $0 } ?? ""))))
+            default:
+                guard Date() < deadline else {
+                    model.closeOneClick()
+                    return completion(.failure(CommandError(message: "no answer in time")))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { poll() }
+            }
+        }
+        poll()
+    }
+
     private func answerPanel(_ command: [String: Any], completion: @escaping Completion) throws {
         let decision = command["decision"] as? String ?? ""
         guard ["allow", "deny", "allowWindow"].contains(decision) else {

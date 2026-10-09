@@ -15,7 +15,7 @@ struct MainView: View {
         }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
-            case .newClient: NewClientSheet(model: model)
+            case .newClient: AddConnectionSheet(model: model)
             case .rename(let id): RenameClientSheet(model: model, clientID: id)
             case .unavailableGrants(let id): UnavailableGrantsSheet(model: model, clientID: id)
             case .collectionIDs: CollectionIDsSheet(model: model)
@@ -24,6 +24,7 @@ struct MainView: View {
             case .remoteAddress: RemoteAddressSheet(model: model)
             case .pairing(let id): PairingSheet(model: model, id: id)
             case .oauthClient: OAuthClientSheet(model: model)
+            case .configPreview: ConfigPreviewSheet(model: model)
             }
         }
     }
@@ -53,7 +54,7 @@ struct SidebarView: View {
                         .tag(Route.client(client.id))
                 }
                 if model.activeClients.isEmpty {
-                    Text(String(localized: "No clients yet"))
+                    Text(String(localized: "No connections yet"))
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
                 }
@@ -66,16 +67,16 @@ struct SidebarView: View {
                                 AvatarView(name: client.name, id: client.id, size: 18).opacity(0.5)
                             }
                             .tag(Route.client(client.id))
-                            .accessibilityLabel(String(localized: "\(client.name), revoked"))
+                            .accessibilityLabel(String(localized: "\(client.name), removed"))
                         }
                     } label: {
-                        Text(String(localized: "Revoked (\(model.revokedClients.count))"))
+                        Text(String(localized: "Removed (\(model.revokedClients.count))"))
                             .foregroundStyle(.secondary)
                     }
                 }
             } header: {
                 HStack {
-                    Text(String(localized: "Clients"))
+                    Text(String(localized: "Connections"))
                     Spacer()
                     Button {
                         model.beginNewClient()
@@ -84,9 +85,9 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.borderless)
                     .disabled(!model.canCreateClient)
-                    .help(model.canCreateClient ? String(localized: "New Client…")
-                        : String(localized: "You have 32 active clients, the maximum. Revoke one to add another."))
-                    .accessibilityLabel(String(localized: "New Client…"))
+                    .help(model.canCreateClient ? String(localized: "Add a Connection…")
+                        : String(localized: "You have 32 connections, the maximum. Remove one to add another."))
+                    .accessibilityLabel(String(localized: "Add a Connection…"))
                 }
             }
         }
@@ -96,12 +97,31 @@ struct SidebarView: View {
             VStack(spacing: 0) {
                 Divider().opacity(crowded ? 1 : 0)
                 List(selection: selection) {
+                    Label {
+                        HStack {
+                            Text(String(localized: "Remote Access"))
+                            Spacer()
+                            if model.remoteEnabled {
+                                Text(String(localized: "On"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(Color.accentColor, in: Capsule())
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "globe")
+                    }
+                    .tag(Route.remoteAccess)
+                    .accessibilityLabel(model.remoteEnabled ? String(localized: "Remote Access, on")
+                                                            : String(localized: "Remote Access"))
                     Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
                         .tag(Route.settings)
                 }
                 .listStyle(.sidebar)
                 .scrollDisabled(true)
-                .frame(height: 44)
+                .frame(height: 76)
             }
             // Clients scroll under this row, so it needs its own surface.
             .background(crowded ? AnyShapeStyle(.bar) : AnyShapeStyle(.clear))
@@ -153,11 +173,11 @@ struct ClientSidebarRow: View {
             }
             Divider()
             if client.paused {
-                Button(String(localized: "Resume Client")) { model.setPaused(client.id, false) }
+                Button(String(localized: "Resume Connection")) { model.setPaused(client.id, false) }
             } else {
-                Button(String(localized: "Pause Client")) { model.setPaused(client.id, true) }
+                Button(String(localized: "Pause Connection")) { model.setPaused(client.id, true) }
             }
-            Button(String(localized: "Revoke Client…"), role: .destructive) { model.revokeClient(client.id) }
+            Button(String(localized: "Remove Connection…"), role: .destructive) { model.revokeClient(client.id) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(client.name), \(subtitle)")
@@ -207,7 +227,7 @@ enum NameIssueText {
         case .empty: String(localized: "Enter a name.")
         case .tooLong: String(localized: "Use a shorter name (up to 80 bytes).")
         case .controlCharacters: String(localized: "Names can't contain tabs or line breaks.")
-        case .duplicate(let name): String(localized: "Another client is already called “\(name)”.")
+        case .duplicate(let name): String(localized: "Another connection is already called “\(name)”.")
         }
     }
 }
@@ -228,6 +248,7 @@ struct DetailView: View {
                 case .overview: OverviewView(model: model)
                 case .activity: ActivityView(model: model)
                 case .settings: SettingsView(model: model)
+                case .remoteAccess: RemoteAccessPage(model: model)
                 case .client(let id):
                     if let client = model.client(id) {
                         if client.revoked {

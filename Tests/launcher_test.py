@@ -22,13 +22,13 @@ import time
 import uuid
 
 PRODUCT = "EK Bridge"
-NOT_RUNNING = (f"{PRODUCT} isn't running, or its MCP server is off. "
-               f"Open {PRODUCT} and turn on Settings ▸ MCP Server.")
+NOT_RUNNING = (f"{PRODUCT} isn't running, or it's paused. "
+               f"Open {PRODUCT} and turn it on.")
 SQUATTER = (f"Another program is using {PRODUCT}'s port. "
-            f"Open {PRODUCT} and check Settings ▸ MCP Server.")
+            f"Open {PRODUCT} and check Settings ▸ Advanced.")
 BAD_ENDPOINT = f"{PRODUCT}'s endpoint file isn't valid, so nothing was sent. Quit and reopen {PRODUCT}."
-REJECTED = (f"{PRODUCT} doesn't recognize this client's token. "
-            f"Open the client in {PRODUCT} and check MCP access.")
+REJECTED = (f"{PRODUCT} doesn't recognize this connection's token. "
+            f"Open the connection in {PRODUCT} and check MCP access.")
 MODERN = "2026-07-28"
 
 
@@ -340,12 +340,12 @@ def main() -> int:
         expect("check: all good", code == 0 and out == "" and
                f"EK Bridge MCP check for client {agent_id[:4]}…{agent_id[-4:]}" in err and
                '  ✓ token accepted: client "agent"' in err and "(mode 600)" in err and
-               "  ✓ 8 tools available: list_collections" in err and "  ✓ the bridge is on" in err,
+               "  ✓ 8 tools available: list_collections" in err and "  ✓ EK Bridge is on" in err,
                f"{code} {err!r}")
         harness.control(cmd="bridge", on=False)
         code, _, err = run(["check", "--client", agent_id])
         expect("check: bridge off is a warning", code == 0 and
-               "  ! the bridge is off: tool calls will be refused until it's turned on" in err,
+               "  ! EK Bridge is paused: tool calls will be refused until it's turned on" in err,
                f"{code} {err!r}")
         harness.control(cmd="bridge", on=True)
         loose = write_private(tmp / "loose.mcp-token", agent_token, mode=0o644)
@@ -457,7 +457,7 @@ def main() -> int:
             ("no arguments", [], 2, "bridge-mcp: error: missing --client or --token-file. "
              "Run bridge-mcp --help.\n"),
             ("client name", ["--client", "Claude Code"], 2, "bridge-mcp: error: --client takes the "
-             f"client's ID (a UUID), not its name. Copy the setup from the client's page in {PRODUCT}.\n"),
+             f"connection's ID (a UUID), not its name. Copy the setup from the connection's page in {PRODUCT}.\n"),
             ("unknown option", ["--client", agent_id, "--verbose"], 2,
              'bridge-mcp: error: unknown option "--verbose". Run bridge-mcp --help.\n'),
             ("unknown command", ["chek", "--client", agent_id], 2,
