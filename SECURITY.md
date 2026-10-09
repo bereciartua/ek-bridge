@@ -17,7 +17,7 @@ Include the app version (Settings ▸ About), your macOS version, whether the Ma
 - client key files, MCP tokens, remote tokens or OAuth secrets (anything starting with `ekb_`), or the contents of `client-registry.json` or `remote-connections.json`
 - a Remote Access URL: its path is the secret
 - tunnel host names
-- calendar or reminder titles, notes or attendees, the write journal (`write-journal*`), `collection-labels.json` (your calendar and list names), or Activity screenshots that show them
+- calendar or reminder titles, notes or attendees, the write journal (`write-journal*`), `collection-labels.json` (your calendar and list names), Activity (`activity/activity.jsonl` holds your calendar, list and item IDs, never titles), or Activity screenshots that show names
 
 Reproduce with a throwaway client and the empty test collections from Settings ▸ Developer, and replace anything secret with `REDACTED`.
 

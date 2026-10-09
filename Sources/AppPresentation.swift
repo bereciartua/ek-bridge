@@ -252,8 +252,17 @@ struct ActivityEntry: Identifiable, Equatable {
     var via: String? = nil
     /// The agent's name as it reported it; display only.
     var agent: String? = nil
-    /// How Ask before changes was answered: "user", "window", "denied", "timeout".
+    /// How Ask before changes or an access request was answered ("user",
+    /// "window", "denied", "timeout", "access_once", …).
     var approval: String? = nil
+    /// The item a write touched, by EventKit ID (looked up live to name it).
+    var item: ItemRef? = nil
+    /// A `forbidden` refusal: the access bit the connection lacked.
+    var missing: Int? = nil
+    /// A move's destination calendar or list.
+    var destinationID: String? = nil
+    /// Joins this row to the request's start row; nil for imported rows.
+    var requestID: String? = nil
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
     var isMCP: Bool { via == "mcp" }
@@ -261,18 +270,18 @@ struct ActivityEntry: Identifiable, Equatable {
     var isWrite: Bool { BridgeCommand(rawValue: command)?.isWrite == true }
     var isProblem: Bool { outcome.tone.isProblem }
 
-    static func entries(from activity: [ClientActivity]) -> [ActivityEntry] {
-        // `activity` is newest first; IDs stay stable while rows are appended.
-        var seen = [String: Int]()
-        return activity.enumerated().compactMap { index, row in
+    /// `activity` is newest first. Start rows are dropped: each finished
+    /// request also has a result row. IDs are the store's row IDs, so they
+    /// stay stable across launches and compaction.
+    static func entries(from activity: [ActivityRecord]) -> [ActivityEntry] {
+        activity.compactMap { row in
             let code = OutcomePresentation.normalize(row.outcome)
-            guard code != "accepted" else { return nil }
-            let base = "\(row.at.timeIntervalSinceReferenceDate)|\(row.clientID ?? "-")|\(row.command)|\(code)"
-            let ordinal = seen[base, default: 0]
-            seen[base] = ordinal + 1
-            return ActivityEntry(id: "\(base)|\(ordinal)", at: row.at, clientID: row.clientID,
+            guard row.phase != ActivityRecord.start, code != "accepted" else { return nil }
+            return ActivityEntry(id: row.id, at: row.at, clientID: row.clientID,
                                  command: row.command, code: code, targetID: row.targetID,
-                                 via: row.via, agent: row.agent, approval: row.approval)
+                                 via: row.via, agent: row.agent, approval: row.approval,
+                                 item: row.item, missing: row.missing, destinationID: row.destinationID,
+                                 requestID: row.requestID)
         }
     }
 }

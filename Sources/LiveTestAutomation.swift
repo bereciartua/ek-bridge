@@ -211,6 +211,18 @@ final class LiveTestAutomation {
             if let via = entry.via { row["via"] = via }
             if let approval = entry.approval { row["approval"] = approval }
             if let target = entry.targetID { row["collection"] = names[target] ?? "(not a test collection)" }
+            if let destination = entry.destinationID {
+                row["destination"] = names[destination] ?? "(not a test collection)"
+            }
+            row["rowID"] = entry.id
+            if let request = entry.requestID { row["requestID"] = request }
+            if let missing = entry.missing { row["missing"] = missing }
+            if let item = entry.item {
+                var ref: [String: Any] = ["kind": item.kind, "id": item.id]
+                if let occurrence = item.occurrence { ref["occurrence"] = occurrence }
+                if let span = item.span { ref["span"] = span }
+                row["item"] = ref
+            }
             return row
         }
         let window = context.mainWindow()

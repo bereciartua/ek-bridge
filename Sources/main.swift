@@ -29,7 +29,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     #if EVENTKIT_UI_REVIEW
     private let review = UIReview()
     #else
-    private lazy var clientRegistry = ClientRegistry()
+    private lazy var activityStore = ActivityStore(dataFolder: Self.dataFolder, autoCompact: true)
+    private lazy var clientRegistry = ClientRegistry(activity: activityStore)
     private let rateLimiter = RateLimiter()
     private let mcpCounters = MCPTrafficCounters()
     private lazy var approvals = ApprovalCenter(summarize: { [weak self] request in
@@ -93,6 +94,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         updater.start()
         #endif
         model = BridgeAppModel(services: liveServices())
+        // Retention (ActivityRetention) runs at launch, then as rows are added.
+        activityStore.scheduleCompaction()
         updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
         #endif
         #if !EVENTKIT_UI_REVIEW

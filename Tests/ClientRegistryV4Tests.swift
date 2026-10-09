@@ -224,8 +224,14 @@ struct ClientRegistryV4Tests {
             precondition(registry.activity()?.first?.via == nil && registry.activity()?.first?.agent == nil)
             let backup = directory.appendingPathComponent("client-registry.v\(version).backup.json")
             precondition(ClientRegistry.backupFileName(version: version) == backup.lastPathComponent)
-            precondition(!FileManager.default.fileExists(atPath: backup.path), "reading writes nothing")
-            // The first write keeps the original bytes once, then writes v4.
+            // Loading moved the Activity row to the activity store, and that
+            // first write kept the original bytes once, then wrote v4 with
+            // an empty list.
+            precondition(try! Data(contentsOf: backup) == original)
+            let emptied = try json(file)["activity"] as? [Any]
+            precondition(emptied?.isEmpty == true)
+            precondition(registry.activity()?.count == 1)
+            precondition(registry.activity()?.first?.targetID == (version == 3 ? "legacy-calendar" : nil))
             let token = value(registry.issueMCPToken(clientID: client.id))
             precondition(try! Data(contentsOf: backup) == original)
             precondition(mode(backup) == 0o600)
@@ -594,9 +600,10 @@ struct ClientRegistryV4Tests {
         precondition(registry.recordRejected(clientID: id, request: create, outcome: "error:bridge_off",
                                              origin: .mcp(agent: "Agent\u{1}X  1.0")))
         let rejected = registry.activity()!.first!
-        precondition(rejected == ClientActivity(at: clock, clientID: id, command: "create_event",
-                                                outcome: "error:bridge_off", targetID: "CAL-X",
-                                                via: "mcp", agent: "Agent X 1.0", approval: nil))
+        precondition(rejected.at == clock && rejected.clientID == id && rejected.command == "create_event" &&
+                     rejected.outcome == "error:bridge_off" && rejected.targetID == "CAL-X" &&
+                     rejected.via == "mcp" && rejected.agent == "Agent X 1.0" && rejected.approval == nil &&
+                     rejected.phase == ActivityRecord.event && rejected.requestID == "\(id)|\(create.id)")
         precondition(registry.recordRejected(clientID: id, request: request(.scopeStatus),
                                              outcome: "error:rate_limited", origin: .cli))
         let cliRejected = registry.activity()!.first!
@@ -638,10 +645,13 @@ struct ClientRegistryV4Tests {
         precondition(ClientRegistry(directory: directory).activity()!.count == registry.activity()!.count)
     }
 
-    static func stripped(_ row: ClientActivity) throws -> Data {
+    static func stripped(_ row: ActivityRecord) throws -> Data {
         var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as! [String: Any]
         object["via"] = nil
         object["agent"] = nil
+        // The same request ID twice: the second row's ID gets a suffix.
+        object["id"] = nil
+        object["requestID"] = nil
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 

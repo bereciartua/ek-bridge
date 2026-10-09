@@ -16,13 +16,15 @@ struct RequestPipelineTests {
         private var held = [(stillAuthorized: () -> Bool, completion: ([String: Any]) -> Void)]()
 
         var heldCount: Int { held.count }
+        /// What an immediate call returns, when set.
+        var result: [String: Any]?
 
         func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
                            stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
                            completion: @escaping ([String: Any]) -> Void) {
             calls.append((request.command, clientID, selected))
             switch mode {
-            case .immediate: completion(["ok": true, "command": request.command.rawValue])
+            case .immediate: completion(result ?? ["ok": true, "command": request.command.rawValue])
             case .hold: held.append((stillAuthorized, completion))
             }
         }
@@ -146,7 +148,7 @@ struct RequestPipelineTests {
             return box
         }
 
-        var lastRow: ClientActivity { registry.activity()!.first! }
+        var lastRow: ActivityRecord { registry.activity()!.first! }
     }
 
     @MainActor
@@ -184,9 +186,62 @@ struct RequestPipelineTests {
         inFlight()
         inlineCommands()
         originsMatch()
+        activityFields()
         print("Request pipeline: bridge_off, client_paused, rate limits, authorize before validation, approvals "
               + "(user/window/denied/timeout/withdrawn/tooMany), changes and cancellation while waiting, "
-              + "8 in flight, list_collections, counts, scope_status, CLI = MCP rows passed")
+              + "8 in flight, list_collections, counts, scope_status, CLI = MCP rows, request IDs, "
+              + "item refs, missing access and move destinations passed")
+    }
+
+    /// C01: rows carry the request ID, writes their item, refusals the
+    /// missing bit, and moves their destination.
+    @MainActor
+    static func activityFields() {
+        let f = Fixture(grants: [
+            ClientGrant(resource: .calendar, targetID: "CAL-A",
+                        mask: ClientGrant.read | ClientGrant.create | ClientGrant.edit),
+            ClientGrant(resource: .calendar, targetID: "CAL-RO", mask: ClientGrant.read),
+        ])
+        f.executor.result = ["item": ["id": "EV-NEW", "version": "1"]]
+        let create = createEvent()
+        precondition(f.send(create).reply?["item"] != nil)
+        let rows = f.registry.activity()!
+        precondition(rows[0].phase == ActivityRecord.result && rows[1].phase == ActivityRecord.start)
+        precondition(rows[0].requestID == "\(f.clientID)|\(create.id)" && rows[0].requestID == rows[1].requestID)
+        precondition(rows[0].item == ItemRef(kind: "event", id: "EV-NEW"), "\(rows[0])")
+        precondition(rows[1].item == nil, "the start row has no item")
+        // Reads never store an item.
+        f.executor.result = ["items": [["id": "EV-NEW"]]]
+        f.send(readEvents())
+        precondition(f.lastRow.item == nil && f.lastRow.outcome == "success")
+        // Forbidden: no grant for the action on that calendar → the missing bit.
+        f.send(createEvent("CAL-RO"))
+        precondition(f.lastRow.outcome == "forbidden" && f.lastRow.missing == ClientGrant.create &&
+                     f.lastRow.phase == ActivityRecord.event && f.lastRow.destinationID == nil)
+        f.send(BridgeRequest(id: UUID().uuidString, command: .deleteEvent,
+                             parameters: ["calendarID": "CAL-A", "itemID": "EV1"]))
+        precondition(f.lastRow.missing == ClientGrant.delete && f.lastRow.targetID == "CAL-A")
+        // A move refused on its destination: Create there, and which one.
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1", "targetCalendarID": "CAL-RO"]))
+        precondition(f.lastRow.outcome == "forbidden" && f.lastRow.missing == ClientGrant.create &&
+                     f.lastRow.destinationID == "CAL-RO" && f.lastRow.targetID == "CAL-A", "\(f.lastRow)")
+        // A refused update still names its item when the request did.
+        f.executor.result = ["error": "conflict"]
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1791200000.123456", "title": "x",
+            "idempotencyKey": WriteIdempotencyKey.make()]))
+        precondition(f.lastRow.outcome == "error:conflict" && f.lastRow.item?.id == "EV1", "\(f.lastRow)")
+        // A move that went through records its destination on both rows.
+        f.executor.result = ["item": ["id": "EV1"]]
+        let grants = f.registry.clients()!.first!.grants
+        success(f.registry.replaceGrants(clientID: f.clientID, grants: grants.map {
+            $0.targetID == "CAL-RO" ? ClientGrant(resource: .calendar, targetID: "CAL-RO", mask: 3) : $0 }))
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1791200000.123456",
+            "targetCalendarID": "CAL-RO", "idempotencyKey": WriteIdempotencyKey.make()]))
+        precondition(f.registry.activity()!.prefix(2).allSatisfy { $0.destinationID == "CAL-RO" })
+        precondition(f.lastRow.outcome == "success" && f.lastRow.item?.id == "EV1")
     }
 
     @MainActor
@@ -539,7 +594,7 @@ struct RequestPipelineTests {
     /// from via/agent.
     @MainActor
     static func originsMatch() {
-        var rows = [[ClientActivity]]()
+        var rows = [[ActivityRecord]]()
         for origin in [RequestOrigin.cli, .mcp(agent: "Claude Code 2.4.1")] {
             let f = Fixture(approval: .ask)
             f.gate.mode = .allow

@@ -6,6 +6,11 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Changed
+
+- Activity has its own file, `activity/activity.jsonl`, instead of living inside the client registry. It keeps changes and problems for 90 days (up to 5,000) and other requests for 7 days (up to 2,000), instead of the last 500 rows in all. Each row now has a request ID, and changes keep the item's EventKit ID (never its title or content), so EK Bridge can look the item up when you open the row. Rows already in the registry move over at the first launch. The registry stays at version 4 with an empty Activity list, so rolling back to 0.8.2 or later still works.
+- Each request no longer rewrites the client registry: Activity rows are appended instead.
+
 ## [0.9.0] - 2026-10-08
 
 A structure release. The app calls clients **connections**, and one switch runs everything: when EK Bridge is on, the local MCP server runs for the connections that use it, and **Pause EK Bridge** (for an hour, until tomorrow or until you turn it on) stops all of it. Adding an agent is a tile and a starting access, and for Claude Desktop, Cursor and Claude Code one click writes the setup for you, with a preview and a backup. Setup takes three steps, a connection's page has Access · Connect · Activity tabs, Remote Access has its own guided page, Settings has tabs, and Overview shows today and what needs you. Agents and scripts need no changes; their messages say EK Bridge is paused instead of off. The client registry stays at **version 4** and the old MCP setting is kept in step, so going back to 0.8.3 means installing its DMG over this one.

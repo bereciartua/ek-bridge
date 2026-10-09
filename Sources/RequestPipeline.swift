@@ -152,7 +152,9 @@ final class RequestPipeline {
             guard let self else { completion(["error": "app_unavailable"]); return }
             self.inFlight[clientID, default: 1] -= 1
             if self.inFlight[clientID] == 0 { self.inFlight[clientID] = nil }
-            self.finish(call, value, completion)
+            self.finish(call, value, item: ActivityItems.ref(command: request.command,
+                                                              parameters: request.parameters, result: value),
+                        completion)
         }
         // 4. Strict parameter shapes.
         let selected = BridgeScope(
@@ -276,11 +278,11 @@ final class RequestPipeline {
         completion(recorded ? value : ["error": "activity_unavailable"])
     }
 
-    // 8. The result row, then the reply.
-    private func finish(_ call: AuthorizedClientCall, _ value: [String: Any],
+    // 8. The result row (with the item a write touched), then the reply.
+    private func finish(_ call: AuthorizedClientCall, _ value: [String: Any], item: ItemRef?,
                         _ completion: ([String: Any]) -> Void) {
         let outcome = (value["error"] as? String).map { "error:\($0)" } ?? "success"
-        let recorded = registry.recordResult(call, outcome: outcome)
+        let recorded = registry.recordResult(call, outcome: outcome, item: item)
         didRecord()
         completion(recorded ? value : ["error": "activity_unavailable"])
     }

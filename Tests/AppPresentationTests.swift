@@ -246,15 +246,22 @@ struct AppPresentationTests {
 
     static func activity() {
         let now = Date()
+        var serial = 0
+        func row(_ at: Date, _ client: String?, _ command: String, _ outcome: String,
+                 _ target: String? = nil) -> ActivityRecord {
+            serial += 1
+            let phase = outcome == "accepted" ? ActivityRecord.start : ActivityRecord.result
+            var record = ActivityRecord(id: "\(client ?? "-")|r\(serial)|\(phase)", requestID: "\(client ?? "-")|r\(serial)",
+                                        phase: phase, at: at, clientID: client, command: command, outcome: outcome)
+            record.targetID = target
+            return record
+        }
         let rows = [
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "accepted", targetID: "w"),
-            ClientActivity(at: now.addingTimeInterval(-60), clientID: "b", command: "create_reminder",
-                           outcome: "forbidden", targetID: "g"),
-            ClientActivity(at: now.addingTimeInterval(-120), clientID: nil, command: "read_events",
-                           outcome: "unauthorized"),
-            ClientActivity(at: now.addingTimeInterval(-86_400 * 3), clientID: "b",
-                           command: "update_event", outcome: "error:conflict"),
+            row(now, "a", "read_events", "success", "w"),
+            row(now, "a", "read_events", "accepted", "w"),
+            row(now.addingTimeInterval(-60), "b", "create_reminder", "forbidden", "g"),
+            row(now.addingTimeInterval(-120), nil, "read_events", "unauthorized"),
+            row(now.addingTimeInterval(-86_400 * 3), "b", "update_event", "error:conflict"),
         ]
         let entries = ActivityEntry.entries(from: rows)
         precondition(entries.count == 4, "accepted rows are hidden")
@@ -267,10 +274,10 @@ struct AppPresentationTests {
         precondition(today.requests == expected && today.last == now)
         // Changes are writes that went through; problems are any problem row.
         let writes = ActivityEntry.entries(from: [
-            ClientActivity(at: now, clientID: "a", command: "update_event", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "create_reminder", outcome: "forbidden", targetID: "l"),
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "delete_event", outcome: "error:approval_denied", targetID: "w"),
+            row(now, "a", "update_event", "success", "w"),
+            row(now, "a", "create_reminder", "forbidden", "l"),
+            row(now, "a", "read_events", "success", "w"),
+            row(now, "a", "delete_event", "error:approval_denied", "w"),
         ])
         let counts = ActivityStats.today(writes, now: now)
         precondition(counts.requests == 4 && counts.changes == 1 && counts.problems == 1,
@@ -291,8 +298,7 @@ struct AppPresentationTests {
                                     lastViewed: nil, update: nil, updateCardShown: false).isEmpty)
         precondition(ActivityStats.unseenProblems(entries, since: nil) == 3)
         precondition(ActivityStats.unseenProblems(entries, since: now.addingTimeInterval(-90)) == 1)
-        let again = ActivityEntry.entries(from: [ClientActivity(at: now, clientID: "x",
-            command: "read_events", outcome: "success")] + rows)
+        let again = ActivityEntry.entries(from: [row(now, "x", "read_events", "success")] + rows)
         precondition(again.last?.id == entries.last?.id, "IDs are stable when rows are added")
     }
 

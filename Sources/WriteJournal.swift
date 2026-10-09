@@ -4,7 +4,9 @@ import Foundation
 
 // A write is recorded as pending before EventKit is called. If the app stops
 // between EventKit and the response, retrying cannot silently create twice.
-// Pending entries require manual reconciliation. No item titles are stored.
+// Pending entries require manual reconciliation. Completed entries keep the
+// write's receipt for 7 days, which can include item IDs and reminder titles,
+// so these files are private (0600) and never attached to an issue.
 //
 // Capacity is shared, so each client also has its own quota: one busy agent
 // can fill its quota, but never block other clients' writes.

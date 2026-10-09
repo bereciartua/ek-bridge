@@ -205,13 +205,14 @@ struct ClientRegistryTests {
         let upgraded = ClientRegistry(directory: legacyDirectory)
         precondition(upgraded.clients()?.count == 2)
         precondition(upgraded.activity()?.first?.targetID == nil)
+        // Its Activity row moved to the activity store, which saved the
+        // registry (after the one-time backup) with an empty list.
         let backup = legacyDirectory.appendingPathComponent(ClientRegistry.backupFileName(version: 2))
-        precondition(!FileManager.default.fileExists(atPath: backup.path))
+        precondition(FileManager.default.fileExists(atPath: backup.path))
+        precondition(upgraded.activity()?.count == 1)
         let legacyGrants = upgraded.clients()!.first { $0.name == "Legacy Tool" }!.grants
         precondition(legacyGrants.map(\.mask) == [2, 31])
         success(upgraded.rename(clientID: legacy["id"] as! String, name: "Legacy Tool"))
-        precondition(!FileManager.default.fileExists(atPath: backup.path),
-                     "an unchanged rename doesn't write")
         let extra = value(upgraded.createClient(name: "New Tool"))
         let backupData = try Data(contentsOf: backup)
         precondition(backupData == original)
