@@ -434,7 +434,7 @@ final class BridgeAppModel {
         // Installs that already served a request never see the checklist,
         // even if the bridge is off right now. Right after the rename they do:
         // macOS asks for access again under the new bundle ID.
-        if !setupCompleted, !renameAccessRecheck, SetupChecklist.isDone(.testRequest, checklistInput) {
+        if !setupCompleted, !renameAccessRecheck, SetupChecklist.isDone(.connect, checklistInput) {
             setupCompleted = true
             defaults.set(true, forKey: Keys.setupCompleted)
         }
@@ -1605,8 +1605,30 @@ final class BridgeAppModel {
 
     func copyTestCommand() {
         guard let client = SetupChecklist.focusClient(checklistInput) else { return }
+        if !bridge.isOn { setBridgeEnabled(true) }
         Pasteboard.copy(ConnectCommand.scopeStatus(for: client, among: clients, program: cliProgram))
         waitingForTestRequest = true
+    }
+
+    /// Setup's Connect step (B09): turns EK Bridge on, then Add to <Agent>…
+    /// for one-click agents, or the connection's Connect tab.
+    func connectFromSetup(_ client: ClientView) {
+        if !bridge.isOn { setBridgeEnabled(true) }
+        waitingForTestRequest = true
+        if agent(for: client.id).oneClick {
+            beginOneClick(client.id)
+        } else {
+            clientTab[client.id] = .connect
+            connectTab[client.id] = .agent
+            navigate(to: .client(client.id))
+        }
+    }
+
+    /// Setup's "Copy the setup instead": the connection's Connect tab with the snippet.
+    func copySetupFromSetup(_ client: ClientView) {
+        copySetup.insert(client.id)
+        clientTab[client.id] = .connect
+        navigate(to: .client(client.id))
     }
 
     private func checkSetupCompletion() {

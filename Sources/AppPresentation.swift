@@ -401,14 +401,17 @@ enum AccessText {
     }
 }
 
-/// The first-run checklist (§6). Pure so it can be unit tested.
+/// The first-run checklist (B09, mockup 01): macOS access, add your agent,
+/// connect it. Pure so it can be unit tested.
 enum SetupChecklist {
-    // Raw values are stored (skipped steps), so new steps take new numbers;
-    // the order below is the display order.
+    // Raw values are stored (skipped steps), so new steps take new numbers.
+    // Steps 1–7 are 0.8's seven-step list: they still decode (a skipped
+    // Calendar or Reminders still counts) but aren't shown.
     enum Step: Int, CaseIterable {
         case calendarAccess = 1, remindersAccess, createClient, chooseAccess, turnOn
         case mcpServer = 7
         case testRequest = 6
+        case macOSAccess = 10, addConnection = 11, connect = 12
     }
 
     enum State: Equatable {
@@ -416,7 +419,7 @@ enum SetupChecklist {
         case skipped
         case current
         case pending
-        /// Not needed: the other access type is done and a client exists.
+        /// 0.8's optional access step; no longer produced.
         case optional
     }
 
@@ -430,7 +433,7 @@ enum SetupChecklist {
         var mcpListening = false
     }
 
-    /// The client the checklist talks about: a client with access that hasn't
+    /// The connection the checklist talks about: one with access that hasn't
     /// sent a request yet, else one with no access yet, else the first one.
     static func focusClient(_ input: Input) -> ClientView? {
         let active = input.clients.filter { !$0.revoked }
@@ -439,46 +442,43 @@ enum SetupChecklist {
             ?? active.first
     }
 
+    /// Calendar or Reminders decided: allowed, turned off, or skipped in setup.
+    static func decided(_ resource: ClientResource, _ input: Input) -> Bool {
+        let status = resource == .calendar ? input.calendar : input.reminders
+        let skip: Step = resource == .calendar ? .calendarAccess : .remindersAccess
+        return status == .fullAccess || status == .denied || input.skipped.contains(skip)
+    }
+
     static func isDone(_ step: Step, _ input: Input) -> Bool {
         let active = input.clients.filter { !$0.revoked }
         switch step {
+        case .macOSAccess:
+            // One type allowed, the other allowed, turned off or skipped.
+            return (input.calendar == .fullAccess || input.reminders == .fullAccess)
+                && decided(.calendar, input) && decided(.reminderList, input)
+        case .addConnection: return active.contains { !$0.grants.isEmpty }
+        case .connect, .testRequest: return active.contains { input.successfulClientIDs.contains($0.id) }
         case .calendarAccess: return input.calendar == .fullAccess
         case .remindersAccess: return input.reminders == .fullAccess
         case .createClient: return !active.isEmpty
         case .chooseAccess: return focusClient(input).map { !$0.grants.isEmpty } ?? false
         case .turnOn: return input.bridgeOn
         case .mcpServer: return input.mcpListening
-        case .testRequest: return active.contains { input.successfulClientIDs.contains($0.id) }
         }
     }
 
-    /// The MCP server follows EK Bridge (D1), so its step is never shown;
-    /// the case stays so stored skipped steps still decode.
-    static func steps(_ input: Input) -> [Step] {
-        Step.allCases.filter { $0 != .mcpServer }
-    }
+    static func steps(_ input: Input) -> [Step] { [.macOSAccess, .addConnection, .connect] }
 
+    /// Done steps; the first step not done is current, the rest pending.
     static func states(_ input: Input) -> [Step: State] {
-        let hasClient = input.clients.contains { !$0.revoked }
         var result = [Step: State]()
-        for step in steps(input) {
-            if isDone(step, input) { result[step] = .done; continue }
-            if input.skipped.contains(step) { result[step] = .skipped; continue }
-            switch step {
-            case .calendarAccess where hasClient && isDone(.remindersAccess, input),
-                 .remindersAccess where hasClient && isDone(.calendarAccess, input):
-                result[step] = .optional
-            default:
-                result[step] = .pending
-            }
-        }
+        for step in steps(input) { result[step] = isDone(step, input) ? .done : .pending }
         if let first = steps(input).first(where: { result[$0] == .pending }) {
             result[first] = .current
         }
         return result
     }
 
-    /// Complete when no step is pending. Optional and skipped steps don't block.
     static func isComplete(_ input: Input) -> Bool {
         !states(input).values.contains { $0 == .pending || $0 == .current }
     }

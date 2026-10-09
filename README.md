@@ -55,10 +55,10 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
    brew install --cask bereciartua/tap/ek-bridge
    ```
 
-2. **Open the app.** It opens on a short setup checklist; later, you'll find it in the menu bar. First, allow Calendar and/or Reminders access; you need only the one your agent uses.
-3. **Add your agent.** Click **Add a Connection…**, pick your agent's tile and its starting access (for example **Read all calendars and lists**), then **Add and Connect**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
-4. **Turn on EK Bridge** from the checklist. The MCP server follows it.
-5. **Connect it.** On the connection's **Connect** tab, click **Add to Claude Desktop…** (or Cursor, or Claude Code): EK Bridge shows the exact change, keeps a backup and never writes the token. For other agents, copy the command or config. The status changes to **Connected** when the agent's first request arrives.
+2. **Open the app.** It opens on a setup with three steps; later, you'll find it in the menu bar.
+   1. **Allow access to Calendar and Reminders.** You need only the one your agent uses; skip the other.
+   2. **Add your agent.** Pick its tile (agents found on your Mac come first) and what it can read to start with, such as **Read all calendars and lists**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
+   3. **Connect it.** **Add to Claude Desktop…** (or Cursor, or Claude Code) shows the exact change to the agent's settings, keeps a backup and never writes the token; it also turns EK Bridge on. For other agents, copy the command or config from the connection's **Connect** tab. The step is done when the agent's first request arrives.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect-agent-dark.png">

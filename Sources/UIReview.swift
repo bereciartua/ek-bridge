@@ -630,12 +630,30 @@ final class UIReview {
     /// A second, empty environment for the setup checklist snapshots.
     func makeFreshWindow(calendar: EKAuthorizationStatus, reminders: EKAuthorizationStatus)
         -> (BridgeAppModel, MainWindowController) {
+        let (_, model, controller) = makeFreshEnvironment(calendar: calendar, reminders: reminders)
+        return (model, controller)
+    }
+
+    /// The same, with its fake services, so a test can record requests.
+    func makeFreshEnvironment(calendar: EKAuthorizationStatus, reminders: EKAuthorizationStatus)
+        -> (UIReview, BridgeAppModel, MainWindowController) {
         let fresh = UIReview(fresh: true, calendar: calendar, reminders: reminders)
         extraReviews.append(fresh)
         let model = BridgeAppModel(services: fresh.services())
+        fresh.model = model
         let controller = MainWindowController(model: model)
         extraWindows.append(controller)
-        return (model, controller)
+        return (fresh, model, controller)
+    }
+
+    /// Records a successful request from a connection, as the pipeline would.
+    func recordSuccess(_ clientID: String) {
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: .scopeStatus, parameters: [:])
+        if case .success(let call) = registry.authorize(clientID: clientID, request: request,
+                                                        origin: .mcp(agent: "claude-desktop 1.0")) {
+            _ = registry.recordResult(call, outcome: "success")
+        }
+        model?.refresh()
     }
 }
 
@@ -1395,6 +1413,41 @@ final class BehaviorReview {
             return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
                 && widths[0].request >= ActivityColumns.widestRequestLabel
         }
+        // A fresh run, end to end (B09): allow both, add Claude Desktop, one-click, first request.
+        let (fresh, freshModel, _) = review.makeFreshEnvironment(calendar: .notDetermined, reminders: .notDetermined)
+        step("fresh run: three steps, the first current") {
+            freshModel.start()
+            let states = SetupChecklist.states(freshModel.checklistInput)
+            freshModel.requestAccess(.calendar)
+            freshModel.requestAccess(.reminderList)
+            return states == [.macOSAccess: .current, .addConnection: .pending, .connect: .pending]
+        }
+        step("wait for the macOS prompts") { true }
+        step("allowing both finishes macOS access") {
+            SetupChecklist.states(freshModel.checklistInput)[.macOSAccess] == .done
+        }
+        step("adding Claude Desktop with Read all finishes Add your agent") {
+            guard freshModel.createClient(name: "Claude Desktop", startingAccess: .readAll, agent: .claudeDesktop) == nil
+            else { return false }
+            return SetupChecklist.states(freshModel.checklistInput)[.addConnection] == .done &&
+                SetupChecklist.states(freshModel.checklistInput)[.connect] == .current
+        }
+        step("Connect turns EK Bridge on and opens Add to Claude Desktop") {
+            guard let focus = SetupChecklist.focusClient(freshModel.checklistInput) else { return false }
+            freshModel.connectFromSetup(focus)
+            return freshModel.bridge.isOn && freshModel.sheet == .configPreview && freshModel.waitingForTestRequest
+        }
+        step("Add applies through the fake") {
+            freshModel.confirmOneClick()
+            return true
+        }
+        step("the first request completes setup") {
+            guard let id = freshModel.activeClients.first?.id,
+                  freshModel.oneClickResult(id, .claudeDesktop) != nil else { return false }
+            fresh.recordSuccess(id)
+            return SetupChecklist.isComplete(freshModel.checklistInput) &&
+                freshModel.setupJustCompletedName == "Claude Desktop"
+        }
         step("a copy built from source can't check") {
             self.review.updaterAvailable = false
             self.model.refresh()
@@ -1491,7 +1544,6 @@ final class SnapshotReview {
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         controller.present()
-        let (freshModel, freshController) = review.makeFreshWindow(calendar: .fullAccess, reminders: .notDetermined)
         let (renamedModel, renamedController) = review.makeRenamedWindow()
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let suffix = appearance == .aqua ? "light" : "dark"
@@ -1866,20 +1918,48 @@ final class SnapshotReview {
                 self.model.clientScrollTarget = "access"
                 return main
             }
+            // Setup in three steps (B09), in fresh environments of its own.
+            let (freshReview, freshModel, freshController) = self.review.makeFreshEnvironment(
+                calendar: .fullAccess, reminders: .notDetermined)
+            let (_, scriptModel, scriptController) = self.review.makeFreshEnvironment(
+                calendar: .fullAccess, reminders: .fullAccess)
             step("setup") {
                 self.model.sheet = nil
                 main?.orderOut(nil)
+                freshModel.start()
                 freshController.window?.appearance = NSAppearance(named: appearance)
                 freshController.present()
                 return freshController.window
             }
+            step("restore-allow-reminders") {
+                freshModel.requestAccess(.reminderList)
+                return nil
+            }
             step("setup-progress") {
-                if freshModel.activeClients.isEmpty { _ = freshModel.createClient(name: "Claude Code") }
+                if freshModel.activeClients.isEmpty {
+                    _ = freshModel.createClient(name: "Claude Code", startingAccess: .readAll, agent: .claudeCode)
+                }
                 freshModel.navigate(to: .overview)
                 freshModel.dismissBanner()
                 return freshController.window
             }
+            step("setup-complete") {
+                if let id = freshModel.activeClients.first?.id { freshReview.recordSuccess(id) }
+                return freshController.window
+            }
+            step("setup-cli") {
+                freshController.window?.orderOut(nil)
+                if scriptModel.activeClients.isEmpty {
+                    _ = scriptModel.createClient(name: "Nightly script", kind: .cli, startingAccess: .readAll)
+                }
+                scriptModel.navigate(to: .overview)
+                scriptModel.dismissBanner()
+                scriptController.window?.appearance = NSAppearance(named: appearance)
+                scriptController.present()
+                return scriptController.window
+            }
             step("overview-renamed") {
+                scriptController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
                 renamedModel.navigate(to: .overview)
                 renamedModel.bridgeDidChange(.on)
@@ -1891,6 +1971,7 @@ final class SnapshotReview {
             step("restore") {
                 renamedController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
+                scriptController.window?.orderOut(nil)
                 self.controller.present()
                 return nil
             }

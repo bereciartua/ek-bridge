@@ -6,15 +6,13 @@ Everything else is in one window with a sidebar: **Overview**, **Activity**, eac
 
 ## First run
 
-On first launch the window opens on a setup checklist. The steps can be done in any order, and each one updates as soon as it's done:
+On first launch the window opens on **Set up EK Bridge**, three steps that update as soon as each is done. A finished step collapses to one line with a check mark.
 
-- **Allow Calendar access** and **Allow Reminders access.** **Allow Access…** shows the macOS prompt. If access was turned off or is add-only, **Open Privacy Settings** goes straight to the right pane. You need only the one your tools use: once the other is done and a connection exists, the step says it's optional and offers **Skip**.
-- **Add a connection.** A connection is one agent or script with its own key. Give each one its own connection so you can see and remove it separately.
-- **Choose what the connection can use.** Opens the connection's Access table.
-- **Turn on EK Bridge.** The choice is kept across launches.
-- **Connect your tool.** For a command-line connection, **Copy Command** copies a command that works as pasted: `bridge-client scope_status --client "<name>"` once `bridge-client` runs this copy of the app (installed from Settings ▸ Developer, or linked by Homebrew), else the app's own copy by its full path, such as `/Applications/EKBridge.app/Contents/MacOS/bridge-client scope_status …`. A build without a bundled client falls back to `python3 client.py …`, run in the source checkout. For an agent, open Connect ▸ AI agent, copy the setup, and ask the agent something like "What's on my calendar today?". The step completes when the first request arrives, and the checklist turns into the normal Overview.
+1. **Allow access to Calendar and Reminders.** **Allow Calendar…** and **Allow Reminders…** show the macOS prompts. You need only the one your agent uses: once one is allowed, **Skip** the other. If access was turned off or is add-only, **Open Privacy Settings** goes straight to the right pane. Done, it reads *Calendar and Reminders allowed* (or *Calendar allowed · Reminders skipped*) with a **Full Access** label.
+2. **Add your agent.** **Add Your Agent…** opens [Add a Connection](#connections-and-access). Done once a connection has some access, it reads *Claude Code added · reads all calendars and lists, asks before changes*, with **Change** (its Access tab).
+3. **Connect it.** For Claude Desktop, Cursor and Claude Code, **Add to <Agent>…** ([one-click setup](MCP.md#one-click-claude-desktop-cursor-and-claude-code)); for other agents, **Open Connect**. Either one also turns EK Bridge on. Then the step waits for the agent (*Waiting for Claude Code…*); ask it something like "What's on my calendar today?". **Copy the setup instead** opens the setup to copy. For a script's connection the step is **Connect your script** with **Copy Test Command**, which copies a command that works as pasted: `bridge-client scope_status --client "<name>"` once `bridge-client` runs this copy of the app (installed from Settings ▸ Advanced, or linked by Homebrew), else the app's own copy by its full path, such as `/Applications/EKBridge.app/Contents/MacOS/bridge-client scope_status …`. A build without a bundled client falls back to `python3 client.py …`, run in the source checkout.
 
-**Hide Setup** hides the checklist; **Help ▸ Show Setup Checklist** or Settings ▸ About brings it back.
+The step completes when the first request arrives ("Claude Code connected. You're all set."), and setup turns into the normal Overview. **Add a command-line connection…** opens the sheet on its Script tile. **Hide Setup** hides the checklist; **Help ▸ Show Setup Checklist** or Settings ▸ About brings it back.
 
 ## Connections and access
 

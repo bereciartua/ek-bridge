@@ -173,59 +173,75 @@ struct AppPresentationTests {
 
     static func checklist() {
         typealias Step = SetupChecklist.Step
+        // Three steps, with raw values that never reuse 0.8's.
+        precondition(Step.macOSAccess.rawValue == 10 && Step.addConnection.rawValue == 11 &&
+                     Step.connect.rawValue == 12, "stored skipped steps keep their meaning")
+        precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6 &&
+                     Step.calendarAccess.rawValue == 1 && Step.remindersAccess.rawValue == 2)
         var input = SetupChecklist.Input(calendar: .notDetermined, reminders: .notDetermined,
                                          clients: [], bridgeOn: false, successfulClientIDs: [])
+        precondition(SetupChecklist.steps(input) == [.macOSAccess, .addConnection, .connect])
         var states = SetupChecklist.states(input)
-        precondition(states[.calendarAccess] == .current)
-        precondition(SetupChecklist.steps(input).dropFirst().allSatisfy { states[$0] == .pending })
-        precondition(states[.mcpServer] == nil, "the MCP step needs an MCP client")
+        precondition(states == [.macOSAccess: .current, .addConnection: .pending, .connect: .pending])
+        // macOS access: one type allowed and the other decided (allowed, off, or skipped).
         input.calendar = .fullAccess
+        precondition(SetupChecklist.states(input)[.macOSAccess] == .current, "Reminders still undecided")
+        for (reminders, skipped) in [(EKAuthorizationStatus.fullAccess, false), (.denied, false), (.notDetermined, true)] {
+            var decided = input
+            decided.reminders = reminders
+            if skipped { decided.skipped = [.remindersAccess] }
+            precondition(SetupChecklist.states(decided)[.macOSAccess] == .done, "reminders \(reminders) \(skipped)")
+        }
+        var onlyReminders = input
+        onlyReminders.calendar = .denied
+        onlyReminders.reminders = .fullAccess
+        precondition(SetupChecklist.isDone(.macOSAccess, onlyReminders))
+        var neither = input
+        neither.calendar = .denied
+        neither.reminders = .denied
+        precondition(!SetupChecklist.isDone(.macOSAccess, neither), "nothing allowed isn't done")
+        var skippedBoth = input
+        skippedBoth.calendar = .notDetermined
+        skippedBoth.skipped = [.calendarAccess, .remindersAccess]
+        precondition(!SetupChecklist.isDone(.macOSAccess, skippedBoth), "skipping both isn't done")
+        input.reminders = .fullAccess
         states = SetupChecklist.states(input)
-        precondition(states[.calendarAccess] == .done && states[.remindersAccess] == .current)
+        precondition(states[.macOSAccess] == .done && states[.addConnection] == .current &&
+                     states[.connect] == .pending)
+        // Add your agent: done once a connection has some access.
         var client = ClientView(id: "c", name: "Claude Code", revoked: false, grants: [])
         input.clients = [client]
-        states = SetupChecklist.states(input)
-        precondition(states[.remindersAccess] == .optional, "only Calendars is fine")
-        precondition(states[.createClient] == .done && states[.chooseAccess] == .current)
+        precondition(SetupChecklist.states(input)[.addConnection] == .current, "no access yet")
         precondition(SetupChecklist.focusClient(input)?.id == "c")
         client = ClientView(id: "c", name: "Claude Code", revoked: false, grants: [
             ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
         input.clients = [client]
-        input.bridgeOn = true
         states = SetupChecklist.states(input)
-        precondition(states[.chooseAccess] == .done && states[.turnOn] == .done &&
-                     states[.testRequest] == .current)
+        precondition(states[.addConnection] == .done && states[.connect] == .current)
         precondition(!SetupChecklist.isComplete(input))
+        // Connect: done with the first successful request (EK Bridge on or not when checked).
         input.successfulClientIDs = ["c"]
         precondition(SetupChecklist.isComplete(input))
-        input.skipped = [.remindersAccess]
-        precondition(SetupChecklist.states(input)[.remindersAccess] == .skipped)
-        // The MCP server follows EK Bridge (D1): no step for it, even for an MCP connection.
-        var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [
-            ClientGrant(resource: .calendar, targetID: "w", mask: 1)])
+        // Out of order: a request before macOS access is decided still leaves that step.
+        var early = input
+        early.calendar = .notDetermined
+        early.reminders = .notDetermined
+        precondition(SetupChecklist.states(early) == [.macOSAccess: .current, .addConnection: .done, .connect: .done])
+        // A removed connection's request doesn't complete setup, nor does its access count.
+        let revoked = SetupChecklist.Input(
+            calendar: .fullAccess, reminders: .fullAccess,
+            clients: [ClientView(id: "r", name: "Old", revoked: true, grants: [
+                ClientGrant(resource: .calendar, targetID: "w", mask: 1)])],
+            bridgeOn: true, successfulClientIDs: ["r"])
+        precondition(SetupChecklist.states(revoked)[.addConnection] == .current &&
+                     SetupChecklist.states(revoked)[.connect] == .pending)
+        precondition(SetupChecklist.isDone(.testRequest, input), "0.8's step still answers for existing installs")
+        var agent = ClientView(id: "a", name: "Agent", revoked: false, grants: [])
         agent.hasSigningKey = false
         agent.hasMCPToken = true
-        var mcp = input
-        mcp.clients = [agent]
-        mcp.successfulClientIDs = []
-        precondition(SetupChecklist.steps(mcp).suffix(2) == [.turnOn, .testRequest])
-        precondition(SetupChecklist.states(mcp)[.mcpServer] == nil &&
-                     SetupChecklist.states(mcp)[.testRequest] == .current)
-        precondition(Step.mcpServer.rawValue == 7 && Step.testRequest.rawValue == 6,
-                     "stored skipped steps keep their meaning")
         precondition(ClientTransport(agent).badge == "MCP" && ClientTransport(client).badge == "CLI")
         agent.hasSigningKey = true
         precondition(ClientTransport(agent).badge == "MCP + CLI")
-        // Steps stay usable out of order: turning the bridge on first works.
-        let early = SetupChecklist.Input(calendar: .notDetermined, reminders: .notDetermined,
-                                         clients: [], bridgeOn: true, successfulClientIDs: [])
-        precondition(SetupChecklist.states(early)[.turnOn] == .done)
-        // A revoked client's request doesn't complete setup.
-        let revoked = SetupChecklist.Input(
-            calendar: .fullAccess, reminders: .fullAccess,
-            clients: [ClientView(id: "r", name: "Old", revoked: true, grants: [])],
-            bridgeOn: true, successfulClientIDs: ["r"])
-        precondition(SetupChecklist.states(revoked)[.createClient] == .current)
     }
 
     static func activity() {

@@ -326,7 +326,7 @@ struct RowButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Setup checklist (§6)
+// MARK: - Setup checklist (B09, mockup 01)
 
 struct SetupChecklistView: View {
     let model: BridgeAppModel
@@ -335,7 +335,7 @@ struct SetupChecklistView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 PaneTitle(title: String(localized: "Set up \(AppIdentity.displayName)"))
-                Text(String(localized: "Let tools on this Mac use the calendars and lists you choose. Requests never leave this Mac."))
+                Text(String(localized: "Let your AI agent use the calendars and lists you choose. Requests stay on this Mac."))
                     .foregroundStyle(.secondary)
             }
             if let name = model.setupJustCompletedName {
@@ -354,35 +354,47 @@ struct SetupChecklistView: View {
             } else {
                 let input = model.checklistInput
                 let states = SetupChecklist.states(input)
-                let steps = SetupChecklist.steps(input)
+                let focus = SetupChecklist.focusClient(input)
                 Card {
-                    ForEach(Array(steps.enumerated()), id: \.element) { index, step in
+                    ForEach(Array(SetupChecklist.steps(input).enumerated()), id: \.element) { index, step in
                         if index > 0 { Divider().padding(.leading, 56) }
                         SetupStepRow(model: model, step: step, number: index + 1,
-                                     state: states[step] ?? .pending,
-                                     focus: SetupChecklist.focusClient(input))
+                                     state: states[step] ?? .pending, focus: focus)
                     }
                 }
-                Label(String(localized: "A connection is one agent or script with its own key. Give each one its own connection so you can see and remove it separately."),
-                      systemImage: "info.circle")
+                if states[.connect] == .current, let focus, focus.hasMCPToken {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+                        Text(String(localized: "Then ask it: “What's on my calendar today?”")).foregroundStyle(.secondary)
+                        Text("·").foregroundStyle(.secondary).accessibilityHidden(true)
+                        Button(String(localized: "Copy the setup instead")) { model.copySetupFromSetup(focus) }
+                            .buttonStyle(.link)
+                    }
                     .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                }
                 if model.updaterAvailable {
                     // The one request that leaves this Mac, so it's named here.
-                    Toggle(isOn: Binding(get: { model.automaticUpdateChecks },
-                                         set: { model.setAutomaticUpdateChecks($0) })) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "Check for updates automatically"))
-                            Text(String(localized: "Once a day, asks GitHub for the latest version, sending only your IP address and the app's version. Change it any time in Settings."))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                    Card {
+                        Toggle(isOn: Binding(get: { model.automaticUpdateChecks },
+                                             set: { model.setAutomaticUpdateChecks($0) })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(String(localized: "Check for updates automatically"))
+                                Text(String(localized: "Once a day, asks GitHub for the latest version, sending only your IP address and the app's version."))
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        .toggleStyle(.checkbox)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .toggleStyle(.checkbox)
                 }
                 HStack {
+                    Text(String(localized: "Connecting a script instead?")).foregroundStyle(.secondary)
+                    Button(String(localized: "Add a command-line connection…")) { model.beginNewClient(preset: .script) }
+                        .buttonStyle(.link)
+                        .disabled(!model.canCreateClient)
                     Spacer()
                     Button(String(localized: "Hide Setup")) { model.hideSetup() }
                         .buttonStyle(.link)
@@ -419,7 +431,7 @@ struct SetupStepRow: View {
         }
         .padding(.horizontal, 16)
         // Finished steps collapse to one quiet line.
-        .padding(.vertical, isFinished ? 7 : 12)
+        .padding(.vertical, isFinished ? 9 : 14)
         .background(state == .current ? Color.accentColor.opacity(0.07) : Color.clear)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityText)
@@ -440,15 +452,10 @@ struct SetupStepRow: View {
 
     @ViewBuilder private var indicator: some View {
         switch state {
-        case .done:
+        case .done, .skipped:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 20))
                 .foregroundStyle(.white, .green)
-                .frame(width: 26)
-        case .skipped:
-            Image(systemName: "minus.circle.fill")
-                .font(.system(size: 20))
-                .foregroundStyle(.white, .secondary)
                 .frame(width: 26)
         case .current:
             Text("\(number)")
@@ -465,146 +472,147 @@ struct SetupStepRow: View {
         }
     }
 
-    private var clientName: String { focus?.name ?? String(localized: "the connection") }
+    private var name: String { focus?.name ?? String(localized: "your agent") }
+    private var agentName: String {
+        guard let focus else { return String(localized: "your agent") }
+        return model.agent(for: focus.id).displayName
+    }
+    private var isScript: Bool { focus.map { $0.hasSigningKey && !$0.hasMCPToken } ?? false }
+    private var waiting: Bool { model.waitingForTestRequest && model.bridge.isOn }
 
     private var title: String {
-        if state == .done { return doneTitle }
-        if state == .skipped {
-            switch step {
-            case .calendarAccess: return String(localized: "Calendar access skipped")
-            case .remindersAccess: return String(localized: "Reminders access skipped")
-            default: break
-            }
-        }
-        return nextTitle
-    }
-
-    /// Finished steps read as what happened.
-    private var doneTitle: String {
         switch step {
-        case .calendarAccess: String(localized: "Calendar access allowed")
-        case .remindersAccess: String(localized: "Reminders access allowed")
-        case .createClient: String(localized: "Connection added")
-        case .chooseAccess: String(localized: "Access chosen")
-        case .turnOn: String(localized: "\(AppIdentity.displayName) turned on")
-        case .mcpServer: String(localized: "MCP server turned on")
-        case .testRequest: String(localized: "Tool connected")
+        case .macOSAccess:
+            guard state == .done else { return String(localized: "Allow access to Calendar and Reminders") }
+            return accessSummary
+        case .addConnection:
+            guard state == .done, let focus else { return String(localized: "Add your agent") }
+            return String(localized: "\(focus.name) added · \(model.startingSummary(focus))")
+        case .connect, .testRequest:
+            if state == .done { return String(localized: "\(name) connected") }
+            return isScript ? String(localized: "Connect your script") : String(localized: "Connect \(name)")
+        default:
+            return ""
         }
     }
 
-    private var nextTitle: String {
-        switch step {
-        case .calendarAccess: String(localized: "Allow Calendar access")
-        case .remindersAccess: String(localized: "Allow Reminders access")
-        case .createClient: String(localized: "Add a connection")
-        case .chooseAccess: String(localized: "Choose what \(clientName) can use")
-        case .turnOn: String(localized: "Turn on \(AppIdentity.displayName)")
-        case .mcpServer: String(localized: "Turn on the MCP server")
-        case .testRequest: String(localized: "Connect your tool")
+    /// "Calendar and Reminders allowed", "Calendar allowed · Reminders skipped"…
+    private var accessSummary: String {
+        func part(_ resource: ClientResource) -> String? {
+            let status = model.status(resource)
+            let noun = AccessText.noun(resource)
+            if status == .fullAccess { return nil }
+            if status == .denied { return String(localized: "\(noun) off") }
+            return String(localized: "\(noun) skipped")
+        }
+        switch (part(.calendar), part(.reminderList)) {
+        case (nil, nil): return String(localized: "Calendar and Reminders allowed")
+        case (nil, let other?): return String(localized: "Calendar allowed · \(other)")
+        case (let other?, nil): return String(localized: "Reminders allowed · \(other)")
+        case (let first?, let second?): return "\(first) · \(second)"
         }
     }
 
     private var detail: String? {
         switch step {
-        case .calendarAccess, .remindersAccess:
-            let resource: ClientResource = step == .calendarAccess ? .calendar : .reminderList
-            if model.accessRequestDeclined.contains(resource) {
+        case .macOSAccess:
+            if model.accessRequestDeclined.contains(.calendar) || model.accessRequestDeclined.contains(.reminderList) {
                 return String(localized: "You chose not to allow access. You can change this in System Settings.")
             }
-            if state == .optional {
-                return step == .calendarAccess
-                    ? String(localized: "Optional. Skip it if your tools only use reminders.")
-                    : String(localized: "Optional. Skip it if your tools only use calendars.")
+            return String(localized: "\(AppIdentity.displayName) needs Full Access to the ones your agent uses. You can skip either one.")
+        case .addConnection:
+            return String(localized: "Choose the agent and what it can read. You can change it later.")
+        case .connect, .testRequest:
+            if waiting {
+                return isScript ? String(localized: "Run the copied command in Terminal.")
+                                : String(localized: "Then ask it: “What's on my calendar today?”")
             }
-            return AccessText.detail(resource, model.status(resource))
-        case .createClient:
-            return String(localized: "Name the tool or script that will connect. It gets its own key.")
-        case .chooseAccess:
-            return String(localized: "Pick calendars and lists, and what it can do with each. It has no access yet.")
-        case .turnOn:
-            return String(localized: "Agents and scripts can only connect while it's on. Your choice is kept after a restart.")
-        case .mcpServer:
-            return String(localized: "Lets AI agents on this Mac connect. Listens on this Mac only.")
-        case .testRequest:
-            if focus?.hasMCPToken == true {
-                return String(localized: "Copy the setup for your agent, then ask it something like “What's on my calendar today?”")
+            if isScript {
+                return String(localized: "Copy a command that checks its access and run it in Terminal. Done when the request arrives.")
             }
-            if focus == nil {
-                return String(localized: "Connect your agent, then ask it something like “What's on my calendar today?”")
-            }
-            return model.cliCommand == .source
-                ? String(localized: "Copy the command and run it in Terminal, in the ek-bridge folder. This step completes when the request arrives.")
-                : String(localized: "Copy the command and run it in Terminal. This step completes when the request arrives.")
+            return String(localized: "Adds \(AppIdentity.displayName) to \(agentName) and turns \(AppIdentity.displayName) on. Done when \(name)'s first request arrives.")
+        default:
+            return nil
         }
     }
 
     @ViewBuilder private var trailing: some View {
         let prominent = state == .current
         switch step {
-        case .calendarAccess, .remindersAccess:
-            let resource: ClientResource = step == .calendarAccess ? .calendar : .reminderList
-            HStack(spacing: 10) {
-                if state == .optional {
-                    Button(String(localized: "Skip")) { model.skipSetupStep(step) }
-                        .buttonStyle(.link)
-                }
-                if state != .skipped {
-                    AccessStatusControls(model: model, resource: resource, prominent: prominent)
-                }
-            }
-        case .createClient:
-            if state == .done, let focus {
-                Text(focus.name).foregroundStyle(.secondary).lineLimit(1)
-            } else {
-                NewClientButton(model: model, prominent: prominent)
-            }
-        case .chooseAccess:
-            if state == .done, let focus {
-                Text(AccessSummary.counts(focus.grants)).foregroundStyle(.secondary)
-            } else {
-                Button(String(localized: "Choose Access…")) {
-                    if let focus { model.openClientAccess(focus.id, focus: nil) }
-                }
-                .modifier(Prominent(on: prominent))
-                .disabled(focus == nil)
-            }
-        case .turnOn:
-            Toggle(isOn: Binding(get: { model.bridge.isOn }, set: { model.setBridgeEnabled($0) })) {
-                Text(AppIdentity.displayName)
-            }
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .accessibilityLabel(String(localized: "Turn on \(AppIdentity.displayName)"))
-        case .mcpServer:
-            if state != .done {
-                Button(String(localized: "Turn On")) { model.setLocalMCPAllowed(true) }
-                    .modifier(Prominent(on: prominent))
-            }
-        case .testRequest:
+        case .macOSAccess:
             if state == .done {
-                EmptyView()
-            } else if let focus, focus.hasMCPToken {
-                Button(String(localized: "Open Connect")) {
-                    model.connectTab[focus.id] = .agent
-                    model.navigate(to: .client(focus.id))
-                }
-                .modifier(Prominent(on: prominent))
+                Pill(label: String(localized: "Full Access"), tone: .ok, icon: true)
             } else {
+                accessButtons(prominent: prominent)
+            }
+        case .addConnection:
+            if state == .done, let focus {
+                Button(String(localized: "Change")) { model.openClientAccess(focus.id, focus: nil) }
+                    .buttonStyle(.link)
+            } else {
+                Button(String(localized: "Add Your Agent…")) { model.beginNewClient() }
+                    .modifier(Prominent(on: prominent))
+                    .disabled(!model.canCreateClient)
+            }
+        case .connect, .testRequest:
+            if state != .done {
                 HStack(spacing: 10) {
-                    if model.waitingForTestRequest && model.bridge.isOn {
+                    if waiting {
                         ProgressView().controlSize(.small)
-                        Text(String(localized: "Waiting for a request…"))
+                        Text(String(localized: "Waiting for \(name)…"))
                             .foregroundStyle(.secondary)
                             .fixedSize()
+                    } else if let focus {
+                        if isScript {
+                            Button {
+                                model.copyTestCommand()
+                            } label: {
+                                Label(String(localized: "Copy Test Command"), systemImage: "doc.on.doc")
+                            }
+                            .modifier(Prominent(on: prominent))
+                            .help(ConnectCommand.scopeStatus(clientName: focus.name, program: model.cliProgram))
+                        } else {
+                            let agent = model.agent(for: focus.id)
+                            Button(agent.oneClick ? String(localized: "Add to \(agent.displayName)…")
+                                                  : String(localized: "Open Connect")) {
+                                model.connectFromSetup(focus)
+                            }
+                            .modifier(Prominent(on: prominent))
+                            .disabled(!focus.hasMCPToken)
+                        }
                     }
-                    Button {
-                        model.copyTestCommand()
-                    } label: {
-                        Label(String(localized: "Copy Command"), systemImage: "doc.on.doc")
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    /// Allow Calendar… and Allow Reminders… until each is decided; Skip for
+    /// the second once the first is allowed.
+    @ViewBuilder private func accessButtons(prominent: Bool) -> some View {
+        let input = model.checklistInput
+        let anyAllowed = model.calendarAccess == .fullAccess || model.remindersAccess == .fullAccess
+        HStack(spacing: 10) {
+            ForEach([ClientResource.calendar, .reminderList], id: \.self) { resource in
+                let status = model.status(resource)
+                if !SetupChecklist.decided(resource, input) {
+                    if status == .notDetermined {
+                        if anyAllowed {
+                            Button(String(localized: "Skip")) {
+                                model.skipSetupStep(resource == .calendar ? .calendarAccess : .remindersAccess)
+                            }
+                            .buttonStyle(.link)
+                        }
+                        Button(resource == .calendar ? String(localized: "Allow Calendar…")
+                                                     : String(localized: "Allow Reminders…")) {
+                            model.requestAccess(resource)
+                        }
+                        .disabled(model.accessRequestInFlight.contains(resource))
+                        .modifier(Prominent(on: prominent))
+                    } else {
+                        AccessStatusControls(model: model, resource: resource, prominent: prominent)
                     }
-                    .modifier(Prominent(on: prominent))
-                    .disabled(focus == nil)
-                    .help(focus.map { ConnectCommand.scopeStatus(clientName: $0.name, program: model.cliProgram) } ?? "")
                 }
             }
         }
