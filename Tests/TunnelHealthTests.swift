@@ -27,6 +27,7 @@ struct TunnelHealthTests {
         labels()
         words()
         schedule()
+        startStep()
         print("Tunnel health: Tailscale, cloudflared and ngrok parsers, the Tunnel row's name, state words and the check schedule passed")
     }
 
@@ -159,6 +160,31 @@ struct TunnelHealthTests {
         check(!due(now.addingTimeInterval(-2.9), 3) && due(now.addingTimeInterval(-3), 3), "3 s")
         check(due(now.addingTimeInterval(30), 60), "a clock that went back")
         check(!due(now.addingTimeInterval(-3600), nil), "never while off")
+    }
+
+    static func startStep() {
+        let make = TunnelStartState.make
+        let running = TunnelHealth.running(address: "https://quiet-river-1234.trycloudflare.com", port: 47616)
+        check(make(false, .tailscaleFunnel, running) == .turnOn, "off: turn on first")
+        check(make(true, .tailscaleFunnel, nil) == .waiting, "not checked yet")
+        check(make(true, .tailscaleFunnel, .notRunning(reason: .noTunnel)) == .waiting, "waiting")
+        check(make(true, .cloudflareQuick, running) == .found(address: "https://quiet-river-1234.trycloudflare.com"), "found")
+        check(make(true, .tailscaleFunnel, .wrongPort(port: 47615, address: nil)) == .problem(.wrongPort(port: 47615, address: nil)),
+              "wrong port stays")
+        check(make(true, .tailscaleFunnel, .notRunning(reason: .loggedOut)) == .problem(.notRunning(reason: .loggedOut)),
+              "logged out stays with the reason")
+        check(make(true, .other, running) == .cantCheck(nil), "Other is never checked")
+        check(make(true, .ngrok, .notInstalled).offersStarted && make(true, .ngrok, .unknown).offersStarted, "I've Started It")
+        check(!make(true, .ngrok, nil).offersStarted && !make(true, .ngrok, running).offersStarted, "…only when it can't tell")
+        // Once per entry into step 2; Continue after Back.
+        let found = make(true, .cloudflareQuick, running)
+        check(found.autoAdvances(advancedThisEntry: false) && !found.autoAdvances(advancedThisEntry: true), "once")
+        check(found.offersContinue && !TunnelStartState.waiting.autoAdvances(advancedThisEntry: false), "Continue")
+        // Hostnames typed into step 2.
+        check(TunnelProvider.hostname(" https://MCP.example.com/ ") == "mcp.example.com", "scheme and slash dropped")
+        check(TunnelProvider.hostname("my name.example.com") == nil && TunnelProvider.hostname("localhost") == nil, "not a hostname")
+        check(TunnelProvider.cloudflareTunnel.asksForHostname && TunnelProvider.ngrok.asksForHostname
+              && !TunnelProvider.cloudflareQuick.asksForHostname, "who asks")
     }
 
     static func labels() {

@@ -1521,6 +1521,62 @@ final class BehaviorReview {
         step("the test makes it done") {
             self.model.remoteGuideStep == .done
         }
+        // Plan 08 T04: step 2 waits for the tunnel on this Mac, then moves on.
+        var guideReview: UIReview!
+        var guideModel: BridgeAppModel!
+        let quick = UIReview.quickTunnelOrigin
+        step("guide step 2 waits for the tunnel") {
+            let (fresh, model, _) = self.review.makeFreshEnvironment(calendar: .fullAccess, reminders: .fullAccess)
+            guideReview = fresh
+            guideModel = model
+            fresh.tunnelHealth[.cloudflareQuick] = .notRunning(reason: .noTunnel)
+            model.applyRemoteEnabled(true)
+            model.guideChoose(.cloudflareQuick)
+            return model.remoteGuideStep == .startTunnel
+        }
+        step("…and says so") {
+            guideModel.tunnelStartState == .waiting && guideModel.remoteGuideStep == .startTunnel
+                && !guideModel.tunnelStartState.offersStarted
+        }
+        step("found: it moves on by itself") {
+            guideReview.tunnelHealth[.cloudflareQuick] = .running(address: quick, port: 47616)
+            guideModel.checkTunnel()
+            return true
+        }
+        step("…to step 3 with the address filled in") {
+            guideModel.remoteGuideStep == .pasteAddress && guideModel.guideAddress == quick
+        }
+        step("Back from step 3 shows Continue, without bouncing forward") {
+            guideModel.guideBackToStart()
+            guideModel.checkTunnel()
+            return true
+        }
+        step("…still on step 2") {
+            guideModel.remoteGuideStep == .startTunnel && guideModel.tunnelStartState.offersContinue
+        }
+        step("Continue goes to step 3") {
+            guideModel.guideContinue()
+            return guideModel.remoteGuideStep == .pasteAddress && guideModel.guideAddress == quick
+        }
+        step("Other tunnel keeps I've Started It") {
+            guideModel.chooseTunnelAgain()
+            guideModel.guideChoose(.other)
+            return guideModel.tunnelStartState.offersStarted
+        }
+        step("Cloudflare Tunnel's commands use the hostname typed, never the address in use") {
+            // The main window has an address saved (other-mac.tail1234.ts.net).
+            self.model.guideChoose(.cloudflareTunnel)
+            let placeholder = TunnelProvider.cloudflareTunnel.commands(port: self.model.remotePort,
+                                                                       hostname: self.model.guideCommandHostname)
+            self.model.guideHostname = "https://mcp.example.com/"
+            let typed = TunnelProvider.cloudflareTunnel.commands(port: self.model.remotePort,
+                                                                 hostname: self.model.guideCommandHostname)
+            self.model.guideChoose(.tailscaleFunnel)
+            self.model.remoteGuideActive = false
+            return !placeholder.joined().contains("other-mac") && placeholder.contains("cloudflared tunnel route dns ek-bridge mcp.example.com")
+                && typed.contains("cloudflared tunnel route dns ek-bridge mcp.example.com")
+                && self.model.guideHostname.isEmpty
+        }
         step("turning off from the page") {
             self.model.setRemoteAccessEnabled(false)
             return !self.model.remoteEnabled && self.model.remoteStatus == .off
@@ -2253,16 +2309,32 @@ final class SnapshotReview {
                 self.model.remoteGuideActive = true
                 return main
             }
-            step("remote-guide-2") {
-                self.model.tunnelChoice = .tailscaleFunnel
+            step("remote-guide-2-waiting") {
+                // Plan 08 T04: step 2 waits for the tunnel on this Mac.
+                self.review.tunnelHealth[.tailscaleFunnel] = .notRunning(reason: .noTunnel)
+                self.model.guideChoose(.tailscaleFunnel)
                 self.model.applyRemoteEnabled(true)
+                self.model.checkTunnel()
+                return main
+            }
+            step("remote-guide-2-hostname") {
+                self.model.guideChoose(.cloudflareTunnel)
+                self.model.guideHostname = "mcp.example.com"
                 return main
             }
             step("remote-guide-3") {
-                self.model.remoteTunnelStarted = true
+                // Found: step 2 moved on by itself, with the address filled in.
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
+                self.model.guideChoose(.tailscaleFunnel)
+                return main
+            }
+            step("remote-guide-2-found") {
+                // Back from step 3: the found state with Continue, no bounce.
+                self.model.guideBackToStart()
                 return main
             }
             step("remote-guide-4-failed") {
+                self.model.guideContinue()
                 self.review.remoteReachable = false
                 _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
                 self.model.testRemoteAccess()

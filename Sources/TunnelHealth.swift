@@ -442,3 +442,67 @@ enum TunnelCheckSchedule {
         return now.timeIntervalSince(lastCheck) >= interval || now < lastCheck
     }
 }
+
+/// Step 2 of a guide (first setup and Switch Tunnel…) while you start the
+/// tunnel: what it shows, and when it moves on by itself (D8). The step
+/// itself still comes from `RemoteGuide.step`.
+enum TunnelStartState: Equatable {
+    /// Remote Access is off: turn it on first.
+    case turnOn
+    /// Checking every 3 s: *Waiting for Tailscale Funnel…*
+    case waiting
+    /// Running and forwarding to the Remote Access port.
+    case found(address: String?)
+    /// Running but set up wrong, or Tailscale can't run Funnel yet: the fix.
+    case problem(TunnelHealth)
+    /// Other tunnel, not installed, or the check can't tell: I've Started It.
+    case cantCheck(TunnelHealth?)
+
+    static func make(remoteOn: Bool, provider: TunnelProvider, health: TunnelHealth?) -> TunnelStartState {
+        guard remoteOn else { return .turnOn }
+        if provider == .other { return .cantCheck(nil) }
+        switch health {
+        case nil: return .waiting
+        case .running(let address, _)?: return .found(address: address)
+        case .notRunning(let reason)? where reason == .noTunnel || reason == .stopped: return .waiting
+        case .notRunning?, .wrongPort?, .notPublic?: return .problem(health!)
+        case .notInstalled?, .unknown?: return .cantCheck(health)
+        }
+    }
+
+    /// Moves on to step 3 by itself only once per entry into step 2 from
+    /// step 1: after Back from step 3 it shows Continue instead.
+    func autoAdvances(advancedThisEntry: Bool) -> Bool {
+        if case .found = self { return !advancedThisEntry }
+        return false
+    }
+
+    /// I've Started It: only when the check can't tell.
+    var offersStarted: Bool {
+        if case .cantCheck = self { return true }
+        return false
+    }
+
+    /// Continue: found, after Back from step 3.
+    var offersContinue: Bool {
+        if case .found = self { return true }
+        return false
+    }
+}
+
+extension TunnelProvider {
+    /// Cloudflare Tunnel and ngrok ask for the hostname first; the commands
+    /// and config.yml use it, never the address in use.
+    var asksForHostname: Bool { self == .cloudflareTunnel || self == .ngrok }
+
+    var hostnamePlaceholder: String { self == .ngrok ? "<your-dev-domain>" : "mcp.example.com" }
+
+    /// The hostname a typed value means: no scheme, path or spaces.
+    static func hostname(_ text: String) -> String? {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let range = value.range(of: "://") { value = String(value[range.upperBound...]) }
+        value = String(value.prefix { $0 != "/" })
+        guard !value.isEmpty, !value.contains(" "), value.contains(".") else { return nil }
+        return value
+    }
+}

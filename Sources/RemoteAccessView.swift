@@ -107,8 +107,7 @@ struct RemoteGuideView: View {
                 ForEach(Array(TunnelProvider.allCases.enumerated()), id: \.element) { index, provider in
                     if index > 0 { RowDivider() }
                     Button {
-                        model.tunnelChoice = provider
-                        model.remoteGuideActive = true
+                        model.guideChoose(provider)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: provider == model.tunnelChoice ? "largecircle.fill.circle" : "circle")
@@ -133,67 +132,19 @@ struct RemoteGuideView: View {
     }
 
     private var startTunnel: some View {
-        let provider = model.tunnelChoice
-        let hostname = model.remoteOrigin.flatMap(URL.init(string:))?.host
-        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        let state = model.tunnelStartState
         return VStack(alignment: .leading, spacing: 12) {
-            Card {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(provider.name).font(.headline)
-                    HStack(spacing: 4) {
-                        Text(provider.summary).foregroundStyle(.secondary)
-                        Button(String(localized: "Change tunnel")) { model.chooseTunnelAgain() }
-                            .buttonStyle(.link)
-                    }
-                    .font(.callout)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                RowDivider()
-                if !model.remoteEnabled {
-                    HStack(spacing: 12) {
-                        Text(String(localized: "First, turn on Remote Access. Port \(String(model.remotePort)) opens on this Mac for the tunnel; nothing is reachable until the tunnel runs."))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 12)
-                        Button(String(localized: "Turn On Remote Access")) { model.setRemoteAccessEnabled(true) }
-                            .buttonStyle(.borderedProminent)
-                            .fixedSize()
-                    }
-                    .padding(16)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if !commands.isEmpty {
-                            HStack(alignment: .top) {
-                                CodeBox(text: commands.joined(separator: "\n"))
-                                CopyButton(text: commands.joined(separator: "\n"), title: String(localized: "Copy"),
-                                           help: String(localized: "Copy Commands"))
-                            }
-                        }
-                        if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
-                            Text("~/.cloudflared/config.yml").font(.callout.monospaced()).foregroundStyle(.secondary)
-                            HStack(alignment: .top) {
-                                CodeBox(text: config)
-                                CopyButton(text: config, help: String(localized: "Copy config.yml"))
-                            }
-                        }
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(String(localized: "Run it in Terminal. It prints the tunnel's https address; you paste it next."))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 8)
-                            InfoButton(text: (provider.steps + provider.notes).joined(separator: "\n\n"))
-                        }
-                        .font(.callout)
-                    }
-                    .padding(16)
-                }
-            }
+            TunnelStartCard(model: model, provider: model.tunnelChoice, changeTunnel: { model.chooseTunnelAgain() })
             HStack {
                 Spacer()
                 Button(String(localized: "Back")) { model.chooseTunnelAgain() }
-                Button(String(localized: "I've Started It")) { model.remoteTunnelStarted = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.remoteEnabled)
+                if state.offersContinue {
+                    Button(String(localized: "Continue")) { model.guideContinue() }
+                        .buttonStyle(.borderedProminent)
+                } else if state.offersStarted {
+                    Button(String(localized: "I've Started It")) { model.guideContinue() }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }
@@ -202,7 +153,9 @@ struct RemoteGuideView: View {
         VStack(alignment: .leading, spacing: 12) {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
+                    Text(model.guideAddress != nil && model.guideAddress == address
+                         ? String(localized: "Filled in from the running tunnel. Check it, then save.")
+                         : String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     TextField(String(localized: "Address"), text: $address, prompt: Text("https://my-mac.tail1234.ts.net"))
@@ -217,16 +170,13 @@ struct RemoteGuideView: View {
             }
             HStack {
                 Spacer()
-                Button(String(localized: "Back")) {
-                    model.remoteTunnelStarted = false
-                    model.remoteEditingAddress = false
-                }
+                Button(String(localized: "Back")) { model.guideBackToStart() }
                 Button(String(localized: "Save Address"), action: save)
                     .buttonStyle(.borderedProminent)
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .onAppear { address = model.remoteOrigin ?? "" }
+        .onAppear { address = model.guideAddress ?? model.remoteOrigin ?? "" }
     }
 
     private func save() {
@@ -262,6 +212,136 @@ struct RemoteGuideView: View {
             }
         }
         .onAppear { if model.remoteTest == .notTested { model.testRemoteAccess() } }
+    }
+}
+
+/// Step 2, Start it (first setup and Switch Tunnel…): the hostname for
+/// Cloudflare Tunnel and ngrok, the commands to run, and whether the tunnel
+/// is running on this Mac yet (plan 08 §5, D8).
+struct TunnelStartCard: View {
+    let model: BridgeAppModel
+    let provider: TunnelProvider
+    /// First setup's "Change tunnel" link; the switch flow has Back instead.
+    var changeTunnel: (() -> Void)? = nil
+    var note: String? = nil
+
+    var body: some View {
+        let hostname = model.guideCommandHostname
+        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        Card {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.name).font(.headline)
+                HStack(spacing: 4) {
+                    Text(provider.summary).foregroundStyle(.secondary)
+                    if let changeTunnel {
+                        Button(String(localized: "Change tunnel"), action: changeTunnel)
+                            .buttonStyle(.link)
+                    }
+                }
+                .font(.callout)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            RowDivider()
+            if !model.remoteEnabled {
+                HStack(spacing: 12) {
+                    Text(String(localized: "First, turn on Remote Access. Port \(String(model.remotePort)) opens on this Mac for the tunnel; nothing is reachable until the tunnel runs."))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button(String(localized: "Turn On Remote Access")) { model.setRemoteAccessEnabled(true) }
+                        .buttonStyle(.borderedProminent)
+                        .fixedSize()
+                }
+                .padding(16)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    if provider.asksForHostname {
+                        HStack(spacing: 10) {
+                            Text(String(localized: "Hostname")).foregroundStyle(.secondary)
+                            TextField(String(localized: "Hostname"), text: Binding(
+                                get: { model.guideHostname }, set: { model.guideHostname = $0 }),
+                                      prompt: Text(provider.hostnamePlaceholder))
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel(String(localized: "Hostname for \(provider.name)"))
+                        }
+                        Text(provider == .ngrok
+                             ? String(localized: "Your ngrok dev domain, from the ngrok dashboard. The commands below use it.")
+                             : String(localized: "A hostname on your Cloudflare domain for this Mac. The commands below use it."))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !commands.isEmpty {
+                        HStack(alignment: .top) {
+                            CodeBox(text: commands.joined(separator: "\n"))
+                            CopyButton(text: commands.joined(separator: "\n"), title: String(localized: "Copy"),
+                                       help: String(localized: "Copy Commands"))
+                        }
+                    }
+                    if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
+                        Text("~/.cloudflared/config.yml").font(.callout.monospaced()).foregroundStyle(.secondary)
+                        HStack(alignment: .top) {
+                            CodeBox(text: config)
+                            CopyButton(text: config, help: String(localized: "Copy config.yml"))
+                        }
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text([String(localized: "Run it in Terminal. It prints the tunnel's https address; you paste it next."),
+                              note].compactMap { $0 }.joined(separator: " "))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        InfoButton(text: (provider.steps + provider.notes).joined(separator: "\n\n"))
+                    }
+                    .font(.callout)
+                }
+                .padding(16)
+                if provider != .other {
+                    RowDivider()
+                    TunnelStartStatus(model: model, provider: provider)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+}
+
+/// *Waiting for Tailscale Funnel…*, then *Running · on this Mac · forwards
+/// to 47616 · <address>*, or what's wrong.
+struct TunnelStartStatus: View {
+    let model: BridgeAppModel
+    let provider: TunnelProvider
+
+    var body: some View {
+        let state = TunnelStartState.make(remoteOn: model.remoteEnabled, provider: provider,
+                                          health: model.currentTunnelHealth)
+        VStack(alignment: .leading, spacing: 8) {
+            switch state {
+            case .turnOn:
+                EmptyView()
+            case .waiting:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(String(localized: "Waiting for \(provider.name)…")).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            case .found(let address):
+                TunnelHealthLine(health: model.currentTunnelHealth ?? .running(address: address, port: model.remotePort),
+                                 provider: provider, remotePort: model.remotePort, mcpPort: model.mcpPort,
+                                 address: address)
+                    .accessibilityElement(children: .combine)
+            case .problem(let health), .cantCheck(.some(let health)):
+                TunnelHealthLine(health: health, provider: provider, remotePort: model.remotePort,
+                                 mcpPort: model.mcpPort)
+                    .accessibilityElement(children: .combine)
+                TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
+                          hostname: model.guideCommandHostname)
+            case .cantCheck(nil):
+                EmptyView()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

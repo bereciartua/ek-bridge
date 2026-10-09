@@ -373,6 +373,13 @@ final class BridgeAppModel {
     var remoteTunnelStarted = false
     /// Guide step 3 shown again from step 4's Back.
     var remoteEditingAddress = false
+    /// Guide step 2's hostname for Cloudflare Tunnel and ngrok (plan 08 T04):
+    /// the commands use it, never the address in use.
+    var guideHostname = ""
+    /// Step 3's address, filled in from the running tunnel (D8).
+    private(set) var guideAddress: String?
+    /// Step 2 moved on by itself since it was entered from step 1.
+    @ObservationIgnored private var guideAdvancedThisEntry = false
     /// What the tunnel's own tool said at the last check (plan 08 §5), and
     /// for which tunnel. Display only.
     private(set) var tunnelHealth: TunnelHealth?
@@ -786,6 +793,46 @@ final class BridgeAppModel {
         tunnelChosen = false
         remoteTunnelStarted = false
         remoteGuideActive = true
+        guideAdvancedThisEntry = false
+        guideAddress = nil
+    }
+
+    /// Guide step 1 ▸ a tunnel: step 2 for it, watching for it to start.
+    func guideChoose(_ provider: TunnelProvider) {
+        tunnelChoice = provider
+        remoteGuideActive = true
+        remoteTunnelStarted = false
+        guideAdvancedThisEntry = false
+        guideAddress = nil
+        guideHostname = ""
+        if remoteEnabled { checkTunnel() }
+    }
+
+    /// Step 2 while you start the tunnel (D8).
+    var tunnelStartState: TunnelStartState {
+        TunnelStartState.make(remoteOn: remoteEnabled, provider: tunnelChoice, health: currentTunnelHealth)
+    }
+
+    /// The hostname step 2's commands use, if one was typed.
+    var guideCommandHostname: String? { TunnelProvider.hostname(guideHostname) }
+
+    /// I've Started It, or Continue after Back: on to step 3.
+    func guideContinue() {
+        if case .found(let address) = tunnelStartState, let address { guideAddress = address }
+        remoteTunnelStarted = true
+    }
+
+    /// Step 3 ▸ Back: step 2 again, without moving on by itself.
+    func guideBackToStart() {
+        remoteTunnelStarted = false
+        remoteEditingAddress = false
+    }
+
+    /// Step 2 moves on by itself once the tunnel is found, once per entry from step 1.
+    private func advanceGuideIfFound() {
+        guard waitingForTunnel, tunnelStartState.autoAdvances(advancedThisEntry: guideAdvancedThisEntry) else { return }
+        guideAdvancedThisEntry = true
+        guideContinue()
     }
 
     // MARK: Derived state
@@ -2860,6 +2907,7 @@ final class BridgeAppModel {
                     self.tunnelHealthProvider = provider
                 }
                 self.tunnelHealthCheckedAt = Date()
+                self.advanceGuideIfFound()
             }
             if self.tunnelCheckAgain || !current {
                 self.tunnelCheckAgain = false

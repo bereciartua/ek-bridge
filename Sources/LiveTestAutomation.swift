@@ -342,6 +342,9 @@ final class LiveTestAutomation {
             "tunnelLabel": model.tunnelLabel.name,
             "guideActive": model.remoteGuideActive,
             "guideStep": "\(model.remoteGuideStep)",
+            "guideStart": "\(model.tunnelStartState)",
+            "guideAddress": model.guideAddress ?? NSNull(),
+            "guideCommands": model.tunnelChoice.commands(port: model.remotePort, hostname: model.guideCommandHostname),
             "status": model.remoteStatusLine ?? NSNull(),
             "tunnelHealth": tunnelHealthState(),
             "unreachableReason": model.remoteUnreachableReason ?? NSNull(),
@@ -396,7 +399,8 @@ final class LiveTestAutomation {
     }
 
     /// The first-setup guide as its buttons drive it: `open`, `choose`
-    /// (`tunnel`), `started` (I've Started It), `back`, `close`.
+    /// (`tunnel`), `hostname` (`value`), `started` (I've Started It or
+    /// Continue), `backToStart` (step 3's Back), `back`, `close`.
     private func remoteGuide(_ command: [String: Any]) throws -> [String: Any] {
         switch command["action"] as? String ?? "" {
         case "open":
@@ -406,12 +410,14 @@ final class LiveTestAutomation {
             guard let tunnel = (command["tunnel"] as? String).flatMap(TunnelProvider.init(rawValue:)) else {
                 throw CommandError(message: "tunnel is one of \(TunnelProvider.allCases.map(\.rawValue))")
             }
-            model.tunnelChoice = tunnel
-            model.remoteGuideActive = true
-        case "started": model.remoteTunnelStarted = true
+            model.show(.remoteAccess)
+            model.guideChoose(tunnel)
+        case "hostname": model.guideHostname = command["value"] as? String ?? ""
+        case "started": model.guideContinue()
+        case "backToStart": model.guideBackToStart()
         case "back": model.chooseTunnelAgain()
         case "close": model.remoteGuideActive = false
-        default: throw CommandError(message: "action is open, choose, started, back or close")
+        default: throw CommandError(message: "action is open, choose, hostname, started, backToStart, back or close")
         }
         return remoteState()
     }
