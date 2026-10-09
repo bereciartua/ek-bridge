@@ -418,7 +418,7 @@ enum ApprovalSummaries {
         }
     }
 
-    private static func dueText(_ components: DateComponents) -> String? {
+    static func dueText(_ components: DateComponents) -> String? {
         guard let date = ReminderFields.instant(components) else { return nil }
         let style = Date.FormatStyle(timeZone: components.timeZone ?? .current)
         return components.hour == nil

@@ -39,7 +39,7 @@ struct ActivityView: View {
 
     @ViewBuilder private var filters: some View {
         ActivityFilterMenu(model: model)
-        ActivityProblemsPicker(model: model, scope: .all)
+        ActivityKindPicker(model: model, scope: .all)
         SearchField(text: $model.activitySearch, prompt: String(localized: "Search"),
                     accessibilityLabel: String(localized: "Search activity"),
                     focusRequest: model.activitySearchFocusRequest)
@@ -77,15 +77,17 @@ enum ActivityScope: Equatable {
     }
 }
 
-/// All / Problems N.
-struct ActivityProblemsPicker: View {
+/// All · Changes · Problems N.
+struct ActivityKindPicker: View {
     @Bindable var model: BridgeAppModel
     let scope: ActivityScope
 
     var body: some View {
-        Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
-            Text(String(localized: "All")).tag(false)
-            Text(String(localized: "Problems \(scope.entries(model).filter(\.isProblem).count)")).tag(true)
+        Picker(String(localized: "Show"), selection: $model.activityKind) {
+            Text(String(localized: "All")).tag(ActivityKind.all)
+            Text(String(localized: "Changes")).tag(ActivityKind.changes)
+            Text(String(localized: "Problems \(scope.entries(model).filter(\.isProblem).count)"))
+                .tag(ActivityKind.problems)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -102,7 +104,7 @@ struct ActivityList: View {
 
     var body: some View {
         let rows = filtered(scope.entries(model))
-        if scope == .all ? model.activity.isEmpty : rows.isEmpty && model.activitySearch.isEmpty && !model.activityProblemsOnly {
+        if scope == .all ? model.activity.isEmpty : rows.isEmpty && model.activitySearch.isEmpty && model.activityKind == .all {
             ContentUnavailableView {
                 Label(String(localized: "No requests yet"), systemImage: "list.bullet")
             } description: {
@@ -113,21 +115,20 @@ struct ActivityList: View {
             GeometryReader { proxy in
                 // Only rows the filters show; a hidden selection closes the details.
                 let selected = rows.first { $0.id == model.activitySelection }
-                // Beside the table when there's room for both, below it otherwise.
-                let wide = proxy.size.width >= 780
-                let layout = wide
-                    ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-                layout {
-                    ActivityTable(model: model, rows: rows,
-                                  width: wide && selected != nil ? proxy.size.width - 251 : proxy.size.width,
+                // Below the table (P6), with its two halves side by side when
+                // there's room.
+                let wide = proxy.size.width >= 620
+                VStack(spacing: 0) {
+                    ActivityTable(model: model, rows: rows, width: proxy.size.width,
                                   showsClient: scope == .all)
                         .overlay {
                             if rows.isEmpty {
                                 if model.activitySearch.isEmpty {
                                     ContentUnavailableView(
-                                        model.activityProblemsOnly ? String(localized: "No problems")
-                                                                   : String(localized: "No requests"),
-                                        systemImage: model.activityProblemsOnly ? "checkmark.circle" : "list.bullet",
+                                        model.activityKind == .problems ? String(localized: "No problems")
+                                            : model.activityKind == .changes ? String(localized: "No changes")
+                                            : String(localized: "No requests"),
+                                        systemImage: model.activityKind == .problems ? "checkmark.circle" : "list.bullet",
                                         description: Text(String(localized: "Nothing matches this filter.")))
                                 } else {
                                     ContentUnavailableView.search(text: model.activitySearch)
@@ -136,9 +137,8 @@ struct ActivityList: View {
                         }
                     if let selected {
                         Divider()
-                        ActivityInspector(model: model, entry: selected, compact: !wide)
-                            .frame(width: wide ? 250 : nil,
-                                   height: wide ? nil : min(250, proxy.size.height * 0.55))
+                        ActivityInspector(model: model, entry: selected, compact: wide)
+                            .frame(height: min(wide ? 270 : 320, proxy.size.height * 0.55))
                             .transition(.opacity)
                     }
                 }
@@ -154,14 +154,16 @@ struct ActivityList: View {
     private func filtered(_ entries: [ActivityEntry]) -> [ActivityEntry] {
         let query = model.activitySearch.trimmingCharacters(in: .whitespaces)
         return entries.filter { entry in
-            if model.activityProblemsOnly && !entry.isProblem { return false }
+            guard entry.matches(model.activityKind) else { return false }
             guard !query.isEmpty else { return true }
             let target = entry.targetID.flatMap { id in
                 model.collection(GrantKey(resource: CommandPresentation.targetsList(entry.command)
                                             ? .reminderList : .calendar, targetID: id))?.name
             }
-            return [model.clientName(entry.clientID), CommandPresentation.label(entry.command),
-                    entry.outcome.label, entry.code, target ?? "", entry.agent ?? ""]
+            // Item titles only as far as they've been looked up (shown) already.
+            return [model.clientName(entry.clientID), CommandPresentation.label(entry.command), entry.changeLabel,
+                    entry.resultLabel, entry.outcome.label, entry.code, target ?? "", entry.agent ?? "",
+                    model.cachedItemTitle(entry) ?? ""]
                 .contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
@@ -176,32 +178,36 @@ extension ActivityEntry {
     }
 }
 
-/// Activity's column widths. The Result column always fits the widest
-/// outcome label, and Request keeps its labels whole while Client and
-/// Calendar or list still get room; those two share the rest and truncate
-/// at the tail.
+/// Activity's column widths (P6): Time, Connection, Change, Item, Result.
+/// Result always fits the widest pill and Change keeps its labels whole
+/// while Connection and Item still get room; those two share the rest and
+/// truncate at the tail.
 enum ActivityColumns {
     struct Widths: Equatable {
-        var time, via, client, request, target, result: CGFloat
+        var time, client, change, item, result: CGFloat
     }
 
-    /// Inset style margins, column spacing and the scroller.
-    static let overhead: CGFloat = 104
-    /// What Client and Calendar or list keep before Request gives way.
-    static let namesMinimum: CGFloat = 120
+    /// Space between columns, and a row's inset from the list's edges.
+    static let spacing: CGFloat = 12
+    static let rowInset: CGFloat = 17
+    /// Row insets, column spacing and room for the scroller.
+    static let overhead: CGFloat = 2 * rowInset + 4 * spacing + 6
+    /// What Connection and Item keep before Change gives way.
+    static let namesMinimum: CGFloat = 140
 
-    static func widths(for tableWidth: CGFloat, showsClient: Bool = true) -> Widths {
+    /// `clientNames`: the connection names shown, so the column is no wider
+    /// than they need (at most half of what Connection and Item share).
+    static func widths(for tableWidth: CGFloat, showsClient: Bool = true, clientNames: [String]? = nil) -> Widths {
         let usable = max(tableWidth - overhead, 320)
-        let time = max(widestTime, usable * 0.12)
-        let result = max(widestResultLabel, usable * 0.2)
-        let via: CGFloat = 22
-        let rest = max(usable - time - result - via, 0)
-        let request = max(rest * 0.34, min(widestRequestLabel, rest - namesMinimum))
-        let names = rest - request
-        // Without the Connection column (a connection's Activity tab), Calendar or list takes it all.
-        let client = showsClient ? names / 2 : 0
-        return Widths(time: time, via: via, client: client, request: request, target: names - client,
-                      result: result)
+        let time = max(widestTime, usable * 0.11)
+        let result = max(widestResultLabel, usable * 0.18)
+        let rest = max(usable - time - result, 0)
+        let change = max(rest * 0.3, min(widestChangeLabel, rest - namesMinimum))
+        let names = rest - change
+        // Without the Connection column (a connection's Activity tab), Item takes it all.
+        let needed = clientNames.map { width($0, NSFont.systemFont(ofSize: NSFont.systemFontSize)) + 8 } ?? names
+        let client = showsClient ? min(names * 0.5, max(needed, 90)) : 0
+        return Widths(time: time, client: client, change: change, item: names - client, result: result)
     }
 
     /// The table's width in a main window this wide, with the sidebar at its
@@ -215,96 +221,103 @@ enum ActivityColumns {
     static let widestResultLabel: CGFloat = {
         let font = NSFont.systemFont(ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
                                      weight: .medium)
-        return width(OutcomePresentation.allLabels, font) + 16 + 4
+        return width(OutcomePresentation.allLabels + [String(localized: "Approved")], font) + 16 + 4
     }()
 
-    /// The widest Time cell this year (`RelativeTime.clock`: "10:58 PM"
-    /// today, "Yesterday", "Dec 28" before) in monospaced digits, with room
-    /// for the cell. Earlier years truncate, with the full date in the tooltip.
+    /// The widest Time cell ("10:58 PM") in monospaced digits, with room for
+    /// the cell; the full date is in the tooltip.
     static let widestTime: CGFloat = {
         let calendar = Calendar.current
-        let now = Date()
-        let year = calendar.component(.year, from: now)
-        var samples = [10, 22].compactMap {
-            calendar.date(bySettingHour: $0, minute: 58, second: 0, of: now)
-                .map { RelativeTime.clock($0, now: $0, calendar: calendar) }
-        }
-        samples.append(String(localized: "Yesterday"))
-        for month in [5, 9, 12] {
-            if let day = calendar.date(from: DateComponents(year: year, month: month, day: 28)) {
-                samples.append(RelativeTime.clock(day, now: day.addingTimeInterval(2 * 86_400), calendar: calendar))
-            }
+        let samples = [10, 22].compactMap {
+            calendar.date(bySettingHour: $0, minute: 58, second: 0, of: Date()).map(time)
         }
         return width(samples, NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)) + 4
     }()
 
-    /// The widest Request label in the body font, with room for the cell.
-    static let widestRequestLabel: CGFloat = {
-        width(CommandPresentation.allShortLabels, NSFont.systemFont(ofSize: NSFont.systemFontSize)) + 4
+    /// The widest Change label in the body font, with room for the cell.
+    static let widestChangeLabel: CGFloat = {
+        width(CommandPresentation.allChangeLabels, NSFont.systemFont(ofSize: NSFont.systemFontSize)) + 4
     }()
+
+    /// A row's time of day; the day is in its section header.
+    static func time(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
 
     private static func width(_ labels: [String], _ font: NSFont) -> CGFloat {
         labels.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
     }
 }
 
+/// Activity's rows under day headers (P6). A `List` with sections rather than
+/// a `Table`: SwiftUI's sectioned `Table` performs reentrant NSTableView
+/// delegate calls when it first loads (an AppKit warning that's due to become
+/// an assert). Columns are fixed widths from `ActivityColumns`, with a header
+/// row above the list; arrow keys move the selection as in a table.
 struct ActivityTable: View {
     @Bindable var model: BridgeAppModel
     let rows: [ActivityEntry]
-    /// The table's width. Columns are sized from it so nothing scrolls sideways.
+    /// The list's width. Columns are sized from it so nothing scrolls sideways.
     let width: CGFloat
     /// False on a connection's Activity tab: every row is that connection's.
     var showsClient = true
-    /// Only hides the Connection column on a connection's tab.
-    @State private var customization = TableColumnCustomization<ActivityEntry>()
 
     var body: some View {
-        let columns = ActivityColumns.widths(for: width, showsClient: showsClient)
-        ScrollViewReader { proxy in
-        Table(rows, selection: $model.activitySelection, columnCustomization: $customization) {
-            TableColumn(String(localized: "Time")) { entry in
-                Text(RelativeTime.clock(entry.at, now: model.now))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .help(RelativeTime.full(entry.at))
+        let columns = ActivityColumns.widths(for: width, showsClient: showsClient,
+                                             clientNames: Array(Set(rows.map { model.clientName($0.clientID) })))
+        let days = ActivityDays.group(rows, now: model.now)
+        VStack(spacing: 0) {
+            header(columns)
+            Divider()
+            ScrollViewReader { proxy in
+                List(selection: $model.activitySelection) {
+                    ForEach(days) { day in
+                        Section {
+                            ForEach(day.entries) { entry in
+                                ActivityRow(model: model, entry: entry, columns: columns, showsClient: showsClient)
+                                    .tag(entry.id)
+                                    .id(entry.id)
+                            }
+                        } header: {
+                            Text(day.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                    }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                // A new filter is a new list: diffing whole day sections in
+                // place makes AppKit's table reenter its delegate.
+                .id(model.activityKind)
+                .accessibilityLabel(String(localized: "Requests"))
+                .onAppear { reveal(proxy) }
+                .onChange(of: model.activitySelection) { _, _ in reveal(proxy) }
             }
-            .width(min: columns.time, ideal: columns.time, max: columns.time)
-            TableColumn(String(localized: "Via")) { entry in
-                ViaIcon(via: entry.via)
-            }
-            .width(min: columns.via, ideal: columns.via, max: columns.via)
-            TableColumn(String(localized: "Connection")) { entry in
-                Text(model.clientName(entry.clientID))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(entry.clientID == nil ? .secondary : .primary)
-                    .help(model.clientName(entry.clientID))
-            }
-            // The one flexible column: it takes whatever the others leave.
-            .width(min: columns.client, ideal: columns.client)
-            .customizationID("client")
-            .defaultVisibility(showsClient ? .automatic : .hidden)
-            TableColumn(String(localized: "Request")) { entry in
-                Text(CommandPresentation.shortLabel(entry.command))
-                    .lineLimit(1)
-                    .help(CommandPresentation.label(entry.command))
-            }
-            .width(min: columns.request, ideal: columns.request, max: columns.request)
-            TableColumn(String(localized: "Calendar or list")) { entry in
-                ActivityTargetCell(model: model, entry: entry)
-            }
-            .width(min: columns.target, ideal: columns.target, max: columns.target)
-            TableColumn(String(localized: "Result")) { entry in
-                Pill(label: entry.outcome.label, tone: entry.outcome.tone)
-            }
-            .width(min: columns.result, ideal: columns.result, max: columns.result)
         }
-        .tableStyle(.inset(alternatesRowBackgrounds: false))
-        .scrollContentBackground(.hidden)
-        .accessibilityLabel(String(localized: "Requests"))
-        .onAppear { reveal(proxy) }
-        .onChange(of: model.activitySelection) { _, _ in reveal(proxy) }
+    }
+
+    private func header(_ columns: ActivityColumns.Widths) -> some View {
+        HStack(spacing: ActivityColumns.spacing) {
+            title(String(localized: "Time"), columns.time)
+            if showsClient { title(String(localized: "Connection"), columns.client) }
+            title(String(localized: "Change"), columns.change)
+            title(String(localized: "Item"), columns.item)
+            title(String(localized: "Result"), columns.result)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, ActivityColumns.rowInset)
+        .padding(.vertical, 7)
+        .accessibilityHidden(true)
+    }
+
+    private func title(_ text: String, _ width: CGFloat) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .frame(width: width, alignment: .leading)
     }
 
     /// Keeps a row selected from the menu bar or a deep link in view.
@@ -314,26 +327,153 @@ struct ActivityTable: View {
     }
 }
 
-struct ActivityTargetCell: View {
+/// One Activity row: time, connection, change, item and result.
+struct ActivityRow: View {
+    let model: BridgeAppModel
+    let entry: ActivityEntry
+    let columns: ActivityColumns.Widths
+    let showsClient: Bool
+
+    var body: some View {
+        HStack(spacing: ActivityColumns.spacing) {
+            Text(ActivityColumns.time(entry.at))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: columns.time, alignment: .leading)
+                .help(RelativeTime.full(entry.at))
+            if showsClient {
+                Text(model.clientName(entry.clientID))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(entry.clientID == nil ? .secondary : .primary)
+                    .frame(width: columns.client, alignment: .leading)
+                    .help(model.clientName(entry.clientID))
+            }
+            Text(entry.changeLabel)
+                .lineLimit(1)
+                .frame(width: columns.change, alignment: .leading)
+                .help(CommandPresentation.label(entry.command))
+            ActivityItemCell(model: model, entry: entry)
+                .frame(width: columns.item, alignment: .leading)
+            Pill(label: entry.resultLabel, tone: entry.outcome.tone)
+                .frame(width: columns.result, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The calendar or list a row names, for the details pane and tooltips.
+struct ActivityTargetLabel: View {
+    let model: BridgeAppModel
+    let key: GrantKey
+
+    var body: some View {
+        if let collection = model.collection(key) {
+            HStack(spacing: 6) {
+                ColorDot(color: collection.color, size: 8)
+                Text("\(collection.name) · \(collection.account)").lineLimit(1).truncationMode(.tail)
+            }
+        } else {
+            Text(model.unavailableName(key) ?? String(localized: "Unavailable")).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The Item column: the item's colour dot and title, looked up now; "Deleted
+/// item" when it's gone; a dash for reads.
+struct ActivityItemCell: View {
     let model: BridgeAppModel
     let entry: ActivityEntry
 
     var body: some View {
-        if let key = entry.targetKey {
-            if let collection = model.collection(key) {
-                HStack(spacing: 6) {
-                    ColorDot(color: collection.color, size: 8)
-                    Text(collection.name).lineLimit(1).truncationMode(.tail)
-                }
-                .help("\(collection.name)\n" + String(localized: "ID: \(key.targetID)"))
-            } else {
-                Text(String(localized: "Unavailable"))
-                    .foregroundStyle(.secondary)
-                    .help(String(localized: "ID: \(key.targetID)"))
+        let collection = entry.targetKey.flatMap { model.collection($0) }
+        switch model.itemDisplay(entry) {
+        case .found(let item) where item.exists:
+            let current = item.collectionID.flatMap { id in
+                model.collections.first { $0.id == id && $0.resource == entry.targetKey?.resource }
+            } ?? collection
+            HStack(spacing: 6) {
+                if let current { ColorDot(color: current.color, size: 8) }
+                Text(item.title).lineLimit(1).truncationMode(.tail)
             }
-        } else {
+            .help([item.title, current.map { "\($0.name) · \($0.account)" }, item.when]
+                .compactMap { $0 }.joined(separator: "\n"))
+        case .found:
+            HStack(spacing: 6) {
+                if let collection { ColorDot(color: collection.color, size: 8) }
+                Text(String(localized: "Deleted item")).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .help(collection.map { "\($0.name) · \($0.account)" } ?? "")
+        case .noAccess(let resource):
             Text("—").foregroundStyle(.tertiary)
-                .accessibilityLabel(String(localized: "None"))
+                .help(ActivityItemCard.noAccessText(resource))
+                .accessibilityLabel(ActivityItemCard.noAccessText(resource))
+        case .none:
+            Group {
+                if let collection {
+                    Text(collection.name).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text("—").foregroundStyle(.tertiary)
+                }
+            }
+            .help(collection.map { "\($0.name) · \($0.account)" } ?? "")
+            .accessibilityLabel(collection?.name ?? String(localized: "None"))
+        }
+    }
+}
+
+/// The details pane's item card: title, where it is, when, Show in Calendar.
+struct ActivityItemCard: View {
+    let model: BridgeAppModel
+    let entry: ActivityEntry
+
+    static func noAccessText(_ resource: ClientResource) -> String {
+        resource == .calendar ? String(localized: "Allow Calendar access to see item names.")
+                              : String(localized: "Allow Reminders access to see item names.")
+    }
+
+    var body: some View {
+        let display = model.itemDisplay(entry)
+        if display != .none {
+            VStack(alignment: .leading, spacing: 4) {
+                switch display {
+                case .found(let item) where item.exists:
+                    Text(item.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    location(item.collectionID)
+                    changes(item)
+                case .found:
+                    Text(String(localized: "Deleted item")).font(.headline).foregroundStyle(.secondary)
+                    location(nil)
+                case .noAccess(let resource):
+                    Text(Self.noAccessText(resource)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .none:
+                    EmptyView()
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.separator.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private func location(_ current: String?) -> some View {
+        let key = current.flatMap { id in entry.targetKey.map { GrantKey(resource: $0.resource, targetID: id) } }
+            ?? entry.targetKey
+        if let key, let collection = model.collection(key) {
+            Text("\(collection.name) · \(collection.account)").foregroundStyle(.secondary)
+        }
+    }
+
+    /// The item's time now.
+    @ViewBuilder
+    private func changes(_ item: ItemSnapshot) -> some View {
+        if let when = item.when {
+            Text(when).foregroundStyle(.secondary)
         }
     }
 }
@@ -374,81 +514,104 @@ struct ActivityInspector: View {
         let layout = compact
             ? AnyLayout(HStackLayout(alignment: .top, spacing: 20))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
-        layout {
-            summary(entry, outcome: outcome, collection: collection)
-                .frame(maxWidth: compact ? 330 : .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 14) {
+            layout {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(entry.changeLabel).font(.title3.weight(.semibold))
+                        Pill(label: entry.resultLabel, tone: outcome.tone, icon: true)
+                    }
+                    .padding(.trailing, compact ? 0 : 24)
+                    ActivityItemCard(model: model, entry: entry)
+                    showItem(entry)
+                }
+                .frame(maxWidth: compact ? 380 : .infinity, alignment: .leading)
+                facts(entry)
+                    .padding(.trailing, compact ? 28 : 0)
+            }
             explanation(entry, outcome: outcome, collection: collection)
         }
     }
 
+    /// Show in Calendar / Reminders, for an item that's still there.
     @ViewBuilder
-    private func summary(_ entry: ActivityEntry, outcome: OutcomePresentation,
-                         collection: CollectionInfo?) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(CommandPresentation.label(entry.command)).font(.title3.weight(.semibold))
-                    .padding(.trailing, compact ? 0 : 24)
-                Pill(label: outcome.label, tone: outcome.tone, icon: true)
-            }
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
-                GridRow {
-                    Text(String(localized: "Connection")).foregroundStyle(.secondary)
-                    Text(model.clientName(entry.clientID))
+    private func showItem(_ entry: ActivityEntry) -> some View {
+        if case .found(let item) = model.itemDisplay(entry), item.exists, let ref = entry.item {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Button(ref.kind == "event" ? String(localized: "Show in Calendar")
+                                           : String(localized: "Show in Reminders")) {
+                    model.showItem(entry)
                 }
-                if let via = entry.via {
+                Text(String(localized: "Looked up now; only the item's ID is stored."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func facts(_ entry: ActivityEntry) -> some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+            GridRow {
+                Text(String(localized: "Connection")).foregroundStyle(.secondary)
+                Text(model.clientName(entry.clientID))
+            }
+            if let via = entry.via {
+                GridRow {
+                    Text(String(localized: "Via")).foregroundStyle(.secondary)
+                    Text(viaText(entry, via))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let note = model.remoteNote(for: entry) {
                     GridRow {
-                        Text(String(localized: "Via")).foregroundStyle(.secondary)
-                        Text(viaText(entry, via))
+                        Text(String(localized: "From")).foregroundStyle(.secondary)
+                        Text(String(localized: "\(note.address) (as the tunnel reported)"))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if let note = model.remoteNote(for: entry) {
-                        GridRow {
-                            Text(String(localized: "From")).foregroundStyle(.secondary)
-                            Text(String(localized: "\(note.address) (as the tunnel reported)"))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                if let approval = ApprovalText.detail(entry.approval) {
-                    GridRow {
-                        Text(String(localized: "Approval")).foregroundStyle(.secondary)
-                        Text(approval)
-                    }
-                }
-                if let key = entry.targetKey {
-                    GridRow {
-                        Text(key.resource == .calendar ? String(localized: "Calendar") : String(localized: "List"))
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 3) {
-                            if let collection {
-                                Text("\(collection.name) · \(collection.account)")
-                            } else {
-                                Text(String(localized: "Unavailable")).foregroundStyle(.secondary)
-                            }
-                            HStack(spacing: 4) {
-                                MonoText(text: key.targetID)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                CopyButton(text: key.targetID, help: key.resource == .calendar
-                                           ? String(localized: "Copy Calendar ID")
-                                           : String(localized: "Copy List ID"))
-                                    .buttonStyle(.borderless)
-                                    .controlSize(.small)
-                            }
-                        }
-                    }
-                }
-                GridRow {
-                    Text(String(localized: "When")).foregroundStyle(.secondary)
-                    Text(RelativeTime.full(entry.at))
-                }
-                GridRow {
-                    Text(String(localized: "Code")).foregroundStyle(.secondary)
-                    Text(entry.code).font(.body.monospaced()).textSelection(.enabled)
                 }
             }
-            .font(.callout)
+            if let approval = ApprovalText.detail(entry.approval) {
+                GridRow {
+                    Text(String(localized: "Approval")).foregroundStyle(.secondary)
+                    Text(approval)
+                }
+            }
+            if let key = entry.targetKey {
+                GridRow {
+                    Text(key.resource == .calendar ? String(localized: "Calendar") : String(localized: "List"))
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        ActivityTargetLabel(model: model, key: key)
+                        HStack(spacing: 4) {
+                            MonoText(text: key.targetID)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            CopyButton(text: key.targetID, help: key.resource == .calendar
+                                       ? String(localized: "Copy Calendar ID")
+                                       : String(localized: "Copy List ID"))
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
+                    }
+                }
+            }
+            if let destination = entry.destinationID, let key = entry.targetKey {
+                GridRow {
+                    Text(entry.code == "success" ? String(localized: "Moved to") : String(localized: "Move to"))
+                        .foregroundStyle(.secondary)
+                    ActivityTargetLabel(model: model, key: GrantKey(resource: key.resource, targetID: destination))
+                }
+            }
+            GridRow {
+                Text(String(localized: "When")).foregroundStyle(.secondary)
+                Text(RelativeTime.full(entry.at))
+            }
+            GridRow {
+                Text(String(localized: "Code")).foregroundStyle(.secondary)
+                Text(entry.code).font(.body.monospaced()).textSelection(.enabled)
+            }
         }
+        .font(.callout)
     }
 
     @ViewBuilder
@@ -469,7 +632,6 @@ struct ActivityInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.accentColor.opacity(0.08),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(.trailing, compact ? 28 : 0)
         }
     }
 
@@ -491,21 +653,55 @@ struct ActivityInspector: View {
         if entry.code == "approval_denied" && entry.isMCP {
             return String(localized: "You declined this change. The agent was told not to retry unless you ask it to.")
         }
-        if entry.code == "forbidden", entry.clientID != nil,
-           let action = CommandPresentation.requiredAction(entry.command) {
-            let target = collection?.name ?? (entry.targetKey?.resource == .reminderList
-                ? String(localized: "that list") : String(localized: "that calendar"))
-            return String(localized: "\(model.clientName(entry.clientID)) doesn't have \(action) access to \(target).")
+        if entry.code == "forbidden", entry.clientID != nil, let action = Self.missingAction(entry) {
+            let refused = refusedCollection(entry) ?? collection
+            let list = entry.targetKey?.resource == .reminderList
+            let name = model.clientName(entry.clientID)
+            if Self.refusedOnDestination(entry) {
+                let target = refused?.name ?? (list ? String(localized: "the list") : String(localized: "the calendar"))
+                return String(localized: "\(name) doesn't have \(action) access to \(target), where it tried to move the item.")
+            }
+            let target = refused?.name ?? (list ? String(localized: "that list") : String(localized: "that calendar"))
+            return String(localized: "\(name) doesn't have \(action) access to \(target).")
         }
         return outcome.why
     }
 
+    /// The access a refused request lacked: the recorded bit (since 0.10),
+    /// otherwise what the command needs.
+    static func missingAction(_ entry: ActivityEntry) -> String? {
+        switch entry.missing {
+        case ClientGrant.read?: String(localized: "Read")
+        case ClientGrant.create?: String(localized: "Create")
+        case ClientGrant.edit?: String(localized: "Edit")
+        case ClientGrant.delete?: String(localized: "Delete")
+        case ClientGrant.complete?: String(localized: "Complete")
+        default: CommandPresentation.requiredAction(entry.command)
+        }
+    }
+
+    /// A move refused because the destination lacks Create.
+    static func refusedOnDestination(_ entry: ActivityEntry) -> Bool {
+        entry.isMove && entry.missing == ClientGrant.create
+    }
+
+    /// The calendar or list the refusal was about.
+    private func refusedCollection(_ entry: ActivityEntry) -> CollectionInfo? {
+        guard let key = entry.targetKey else { return nil }
+        if Self.refusedOnDestination(entry), let destination = entry.destinationID {
+            return model.collection(GrantKey(resource: key.resource, targetID: destination))
+        }
+        return model.collection(key)
+    }
+
     private func fix(_ entry: ActivityEntry, outcome: OutcomePresentation,
                      collection: CollectionInfo?) -> String? {
-        if entry.code == "forbidden", entry.clientID != nil,
-           let action = CommandPresentation.requiredAction(entry.command) {
+        if entry.code == "forbidden", entry.clientID != nil, let action = Self.missingAction(entry) {
             let noun = entry.targetKey?.resource == .reminderList
                 ? String(localized: "the list") : String(localized: "the calendar")
+            if Self.refusedOnDestination(entry) {
+                return String(localized: "Turn on \(action) for \(noun) it moves to, only if this tool should move items there.")
+            }
             return String(localized: "Turn on \(action) for \(noun) only if this tool should \(Self.purpose(entry.command)).")
         }
         return outcome.fix
@@ -534,9 +730,9 @@ struct ActivityInspector: View {
                 model.openPrivacySettings(CommandPresentation.targetsList(entry.command) ? .reminderList : .calendar)
             }
         } else if let client, !client.revoked {
-            if entry.code == "forbidden", let collection {
-                Button(String(localized: "Open \(client.name) ▸ \(collection.name)")) {
-                    model.openClientAccess(client.id, focus: collection.key)
+            if entry.code == "forbidden", let refused = refusedCollection(entry) ?? collection {
+                Button(String(localized: "Open \(client.name) ▸ \(refused.name)")) {
+                    model.openClientAccess(client.id, focus: refused.key)
                 }
             } else {
                 Button(String(localized: "Open \(client.name)")) {

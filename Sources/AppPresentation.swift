@@ -266,6 +266,32 @@ struct ActivityEntry: Identifiable, Equatable {
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
     var isMCP: Bool { via == "mcp" }
+    /// An edit that also moved the item to another calendar or list.
+    var isMove: Bool {
+        destinationID != nil && (command == BridgeCommand.updateEvent.rawValue ||
+                                 command == BridgeCommand.updateReminder.rawValue)
+    }
+    /// "Moved event", "Add reminder" (didn't happen), "Read events".
+    var changeLabel: String {
+        CommandPresentation.changeLabel(command, moved: isMove, succeeded: code == "success")
+    }
+    /// The Result pill: "Approved" for a change the user allowed in a panel,
+    /// otherwise the outcome's label.
+    var resultLabel: String {
+        if code == "success", let approval, Self.approvedValues.contains(approval) {
+            return String(localized: "Approved")
+        }
+        return outcome.label
+    }
+    static let approvedValues: Set<String> = ["user", "window", "access_once", "access_always"]
+    /// Which filter shows this row.
+    func matches(_ kind: ActivityKind) -> Bool {
+        switch kind {
+        case .all: true
+        case .changes: isWrite
+        case .problems: isProblem
+        }
+    }
     /// A create, update, complete, delete or move, whatever its outcome.
     var isWrite: Bool { BridgeCommand(rawValue: command)?.isWrite == true }
     var isProblem: Bool { outcome.tone.isProblem }
@@ -283,6 +309,77 @@ struct ActivityEntry: Identifiable, Equatable {
                                  item: row.item, missing: row.missing, destinationID: row.destinationID,
                                  requestID: row.requestID)
         }
+    }
+}
+
+/// Activity's All · Changes · Problems filter. Changes are writes, whatever
+/// their outcome.
+enum ActivityKind: Hashable, CaseIterable {
+    case all, changes, problems
+}
+
+/// An item as Calendar or Reminders has it now, looked up live from an
+/// Activity row's `ItemRef` (P6). Never stored.
+struct ItemSnapshot: Equatable {
+    var title: String
+    /// "Tue, Oct 6, 11:00–12:00", "Due Thu, Oct 8, 9:00", "Completed".
+    var when: String?
+    /// The calendar or list it's in now (after a move, the destination).
+    var collectionID: String?
+    /// False when the item is gone (deleted here or elsewhere).
+    var exists = true
+
+    static let deleted = ItemSnapshot(title: "", when: nil, collectionID: nil, exists: false)
+}
+
+/// One day of Activity rows under a header.
+struct ActivityDay: Identifiable, Equatable {
+    /// "2026-10-08" in the user's calendar.
+    let id: String
+    /// "Today", "Yesterday", "Monday, October 5".
+    let title: String
+    let entries: [ActivityEntry]
+}
+
+enum ActivityDays {
+    /// `entries` newest first; days keep that order. Uses calendar days, so
+    /// a day with a daylight-saving change is still one day.
+    static func group(_ entries: [ActivityEntry], now: Date = Date(),
+                      calendar: Calendar = .current) -> [ActivityDay] {
+        var days = [ActivityDay]()
+        var current: (id: String, date: Date, rows: [ActivityEntry])?
+        for entry in entries {
+            let parts = calendar.dateComponents([.year, .month, .day], from: entry.at)
+            let id = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+            if current?.id == id {
+                current?.rows.append(entry)
+            } else {
+                if let done = current {
+                    days.append(ActivityDay(id: done.id, title: title(done.date, now: now, calendar: calendar),
+                                            entries: done.rows))
+                }
+                current = (id, entry.at, [entry])
+            }
+        }
+        if let done = current {
+            days.append(ActivityDay(id: done.id, title: title(done.date, now: now, calendar: calendar),
+                                    entries: done.rows))
+        }
+        return days
+    }
+
+    static func title(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Today") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(localized: "Yesterday")
+        }
+        var style = Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone)
+            .weekday(.wide).month(.wide).day()
+        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
+            style = style.year()
+        }
+        return date.formatted(style)
     }
 }
 

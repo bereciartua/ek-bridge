@@ -192,6 +192,20 @@ struct BridgeServices {
     var installedAgents: () -> Set<AgentKind> = { [] }
     /// Add to <Agent>…: preview, apply, restart (B07).
     var agentSetup: AgentSetupControls = .unavailable
+    /// An Activity row's item as EventKit has it now (C02). Nil when it
+    /// can't be looked up; `ItemSnapshot.deleted` when it's gone.
+    var itemLookup: (ItemRef) -> ItemSnapshot? = { _ in nil }
+    /// Show in Calendar / Reminders. False when nothing opened.
+    var showItem: (ItemRef) -> Bool = { _ in false }
+}
+
+/// What Activity can say about a row's item.
+enum ItemDisplay: Equatable {
+    /// A read, or a row from before 0.10: no item.
+    case none
+    /// Calendar or Reminders access isn't Full Access, so it can't be named.
+    case noAccess(ClientResource)
+    case found(ItemSnapshot)
 }
 
 /// One Add to <Agent>… from click to result.
@@ -265,12 +279,17 @@ final class BridgeAppModel {
 
     var activityClientFilter: ActivityClientFilter = .all
     var activityVia: ActivityViaFilter = .all
-    var activityProblemsOnly = false
+    /// All · Changes · Problems.
+    var activityKind = ActivityKind.all
     var activitySearch = ""
     var activitySelection: ActivityEntry.ID?
     /// Incremented by ⌘F; Activity's search field takes focus on each change.
     private(set) var activitySearchFocusRequest = 0
     private(set) var activityLastViewed: Date?
+    /// Looked-up Activity items (C02), in memory only.
+    @ObservationIgnored private var itemCache = [ItemRef: ItemSnapshot]()
+    /// Bumped when the cache is cleared, so rows look their items up again.
+    private(set) var itemLookupGeneration = 0
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
     private(set) var showDeveloperTools = false
@@ -522,6 +541,12 @@ final class BridgeAppModel {
 
     private func refresh(full: Bool) {
         now = Date()
+        // Activity's item names are looked up again after Calendar or
+        // Reminders may have changed.
+        if full && !itemCache.isEmpty {
+            itemCache.removeAll()
+            itemLookupGeneration += 1
+        }
         updateAccess()
         if let current = services.registry.clients() {
             policyStoreAvailable = true
@@ -780,7 +805,7 @@ final class BridgeAppModel {
     /// Needs you ▸ refused requests: Activity with Problems only.
     func openProblems() {
         openActivity()
-        activityProblemsOnly = true
+        activityKind = .problems
     }
 
     /// The fix for a problem, shared by the menu bar and Overview's Needs you.
@@ -1503,7 +1528,7 @@ final class BridgeAppModel {
 
     func openActivity(selecting id: ActivityEntry.ID? = nil, client: String? = nil,
                       keepingVia: Bool = false) {
-        activityProblemsOnly = false
+        activityKind = .all
         activitySearch = ""
         if !keepingVia { activityVia = .all }
         activityClientFilter = client.map { .client($0) } ?? .all
@@ -1518,6 +1543,36 @@ final class BridgeAppModel {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.route == .activity else { return }
             self.activitySearchFocusRequest += 1
+        }
+    }
+
+    /// The item an Activity row names, looked up live and cached until
+    /// Calendar or Reminders changes (C02).
+    func itemDisplay(_ entry: ActivityEntry) -> ItemDisplay {
+        guard let ref = entry.item else { return .none }
+        let resource: ClientResource = ref.kind == "event" ? .calendar : .reminderList
+        guard (resource == .calendar ? calendarAccess : remindersAccess) == .fullAccess else {
+            return .noAccess(resource)
+        }
+        _ = itemLookupGeneration
+        if let cached = itemCache[ref] { return .found(cached) }
+        guard let snapshot = services.itemLookup(ref) else { return .none }
+        itemCache[ref] = snapshot
+        return .found(snapshot)
+    }
+
+    /// A looked-up title already in the cache, for Activity's search. Never
+    /// looks anything up itself.
+    func cachedItemTitle(_ entry: ActivityEntry) -> String? {
+        entry.item.flatMap { itemCache[$0] }.flatMap { $0.exists ? $0.title : nil }
+    }
+
+    /// Show in Calendar / Show in Reminders.
+    func showItem(_ entry: ActivityEntry) {
+        guard let ref = entry.item, services.showItem(ref) else {
+            showBanner(Banner(kind: .warning, title: String(localized: "Couldn't open the item."),
+                              message: String(localized: "It may have been deleted, or Calendar and Reminders may not be available.")))
+            return
         }
     }
 

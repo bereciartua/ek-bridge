@@ -258,7 +258,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 oauth: oauth),
             updater: updater.controls,
             installedAgents: { [weak self] in self?.installedAgents.current() ?? [] },
-            agentSetup: Self.agentSetup)
+            agentSetup: Self.agentSetup,
+            itemLookup: { [weak self] ref in self.map { ItemLookup.snapshot(ref, store: $0.store) } },
+            showItem: { ItemLookup.show($0) })
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {

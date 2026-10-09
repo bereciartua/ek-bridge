@@ -153,6 +153,15 @@ final class LiveTestAutomation {
                 guard let action = model.banner?.action else { throw CommandError(message: "no banner action") }
                 action()
                 completion(.success(model.banner?.title ?? "dismissed"))
+            case "showItem":
+                // Show in Calendar / Reminders for the newest row with an item of this kind.
+                let kind = command["kind"] as? String ?? "event"
+                guard let entry = model.activity.first(where: {
+                    $0.item?.kind == kind && $0.targetID.map { testNames()[$0] != nil } == true
+                }) else { throw CommandError(message: "no test \(kind) row") }
+                model.activitySelection = entry.id
+                model.showItem(entry)
+                completion(.success(ItemLookup.showURL(entry.item!)?.scheme ?? ""))
             case "moveToApplications":
                 guard let move = context.moveToApplications else {
                     throw CommandError(message: "moveToApplications isn't available in this build")
@@ -222,7 +231,18 @@ final class LiveTestAutomation {
                 if let occurrence = item.occurrence { ref["occurrence"] = occurrence }
                 if let span = item.span { ref["span"] = span }
                 row["item"] = ref
+                // Looked up live, as Activity shows it. Only test items exist
+                // in test collections, so the title is a test title.
+                switch model.itemDisplay(entry) {
+                case .found(let snapshot):
+                    row["itemTitle"] = snapshot.exists ? snapshot.title : "Deleted item"
+                    if let when = snapshot.when { row["itemWhen"] = when }
+                case .noAccess: row["itemTitle"] = "(no access)"
+                case .none: break
+                }
             }
+            row["change"] = entry.changeLabel
+            row["resultLabel"] = entry.resultLabel
             return row
         }
         let window = context.mainWindow()

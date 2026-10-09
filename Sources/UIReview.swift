@@ -212,7 +212,46 @@ final class UIReview {
                 setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
                 lastCheck: { [unowned self] in self.lastUpdateCheck }),
             installedAgents: { [.claudeCode, .claudeDesktop, .cursor] },
-            agentSetup: fakeAgentSetup())
+            agentSetup: fakeAgentSetup(),
+            itemLookup: { Self.fixtureItem($0) },
+            showItem: { [unowned self] _ in
+                self.itemShows += 1
+                return true
+            })
+    }
+
+    /// Show in Calendar / Reminders calls (the fake opens nothing).
+    var itemShows = 0
+
+    /// What EventKit would say about the seeded Activity items (C02):
+    /// "ev-gone" was deleted.
+    static func fixtureItem(_ ref: ItemRef) -> ItemSnapshot? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        func at(_ days: Int, _ hour: Int) -> Date {
+            calendar.date(byAdding: DateComponents(day: days, hour: hour), to: today)!
+        }
+        func event(_ title: String, _ days: Int, _ hour: Int, _ calendarID: String) -> ItemSnapshot {
+            ItemSnapshot(title: title, when: ApprovalSummaries.span(at(days, hour), at(days, hour + 1)),
+                         collectionID: calendarID)
+        }
+        func due(_ days: Int, _ hour: Int) -> String {
+            String(localized: "Due \(at(days, hour).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
+        }
+        switch ref.id {
+        case "ev-design": return event("Design review", 1, 11, "cal-work")
+        case "ev-weekly": return event("Weekly sync", 2, 9, "cal-work")
+        case "ev-sam": return event("1:1 with Sam", 0, 16, "cal-work")
+        case "ev-gone": return .deleted
+        case "rem-cleaning":
+            return ItemSnapshot(title: "Pick up dry cleaning", when: String(localized: "Completed"),
+                                collectionID: "list-errands")
+        case "rem-library":
+            return ItemSnapshot(title: "Return library books", when: due(1, 18), collectionID: "list-errands")
+        case "rem-oat":
+            return ItemSnapshot(title: "Buy oat milk", when: due(3, 9), collectionID: "list-errands")
+        default: return nil
+        }
     }
 
     /// Add to <Agent>… without touching any real file: Claude Desktop's file
@@ -460,72 +499,110 @@ final class UIReview {
         clients.append(["id": Self.revokedID, "name": "Old shell script", "verifier": "", "revoked": true,
                         "revision": 6, "grants": [],
                         "revokedAt": now.addingTimeInterval(-86_400 * 6).timeIntervalSinceReferenceDate])
-        // Oldest first, as stored. Each request has an "accepted" row and a result.
+        // Oldest first, as stored. A request that was accepted has a start and
+        // a result row; one refused before that has a single row. Changes name
+        // their item by ID; `fixtureItem` plays EventKit for the names (C02).
         // Claude Code and Cursor come in over MCP, the scripts over the command line.
-        let script: [(TimeInterval, String?, String, String, String?)] = [
-            (-86_400 * 2 - 600, Self.revokedID, "read_events", "success", "cal-work"),
-            (-86_400 - 7_200, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-86_400 - 7_000, Self.obsidianID, "update_event", "error:conflict", "cal-work"),
-            (-86_400 - 6_900, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-86_400 - 6_800, Self.obsidianID, "update_event", "success", "cal-work"),
-            (-86_400 - 3_000, nil, "read_events", "unauthorized", nil),
-            (-86_400 - 1_000, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-9_000, Self.briefingID, "authorization_status", "success", nil),
-            (-8_800, Self.briefingID, "read_events", "success", "cal-family"),
-            (-8_700, Self.briefingID, "read_events", "success", "cal-work"),
-            (-8_600, Self.briefingID, "read_events", "success", "cal-home"),
-            (-8_500, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-5_000, Self.claudeID, "scope_status", "success", nil),
-            (-4_900, Self.claudeID, "read_events", "success", "cal-work"),
-            (-4_800, Self.claudeID, "create_event", "error:idempotency_pending_review", "cal-work"),
-            (-4_700, Self.claudeID, "read_events", "success", "cal-work"),
-            (-4_000, Self.claudeID, "read_reminders", "success", "list-errands"),
-            (-3_900, Self.claudeID, "create_reminder", "forbidden", "list-groceries"),
-            (-3_700, Self.briefingID, "read_events", "success", "cal-work"),
-            (-2_400, Self.claudeID, "read_reminders", "success", "list-errands"),
-            (-2_300, Self.claudeID, "complete_reminder", "success", "list-errands"),
-            (-1_800, Self.claudeID, "read_events", "error:too_many_events_narrow_range", "cal-home"),
-            (-1_700, Self.claudeID, "read_events", "success", "cal-home"),
-            (-900, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-600, Self.claudeID, "create_event", "success", "cal-work"),
-            (-420, Self.claudeID, "read_events", "success", "cal-work"),
-            (-300, Self.claudeID, "update_event", "success", "cal-work"),
-            (-1_500, nil, "mcp", "unauthorized", nil),
-            (-1_400, Self.cursorID, "read_events", "error:bridge_off", "cal-home"),
-            (-1_300, Self.claudeID, "delete_reminder", "error:approval_denied", "list-errands"),
-            (-1_250, Self.claudeID, "read_events", "error:rate_limited", "cal-work"),
-            (-1_100, Self.claudeID, "list_collections", "success", nil),
-            (-200, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-150, Self.claudeID, "create_reminder", "success", "list-errands"),
-            (-120, Self.claudeID, "read_events", "success", "cal-work"),
-            (-90, Self.obsidianID, "read_events", "error:client_paused", "cal-work"),
-        ]
-        var activity = [[String: Any]]()
-        for (offset, client, command, outcome, target) in script {
-            let at = now.addingTimeInterval(offset).timeIntervalSinceReferenceDate
-            var row: [String: Any] = ["at": at, "command": command, "outcome": outcome]
-            if let client { row["clientID"] = client }
-            if let target { row["targetID"] = target }
-            let mcp = client == nil ? command == "mcp" : (client == Self.claudeID || client == Self.cursorID)
-            if client != Self.revokedID && !(client == nil && command == "read_events") {
-                row["via"] = mcp ? "mcp" : "cli"
-            }
-            if client == Self.claudeID { row["agent"] = "claude-code 2.4.1" }
-            if client == Self.claudeID && command == "create_reminder" && outcome == "success" {
-                row["approval"] = "user"
-            }
-            if outcome == "error:approval_denied" { row["approval"] = "denied" }
-            if (outcome == "success" || outcome.hasPrefix("error:")) &&
-                outcome != "error:bridge_off" && outcome != "error:rate_limited" &&
-                outcome != "error:client_paused" {
-                var accepted = row
-                accepted["approval"] = nil
-                accepted["at"] = at - 0.2
-                accepted["outcome"] = "accepted"
-                activity.append(accepted)
-            }
-            activity.append(row)
+        struct Row {
+            let offset: TimeInterval
+            let client: String?
+            let command: String
+            let outcome: String
+            let target: String?
+            var item: String? = nil
+            var destination: String? = nil
+            var approval: String? = nil
+            var missing: Int? = nil
         }
+        let script: [Row] = [
+            Row(offset: -86_400 * 2 - 600, client: Self.revokedID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 7_200, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 7_000, client: Self.obsidianID, command: "update_event", outcome: "error:conflict",
+                target: "cal-work", item: "ev-sam"),
+            Row(offset: -86_400 - 6_900, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 6_800, client: Self.obsidianID, command: "update_event", outcome: "success",
+                target: "cal-work", item: "ev-sam"),
+            Row(offset: -86_400 - 5_000, client: Self.claudeID, command: "delete_event", outcome: "success",
+                target: "cal-work", item: "ev-gone", approval: "user"),
+            Row(offset: -86_400 - 3_500, client: Self.cursorID, command: "create_event", outcome: "forbidden",
+                target: "cal-home", missing: ClientGrant.create),
+            Row(offset: -86_400 - 3_000, client: nil, command: "read_events", outcome: "unauthorized", target: nil),
+            Row(offset: -86_400 - 1_000, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -9_000, client: Self.briefingID, command: "authorization_status", outcome: "success", target: nil),
+            Row(offset: -8_800, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-family"),
+            Row(offset: -8_700, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -8_600, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-home"),
+            Row(offset: -8_500, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -5_000, client: Self.claudeID, command: "scope_status", outcome: "success", target: nil),
+            Row(offset: -4_900, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -4_800, client: Self.claudeID, command: "create_event", outcome: "error:idempotency_pending_review",
+                target: "cal-work"),
+            Row(offset: -4_700, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -4_000, client: Self.claudeID, command: "read_reminders", outcome: "success", target: "list-errands"),
+            Row(offset: -3_900, client: Self.claudeID, command: "create_reminder", outcome: "forbidden",
+                target: "list-groceries", missing: ClientGrant.create),
+            Row(offset: -3_800, client: Self.claudeID, command: "update_event", outcome: "forbidden",
+                target: "cal-work", item: "ev-design", destination: "cal-home", missing: ClientGrant.create),
+            Row(offset: -3_700, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -2_400, client: Self.claudeID, command: "read_reminders", outcome: "success", target: "list-errands"),
+            Row(offset: -2_300, client: Self.claudeID, command: "complete_reminder", outcome: "success",
+                target: "list-errands", item: "rem-cleaning"),
+            Row(offset: -1_800, client: Self.claudeID, command: "read_events", outcome: "error:too_many_events_narrow_range",
+                target: "cal-home"),
+            Row(offset: -1_700, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-home"),
+            Row(offset: -900, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -600, client: Self.claudeID, command: "create_event", outcome: "success",
+                target: "cal-work", item: "ev-weekly", approval: "user"),
+            Row(offset: -420, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -300, client: Self.claudeID, command: "update_event", outcome: "success",
+                target: "cal-work", item: "ev-design", approval: "user"),
+            Row(offset: -1_500, client: nil, command: "mcp", outcome: "unauthorized", target: nil),
+            Row(offset: -1_400, client: Self.cursorID, command: "read_events", outcome: "error:bridge_off", target: "cal-home"),
+            Row(offset: -1_300, client: Self.claudeID, command: "delete_reminder", outcome: "error:approval_denied",
+                target: "list-errands", item: "rem-library", approval: "denied"),
+            Row(offset: -1_250, client: Self.claudeID, command: "read_events", outcome: "error:rate_limited", target: "cal-work"),
+            Row(offset: -1_100, client: Self.claudeID, command: "list_collections", outcome: "success", target: nil),
+            Row(offset: -200, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -150, client: Self.claudeID, command: "create_reminder", outcome: "success",
+                target: "list-errands", item: "rem-oat", approval: "user"),
+            Row(offset: -120, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -90, client: Self.obsidianID, command: "read_events", outcome: "error:client_paused", target: "cal-work"),
+        ]
+        let store = ActivityStore(dataFolder: directory)
+        for (index, row) in script.enumerated().sorted(by: { $0.element.offset < $1.element.offset }) {
+            let at = now.addingTimeInterval(row.offset)
+            let mcp = row.client == nil ? row.command == "mcp" : (row.client == Self.claudeID || row.client == Self.cursorID)
+            let request = "\(row.client ?? "-")|seed-\(index)"
+            let refusedEarly = ["forbidden", "unauthorized", "error:bridge_off", "error:rate_limited",
+                                "error:client_paused"].contains(row.outcome)
+            var record = ActivityRecord(id: "\(request)|\(refusedEarly ? ActivityRecord.event : ActivityRecord.result)",
+                                        requestID: request,
+                                        phase: refusedEarly ? ActivityRecord.event : ActivityRecord.result,
+                                        at: at, clientID: row.client, command: row.command, outcome: row.outcome)
+            record.targetID = row.target
+            record.destinationID = row.destination
+            if row.client != Self.revokedID && !(row.client == nil && row.command == "read_events") {
+                record.via = mcp ? "mcp" : "cli"
+            }
+            if row.client == Self.claudeID { record.agent = "claude-code 2.4.1" }
+            record.approval = row.approval
+            record.missing = row.missing
+            record.item = row.item.map {
+                ItemRef(kind: CommandPresentation.targetsList(row.command) ? "reminder" : "event", id: $0)
+            }
+            if !refusedEarly {
+                var start = ActivityRecord(id: "\(request)|\(ActivityRecord.start)", requestID: request,
+                                           phase: ActivityRecord.start, at: at.addingTimeInterval(-0.2),
+                                           clientID: row.client, command: row.command, outcome: "accepted")
+                start.targetID = record.targetID
+                start.destinationID = record.destinationID
+                start.via = record.via
+                start.agent = record.agent
+                _ = store.append(start)
+            }
+            _ = store.append(record)
+        }
+        var activity = [[String: Any]]()
         if CommandLine.arguments.contains("--ui-max-activity") {
             let commands = ["read_events", "read_reminders", "create_event", "update_reminder", "scope_status"]
             let outcomes = ["success", "success", "success", "forbidden", "error:conflict", "error:scope_changed"]
@@ -1449,7 +1526,38 @@ final class BehaviorReview {
                 ActivityColumns.widths(for: ActivityColumns.tableWidth(windowWidth: CGFloat($0)))
             }
             return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
-                && widths[0].request >= ActivityColumns.widestRequestLabel
+                && widths[0].change >= ActivityColumns.widestChangeLabel
+        }
+        // C02: the Changes filter, the item card and a deleted item.
+        step("Changes filter hides reads") {
+            self.model.openActivity()
+            self.model.activityKind = .changes
+            let shown = ActivityScope.all.entries(self.model).filter { $0.matches(self.model.activityKind) }
+            let ok = !shown.isEmpty && shown.allSatisfy(\.isWrite) &&
+                shown.contains { $0.code != "success" } && !shown.contains { $0.command == "read_events" }
+            self.model.activityKind = .all
+            return ok
+        }
+        step("selecting a write shows the item card") {
+            guard let write = self.model.activity.first(where: { $0.item?.id == "ev-design" && $0.code == "success" })
+            else { return false }
+            self.model.openActivity(selecting: write.id)
+            guard case .found(let item) = self.model.itemDisplay(write) else { return false }
+            let before = self.review.itemShows
+            self.model.showItem(write)
+            return item.title == "Design review" && item.exists && write.changeLabel == "Changed event" &&
+                write.resultLabel == "Approved" && self.review.itemShows == before + 1
+        }
+        step("deleted item shows Deleted") {
+            guard let gone = self.model.activity.first(where: { $0.item?.id == "ev-gone" }),
+                  case .found(let item) = self.model.itemDisplay(gone) else { return false }
+            self.model.activitySelection = nil
+            return !item.exists && gone.changeLabel == "Deleted event"
+        }
+        step("a refused move names its destination") {
+            guard let move = self.model.activity.first(where: { $0.isMove && $0.code == "forbidden" }) else { return false }
+            return ActivityInspector.refusedOnDestination(move) && move.changeLabel == "Move event" &&
+                ActivityInspector.missingAction(move) == "Create"
         }
         // A fresh run, end to end (B09): allow both, add Claude Desktop, one-click, first request.
         let (fresh, freshModel, _) = review.makeFreshEnvironment(calendar: .notDetermined, reminders: .notDetermined)
@@ -1664,7 +1772,9 @@ final class SnapshotReview {
             }
             step("activity") {
                 self.model.navigate(to: .activity)
-                self.model.activitySelection = self.model.activity.first { $0.code == "forbidden" }?.id
+                self.model.activitySelection = self.model.activity.first {
+                    $0.item?.id == "ev-design" && $0.code == "success"
+                }?.id
                 return main
             }
             step("activity-minimum") {
@@ -1678,7 +1788,34 @@ final class SnapshotReview {
                 }
                 return main
             }
+            step("activity-problems") {
+                // Rebuilt at the default size (see activity-minimum).
+                main?.setContentSize(MainWindowController.defaultSize)
+                self.model.navigate(to: .overview)
+                DispatchQueue.main.async {
+                    self.model.navigate(to: .activity)
+                    self.model.activityKind = .problems
+                    self.model.activitySelection = self.model.activity.first { $0.isMove && $0.code == "forbidden" }?.id
+                }
+                return main
+            }
+            step("activity-deleted-item") {
+                self.model.activityKind = .all
+                self.model.activitySelection = self.model.activity.first { $0.item?.id == "ev-gone" }?.id
+                return main
+            }
+            step("activity-no-calendar-access") {
+                self.review.calendarStatus = .denied
+                self.model.refresh()
+                self.model.activitySelection = self.model.activity.first {
+                    $0.item?.id == "ev-design" && $0.code == "success"
+                }?.id
+                return main
+            }
             step("settings") {
+                self.review.calendarStatus = .fullAccess
+                self.model.refresh()
+                self.model.activitySelection = nil
                 main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
                 self.model.settingsTab = .general

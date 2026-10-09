@@ -259,6 +259,51 @@ enum CommandPresentation {
         (BridgeCommand.allCases.map(\.rawValue) + ["mcp"]).map(shortLabel)
     }
 
+    /// What a change did, for Activity's Change column (P6): "Added event",
+    /// "Moved event", "Completed". Nil for reads and client-level commands.
+    static func pastTense(_ command: String, moved: Bool = false) -> String? {
+        switch BridgeCommand(rawValue: command) {
+        case .createEvent: String(localized: "Added event")
+        case .updateEvent: moved ? String(localized: "Moved event") : String(localized: "Changed event")
+        case .deleteEvent: String(localized: "Deleted event")
+        case .createReminder: String(localized: "Added reminder")
+        case .updateReminder: moved ? String(localized: "Moved reminder") : String(localized: "Changed reminder")
+        case .completeReminder: String(localized: "Completed")
+        case .deleteReminder: String(localized: "Deleted reminder")
+        default: nil
+        }
+    }
+
+    /// What a change asked to do, for one that didn't happen: "Add event".
+    static func presentTense(_ command: String, moved: Bool = false) -> String? {
+        switch BridgeCommand(rawValue: command) {
+        case .createEvent: String(localized: "Add event")
+        case .updateEvent: moved ? String(localized: "Move event") : String(localized: "Change event")
+        case .deleteEvent: String(localized: "Delete event")
+        case .createReminder: String(localized: "Add reminder")
+        case .updateReminder: moved ? String(localized: "Move reminder") : String(localized: "Change reminder")
+        case .completeReminder: String(localized: "Complete reminder")
+        case .deleteReminder: String(localized: "Delete reminder")
+        default: nil
+        }
+    }
+
+    /// Activity's Change column: past tense when it went through, present
+    /// tense when it didn't, the request's label for reads.
+    static func changeLabel(_ command: String, moved: Bool, succeeded: Bool) -> String {
+        (succeeded ? pastTense(command, moved: moved) : presentTense(command, moved: moved)) ?? shortLabel(command)
+    }
+
+    /// Every label the Change column can show, for sizing it.
+    static var allChangeLabels: [String] {
+        let commands = BridgeCommand.allCases.map(\.rawValue) + ["mcp"]
+        return Array(Set(commands.flatMap { command in
+            [true, false].flatMap { moved in
+                [true, false].map { changeLabel(command, moved: moved, succeeded: $0) }
+            }
+        })).sorted()
+    }
+
     /// The access a command needs, as shown in the access table ("Read", "Create"…).
     static func requiredAction(_ command: String) -> String? {
         switch BridgeCommand(rawValue: command) {
