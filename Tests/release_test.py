@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Tests the release tools offline: scripts/release_notes.py, scripts/appcast.py,
 scripts/release_assets.sh (the stable DMG name and SHA256SUMS), the argument
-checks of scripts/check_notarized.sh, and release.sh's refusals
+checks of scripts/check_notarized.sh, the disk image from scripts/make_dmg.sh
+(its Finder window, read back from its .DS_Store), and release.sh's refusals
 before it builds anything, in a throwaway git repository with a stub
 `security` command on PATH (so no keychain, identity or network is needed)."""
 
@@ -10,6 +11,7 @@ import os
 import plistlib
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -241,6 +243,130 @@ def test_release_assets():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def read_ds_store(path):
+    """Every record of a .DS_Store, in file order, as (name, code, type, value).
+    Follows the B-tree from its header, through child nodes too."""
+    data = Path(path).read_bytes()
+    magic, bud, root_offset, _, root_offset2 = struct.unpack_from(">I4sIII", data, 0)
+    assert magic == 1 and bud == b"Bud1" and root_offset == root_offset2, "not a .DS_Store"
+    count = struct.unpack_from(">I", data, 4 + root_offset)[0]
+    addresses = struct.unpack_from(f">{count}I", data, 4 + root_offset + 8)
+    position = 4 + root_offset + 8 + ((count + 255) // 256) * 1024
+    toc = {}
+    for _ in range(struct.unpack_from(">I", data, position)[0]):
+        length = data[position + 4]
+        name = data[position + 5:position + 5 + length]
+        toc[name] = struct.unpack_from(">I", data, position + 5 + length)[0]
+        position += 5 + length
+
+    def block(number):
+        return 4 + (addresses[number] & ~0x1F)
+    root_node, _levels, record_count, _nodes, _page = struct.unpack_from(">5I", data, block(toc[b"DSDB"]))
+    records = []
+
+    def walk(number):
+        offset = block(number)
+        child, count = struct.unpack_from(">II", data, offset)
+        offset += 8
+        for _ in range(count):
+            if child:
+                walk(struct.unpack_from(">I", data, offset)[0])
+                offset += 4
+            length = struct.unpack_from(">I", data, offset)[0]
+            name = data[offset + 4:offset + 4 + 2 * length].decode("utf-16-be")
+            offset += 4 + 2 * length
+            code, kind = data[offset:offset + 4].decode(), data[offset + 4:offset + 8].decode()
+            offset += 8
+            if kind in ("long", "shor"):
+                value, offset = struct.unpack_from(">I", data, offset)[0], offset + 4
+            elif kind == "bool":
+                value, offset = data[offset] == 1, offset + 1
+            elif kind == "type":
+                value, offset = data[offset:offset + 4].decode(), offset + 4
+            elif kind in ("blob", "ustr"):
+                size = struct.unpack_from(">I", data, offset)[0] * (2 if kind == "ustr" else 1)
+                value, offset = data[offset + 4:offset + 4 + size], offset + 4 + size
+            else:
+                raise AssertionError(f"unknown record type {kind}")
+            records.append((name, code, kind, value))
+        if child:
+            walk(child)
+    walk(root_node)
+    assert len(records) == record_count, "the record count doesn't match the header"
+    return records
+
+
+def test_make_dmg():
+    """make_dmg.sh builds a compressed image whose Finder window shows the app and
+    the Applications link over the background, with the app icon on the volume."""
+    tmp = Path(tempfile.mkdtemp(prefix="eventkit-make-dmg-"))
+    mount_point = tmp / "volume"
+    mounted = False
+    try:
+        app = tmp / "EKBridge.app"
+        (app / "Contents").mkdir(parents=True)
+        with open(app / "Contents" / "Info.plist", "wb") as handle:
+            plistlib.dump({"CFBundleExecutable": "EKBridge", "CFBundlePackageType": "APPL"}, handle)
+        dmg = tmp / "EKBridge-0.0.1.dmg"
+        out = subprocess.run(["sh", str(ROOT / "scripts" / "make_dmg.sh"), str(app), "EK Bridge", str(dmg)],
+                             capture_output=True, text=True)
+        check("dmg: make_dmg.sh succeeds", out.returncode == 0 and dmg.is_file(), out.stdout + out.stderr)
+        if not dmg.is_file():
+            return
+        info = plistlib.loads(subprocess.run(["hdiutil", "imageinfo", "-plist", str(dmg)],
+                                             capture_output=True, check=True).stdout)
+        check("dmg: LZFSE-compressed and read-only", info.get("Format") == "ULFO", f"{info.get('Format')!r}")
+        mount_point.mkdir()
+        subprocess.run(["hdiutil", "attach", "-quiet", "-nobrowse", "-noautoopen", "-readonly",
+                        "-mountpoint", str(mount_point), str(dmg)], check=True, capture_output=True)
+        mounted = True
+        names = sorted(os.listdir(mount_point))
+        expected_names = [".DS_Store", ".VolumeIcon.icns", ".background.tiff", "Applications", "EKBridge.app"]
+        check("dmg: the app, the Applications link and the hidden window files",
+              [n for n in names if n not in (".fseventsd", ".Trashes")] == expected_names, f"{names!r}")
+        check("dmg: Applications links to /Applications",
+              os.readlink(mount_point / "Applications") == "/Applications")
+        volume_name = subprocess.run(["diskutil", "info", "-plist", str(mount_point)], capture_output=True)
+        check("dmg: the volume is named EK Bridge",
+              plistlib.loads(volume_name.stdout).get("VolumeName") == "EK Bridge", volume_name.stderr)
+        flags = subprocess.run(["xcrun", "GetFileInfo", "-a", str(mount_point)], capture_output=True, text=True)
+        check("dmg: the volume has the custom-icon flag", "C" in flags.stdout, flags.stdout + flags.stderr)
+        tiff = subprocess.run(["tiffutil", "-info", str(mount_point / ".background.tiff")],
+                              capture_output=True, text=True)
+        sizes = [line.split(":", 1)[1].split() for line in tiff.stdout.splitlines() if "Image Width" in line]
+        check("dmg: the background has 1x and 2x images",
+              [[s[0], s[3]] for s in sizes] == [["660", "440"], ["1320", "880"]], tiff.stdout)
+
+        records = read_ds_store(mount_point / ".DS_Store")
+        keys = [(name, code) for name, code, _, _ in records]
+        check("dmg: .DS_Store records in Finder's order", keys == [
+            (".", "bwsp"), (".", "icvp"), (".", "pBBk"), (".", "vSrn"), (".", "vstl"),
+            ("Applications", "Iloc"), ("EKBridge.app", "Iloc")], f"{keys!r}")
+        values = {(name, code): value for name, code, _, value in records}
+        browser = plistlib.loads(values[(".", "bwsp")])
+        check("dmg: the window has no toolbar or sidebar and a fixed size",
+              browser.get("ShowToolbar") is False and browser.get("ShowSidebar") is False
+              and browser.get("WindowBounds") == "{{200, 120}, {660, 460}}", f"{browser!r}")
+        view = plistlib.loads(values[(".", "icvp")])
+        check("dmg: icon view with the background picture and 128-point icons",
+              view.get("backgroundType") == 2 and view.get("iconSize") == 128 and view.get("arrangeBy") == "none"
+              and b".background.tiff" in view.get("backgroundImageAlias", b""), f"{view!r}")
+        alias = view.get("backgroundImageAlias", b"")
+        check("dmg: the alias record's length is its own",
+              len(alias) > 150 and struct.unpack_from(">H", alias, 4)[0] == len(alias), f"{len(alias)}")
+        check("dmg: the background bookmark", values[(".", "pBBk")][:4] == b"book")
+        icons = {name: struct.unpack_from(">II", value) for (name, code), value in values.items() if code == "Iloc"}
+        check("dmg: the app and Applications sit over the art",
+              icons == {"EKBridge.app": (170, 190), "Applications": (490, 190)}, f"{icons!r}")
+        out = subprocess.run(["sh", str(ROOT / "scripts" / "make_dmg.sh"), str(tmp / "Missing.app"), "X",
+                              str(tmp / "x.dmg")], capture_output=True, text=True)
+        check("dmg: a missing app fails", out.returncode == 1 and "doesn't exist" in out.stderr, out.stderr)
+    finally:
+        if mounted:
+            subprocess.run(["hdiutil", "detach", "-quiet", "-force", str(mount_point)], capture_output=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def git(repo, *args):
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True,
                    env={"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@example.com",
@@ -349,11 +475,12 @@ def main() -> int:
     test_appcast()
     test_check_notarized()
     test_release_assets()
+    test_make_dmg()
     test_release_refusals()
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Release tools: {checks} release notes, appcast, release assets, notarization check and release.sh refusal checks passed")
+    print(f"Release tools: {checks} release notes, appcast, release assets, notarization check, disk image and release.sh refusal checks passed")
     return 0
 
 
