@@ -1,0 +1,31 @@
+Warning: client version "1.102.5-1-t0000000000" != tailscaled server version "1.102.4-t0000000000-g0000000000"
+
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    },
+    "8443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "my-mac.tail1234.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:47616"
+        }
+      }
+    },
+    "my-mac.tail1234.ts.net:8443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:4000"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "my-mac.tail1234.ts.net:443": true
+  }
+}

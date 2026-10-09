@@ -1,0 +1,12 @@
+# ~/.cloudflared/config.yml for a named tunnel, with two ingress rules
+tunnel: ek-bridge
+credentials-file: /Users/me/.cloudflared/00000000-0000-4000-8000-000000000000.json
+
+ingress:
+  - hostname: wiki.example.com
+    service: http://localhost:8080
+  - hostname: "mcp.example.com"
+    service: http://127.0.0.1:47616
+    originRequest:
+      httpHostHeader: "127.0.0.1:47616"
+  - service: http_status:404

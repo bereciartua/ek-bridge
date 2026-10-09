@@ -1,0 +1,23 @@
+{
+  "version": -1,
+  "config": {
+    "ingress": [
+      {
+        "hostname": "mcp.example.com",
+        "path": null,
+        "service": "http://127.0.0.1:47616",
+        "originRequest": {
+          "connectTimeout": 30,
+          "httpHostHeader": "127.0.0.1:47616",
+          "noTLSVerify": false
+        }
+      },
+      {
+        "hostname": "",
+        "path": null,
+        "service": "http_status:404"
+      }
+    ],
+    "warp-routing": {}
+  }
+}

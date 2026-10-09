@@ -1,0 +1,54 @@
+{
+  "Version": "1.102.4",
+  "TUN": true,
+  "BackendState": "Running",
+  "HaveNodeKey": true,
+  "AuthURL": "",
+  "TailscaleIPs": [
+    "100.64.0.1",
+    "fd7a:115c:a1e0::1"
+  ],
+  "Self": {
+    "ID": "nExample1CNTRL",
+    "PublicKey": "nodekey:0000000000000000000000000000000000000000000000000000000000000000",
+    "HostName": "my-mac",
+    "DNSName": "my-mac.tail1234.ts.net.",
+    "OS": "macOS",
+    "UserID": 1,
+    "TailscaleIPs": [
+      "100.64.0.1",
+      "fd7a:115c:a1e0::1"
+    ],
+    "Online": true,
+    "Active": true,
+    "Capabilities": [
+      "https",
+      "https://tailscale.com/cap/ssh",
+      "probe-udp-lifetime"
+    ],
+    "CapMap": {
+      "default-auto-update": [
+        true
+      ],
+      "https": null,
+      "https://tailscale.com/cap/ssh": null,
+      "probe-udp-lifetime": null
+    },
+    "InNetworkMap": true,
+    "InMagicSock": false,
+    "InEngine": false
+  },
+  "Health": [],
+  "MagicDNSSuffix": "tail1234.ts.net",
+  "CurrentTailnet": {
+    "Name": "example.github",
+    "MagicDNSSuffix": "tail1234.ts.net",
+    "MagicDNSEnabled": true
+  },
+  "CertDomains": [
+    "my-mac.tail1234.ts.net"
+  ],
+  "Peer": {},
+  "User": {},
+  "ClientVersion": null
+}
