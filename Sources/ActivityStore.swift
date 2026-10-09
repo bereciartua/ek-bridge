@@ -237,7 +237,15 @@ final class ActivityStore: ActivityRecorder {
             while ids.contains("\(record.id)#\(ordinal)") { ordinal += 1 }
             record.id = "\(record.id)#\(ordinal)"
         }
-        guard let line = Self.encode(record), openForAppend(), write(line, to: descriptor) else {
+        guard let line = Self.encode(record), openForAppend() else {
+            lock.unlock()
+            return false
+        }
+        // A write that fails partway (a full disk) or isn't synced is taken
+        // back, so a torn line can't swallow the next row.
+        let end = lseek(descriptor, 0, SEEK_END)
+        guard end >= 0, write(line, to: descriptor) else {
+            if end >= 0 { ftruncate(descriptor, end) }
             lock.unlock()
             return false
         }

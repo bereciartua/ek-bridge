@@ -46,10 +46,20 @@ struct ActivityItemsTests {
                      ItemRef(kind: "reminder", id: "R7-DONE", occurrence: 1_791_291_600, span: "occurrence"))
         precondition(ref(.deleteReminder, ["listID": "LIST-GROC", "itemID": "R9"],
                          core("delete-reminder-repeated")) == ItemRef(kind: "reminder", id: "R9"))
-        // Refused or failed writes keep the requested ID when there is one.
-        precondition(ref(.updateEvent, ["calendarID": "CAL-WORK", "itemID": "EV1"], ["error": "conflict"]) ==
-                     ItemRef(kind: "event", id: "EV1"))
-        precondition(ref(.deleteReminder, ["listID": "L", "itemID": "R1"], ["error": "forbidden"]) ==
+        // Refused or failed writes keep the requested ID only when it's shaped
+        // like an EventKit ID: until EventKit used it, it's the agent's text.
+        let eventID = "6C1E2B9D-55A0-4F3B-9D8E-0C7A33A14F2A:0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D"
+        let reminderID = "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D"
+        precondition(ref(.updateEvent, ["calendarID": "CAL-WORK", "itemID": eventID], ["error": "conflict"]) ==
+                     ItemRef(kind: "event", id: eventID))
+        precondition(ref(.deleteEvent, ["calendarID": "CAL-WORK", "itemID": eventID + "/RID=1793091600"],
+                         ["error": "conflict"])?.id == eventID + "/RID=1793091600")
+        precondition(ref(.deleteReminder, ["listID": "L", "itemID": reminderID], ["error": "forbidden"]) ==
+                     ItemRef(kind: "reminder", id: reminderID))
+        precondition(ref(.deleteReminder, ["listID": "L", "itemID": "Buy oat milk"], ["error": "item_unavailable"]) == nil)
+        precondition(ref(.updateEvent, ["calendarID": "C", "itemID": "R1"], ["error": "conflict"]) == nil)
+        // After EventKit ran it, the requested ID is the item's.
+        precondition(ref(.deleteReminder, ["listID": "L", "itemID": "R1"], ["deleted": true]) ==
                      ItemRef(kind: "reminder", id: "R1"))
         precondition(ref(.createEvent, ["calendarID": "CAL-WORK", "title": "x"], ["error": "rate_limited"]) == nil)
         // A create that couldn't be rolled back names the item it left.

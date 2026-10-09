@@ -46,7 +46,20 @@ enum ActivityItems {
         default:
             ref = nil
         }
-        return ref.flatMap { $0.isValid ? $0 : nil }
+        guard let ref, ref.isValid else { return nil }
+        // An ID the request supplied is the agent's text until EventKit has
+        // used it: for a write that didn't go through, keep it only if it's
+        // shaped like an EventKit ID, so Activity never holds anything else.
+        let fromRequest = requested == ref.id && (item?["id"] as? String) != ref.id &&
+            (result["itemID"] as? String) != ref.id
+        if fromRequest && result["error"] != nil && !looksLikeEventKitID(ref.id) { return nil }
+        return ref
+    }
+
+    /// "UUID", "UUID:UUID", optionally with "/RID=<seconds>" (an occurrence).
+    static func looksLikeEventKitID(_ id: String) -> Bool {
+        let uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+        return id.range(of: "^\(uuid)(:\(uuid))?(/RID=[0-9]+)?$", options: .regularExpression) != nil
     }
 
     private static func number(_ value: Any?) -> Double? {

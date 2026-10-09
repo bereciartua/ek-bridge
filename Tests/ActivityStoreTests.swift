@@ -125,6 +125,9 @@ struct ActivityStoreTests {
         precondition(store.records().count == 1)
         failing = false
         precondition(store.append(record(3)))
+        // The failed row was taken back: the file has rows 1 and 3, whole.
+        precondition(ActivityStore(dataFolder: data).records().map(\.id) == ["client|r1|result", "client|r3|result"])
+        precondition(ActivityStore(dataFolder: data).skippedLines == 0)
         // A folder that isn't ours or is a link: refused.
         let linked = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: linked) }

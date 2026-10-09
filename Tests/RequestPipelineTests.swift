@@ -373,9 +373,10 @@ struct RequestPipelineTests {
         // A refused update still names its item when the request did.
         f.executor.result = ["error": "conflict"]
         f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
-            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1791200000.123456", "title": "x",
-            "idempotencyKey": WriteIdempotencyKey.make()]))
-        precondition(f.lastRow.outcome == "error:conflict" && f.lastRow.item?.id == "EV1", "\(f.lastRow)")
+            "calendarID": "CAL-A", "itemID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+            "expectedVersion": "1791200000.123456", "title": "x", "idempotencyKey": WriteIdempotencyKey.make()]))
+        precondition(f.lastRow.outcome == "error:conflict" &&
+                     f.lastRow.item?.id == "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D", "\(f.lastRow)")
         // A move that went through records its destination on both rows.
         f.executor.result = ["item": ["id": "EV1"]]
         let grants = f.registry.clients()!.first!.grants
