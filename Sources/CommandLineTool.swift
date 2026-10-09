@@ -1,6 +1,6 @@
 import Foundation
 
-/// Settings ▸ Developer ▸ Install Command-Line Tool: links the `bridge-client`
+/// Settings ▸ Advanced ▸ Install Command-Line Tool: links the `bridge-client`
 /// inside the app (`Contents/MacOS/bridge-client`) into `~/.local/bin`, which
 /// needs no admin rights. Foundation only, so the unit test can use temporary folders.
 struct CommandLineTool {

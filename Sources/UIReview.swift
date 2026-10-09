@@ -1636,7 +1636,12 @@ final class SnapshotReview {
             step("settings") {
                 main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
+                self.model.settingsTab = .general
                 self.model.navigate(to: .settings)
+                return main
+            }
+            step("settings-advanced") {
+                self.model.settingsTab = .advanced
                 return main
             }
             step("overview-mcp") {
@@ -1662,6 +1667,7 @@ final class SnapshotReview {
             }
             step("settings-updates") {
                 self.model.updateFound(nil)
+                self.model.settingsTab = .general
                 self.model.navigate(to: .settings)
                 return main
             }
@@ -1732,6 +1738,7 @@ final class SnapshotReview {
             }
             step("settings-mcp-listening") {
                 self.model.setBridgeEnabled(true)
+                self.model.settingsScrollTarget = "mcp"
                 self.model.navigate(to: .settings)
                 return main
             }

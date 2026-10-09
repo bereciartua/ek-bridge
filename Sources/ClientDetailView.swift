@@ -395,7 +395,7 @@ struct CommandLineConnect: View {
         case .onPath:
             String(localized: "Run it in Terminal.")
         case .bundled:
-            String(localized: "Run it in Terminal. To type just bridge-client, install the command-line tool from Settings ▸ Developer.")
+            String(localized: "Run it in Terminal. To type just bridge-client, install the command-line tool from Settings ▸ Advanced.")
         case .source:
             String(localized: "Run it in Terminal, in the ek-bridge folder.")
         }
@@ -839,7 +839,7 @@ struct RevokedClientView: View {
 
 // MARK: - Sheets
 
-/// Settings ▸ MCP Server ▸ Port ▸ Change…
+/// Settings ▸ Advanced ▸ Port ▸ Change…
 struct MCPPortSheet: View {
     let model: BridgeAppModel
     @State private var text = ""

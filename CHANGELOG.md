@@ -21,6 +21,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - A connection's page has **Access · Connect · Activity** tabs. It opens on Connect until the first request arrives, then on Access, so the access table isn't below the fold any more. The header has one status line (Connected, Waiting for <agent>, Paused since…, or why the last request was refused), and the Activity tab replaces the Activity button. Agent setup moves the method choice under **Advanced options** and the agent list under **Set up a different agent…**.
 - Setup takes three steps instead of seven: allow Calendar and Reminders (skip the one you don't need), add your agent, connect it. Connecting turns EK Bridge on and, for Claude Desktop, Cursor and Claude Code, is one click; the step is done when the agent's first request arrives. Its wording leads with AI agents; **Add a command-line connection…** is there for scripts.
 - **Remote Access** has its own page in the sidebar (with an **On** label) and a guided setup: choose a tunnel, turn it on and start the tunnel, paste its address, and a test that runs by itself. Once set up, the page shows its status and settings and the connections with cloud access; the tunnel's steps and notes are behind ⓘ.
+- Settings has **General · Advanced · About** tabs. General: start at login, Dock, updates and the Ask before changes defaults. Advanced: the local MCP server, the command-line tool and developer tools. About: version, links and the setup checklist.
 
 ## [0.8.3] - 2026-10-08
 

@@ -389,7 +389,7 @@ With **Ask me first**, every create, edit, complete or delete from the connectio
 Ask before changes is always your choice. To run an agent with no prompts:
 
 - **Per connection:** the **Changes:** pop-up next to the Access title: **Ask me first** or **Allow without asking**. It saves immediately and applies to the next change. It's disabled until the connection has a write grant.
-- **Defaults for new connections:** Settings ▸ MCP Server ▸ Ask before changes. **New AI agent connections** default to *Ask me first*; **New command-line connections** default to *Allow without asking*. Changing a default doesn't change existing connections.
+- **Defaults for new connections:** Settings ▸ General ▸ Ask before changes. **New AI agent connections** default to *Ask me first*; **New command-line connections** default to *Allow without asking*. Changing a default doesn't change existing connections.
 - **Apply to All Connections…** sets every active connection to one mode after a confirmation that says how many change.
 
 Connections created before 0.4.0 are set to *Allow without asking*. Ask before changes works for command-line connections too, but a script can't click, so leave those on *Allow* unless you're at the Mac.
@@ -398,7 +398,7 @@ Activity's details pane shows the answer for each change: *You approved*, *You d
 
 ### Troubleshooting
 
-Start with the launcher's check. It reads the token file, finds the server, and reports what it sees on stderr without ever printing the token. Use the launcher path from Settings ▸ MCP Server and the **Client ID** from the connection's page:
+Start with the launcher's check. It reads the token file, finds the server, and reports what it sees on stderr without ever printing the token. Use the launcher path from Settings ▸ Advanced and the **Client ID** from the connection's page:
 
 ```sh
 "/Applications/EKBridge.app/Contents/MacOS/bridge-mcp" check --client <client ID>
@@ -429,7 +429,7 @@ The check calls `list_collections` to see whether EK Bridge is on, so it adds an
 | Too many requests (`rate_limited`) | The agent is looping. See the [limits](#limits). |
 | Needs review / timeout after a change | Read the calendar or list before anything else. Retry only with the exact `idempotency_key` the error gave you. |
 | "launcher from this location" warning | Move the app to Applications and copy the setup again. |
-| Nothing happens and no Activity row | Run the check. Requests that fail before authentication (wrong port, Host, Origin) never reach Activity; Settings ▸ Developer shows **MCP traffic since launch** (counts only). |
+| Nothing happens and no Activity row | Run the check. Requests that fail before authentication (wrong port, Host, Origin) never reach Activity; Settings ▸ Advanced shows **MCP traffic since launch** (counts only). |
 
 For cloud agents, start with **Test** on the Remote Access page. It shows why the tunnel didn't reach the app:
 

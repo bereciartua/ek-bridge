@@ -87,7 +87,7 @@ enum MCPHTTPGate {
     }
 }
 
-/// Counts only, never bodies: Settings ▸ Developer shows them to help debug
+/// Counts only, never bodies: Settings ▸ Advanced shows them to help debug
 /// agent setups without logging data.
 final class MCPTrafficCounters: @unchecked Sendable {
     struct Snapshot: Equatable {

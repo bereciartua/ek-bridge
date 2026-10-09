@@ -165,7 +165,7 @@ Something else? Ask in [Discussions](https://github.com/bereciartua/ek-bridge/di
 Scripts and tools without MCP use `bridge-client`, which signs each request with the connection's own key.
 
 1. Add a connection with **Connects from ▸ Command line**, choose its access and **Save**.
-2. Install the tool from **Settings ▸ Developer ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`. (Homebrew already linked it into its own `bin`.)
+2. Install the tool from **Settings ▸ Advanced ▸ Install Command-Line Tool**. It links `bridge-client` into `~/.local/bin`; if your shell can't find it, add that folder to your `PATH`. (Homebrew already linked it into its own `bin`.)
 3. Send a test request. The connection's page has it ready to copy:
 
    ```sh

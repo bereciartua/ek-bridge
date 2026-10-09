@@ -1,22 +1,37 @@
 import ServiceManagement
 import SwiftUI
 
-/// Settings (§11): General, Developer (its tools off by default) and About.
+/// Settings (B11): General, Advanced (the local MCP server, the
+/// command-line tool, developer tools) and About, as tabs.
 struct SettingsView: View {
-    let model: BridgeAppModel
+    @Bindable var model: BridgeAppModel
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 18) {
                     PaneTitle(title: String(localized: "Settings"))
-                    general
-                    MCPServerSettings(model: model)
-                        .id("mcp")
-                    developer
-                        .id("developer")
-                    about
-                        .id("about")
+                    Picker(String(localized: "Settings"), selection: $model.settingsTab) {
+                        Text(String(localized: "General")).tag(SettingsTab.general)
+                        Text(String(localized: "Advanced")).tag(SettingsTab.advanced)
+                        Text(String(localized: "About")).tag(SettingsTab.about)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    switch model.settingsTab {
+                    case .general:
+                        general
+                        ApprovalDefaults(model: model)
+                    case .advanced:
+                        MCPServerSettings(model: model)
+                            .id("mcp")
+                        developer
+                            .id("developer")
+                    case .about:
+                        about
+                            .id("about")
+                    }
                 }
                 .padding(24)
                 .frame(maxWidth: 860, alignment: .leading)
@@ -27,8 +42,15 @@ struct SettingsView: View {
         }
     }
 
+    /// "mcp" and "developer" open Advanced, "about" About, then scroll there.
     private func scroll(_ proxy: ScrollViewProxy) {
         guard let target = model.settingsScrollTarget else { return }
+        let tab: SettingsTab = switch target {
+        case "mcp", "developer": .advanced
+        case "about": .about
+        default: .general
+        }
+        if model.settingsTab != tab { model.settingsTab = tab }
         DispatchQueue.main.async {
             proxy.scrollTo(target, anchor: .top)
             model.settingsScrollTarget = nil
@@ -37,7 +59,6 @@ struct SettingsView: View {
 
     private var general: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "General"))
             Card {
                 SettingsRow(title: String(localized: "Start at login"),
                             caption: AppIdentity.isLiveTest
@@ -114,7 +135,7 @@ struct SettingsView: View {
 
     private var developer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "Developer"))
+            SectionTitle(title: String(localized: "Command line and developer tools"))
             Card {
                 SettingsRow(title: String(localized: "Command-line tool"),
                             caption: commandLineToolCaption) {
@@ -216,7 +237,6 @@ struct SettingsView: View {
 
     private var about: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "About"))
             Card {
                 SettingsRow(title: AppIdentity.displayName,
                             caption: String(localized: "Scoped Calendar and Reminders access for tools on your Mac.")) {
@@ -305,7 +325,7 @@ struct SettingsNotice: View {
 }
 
 /// The one warning for an app outside Applications (Settings ▸ General,
-/// Settings ▸ MCP Server, Connect), with the fix.
+/// Settings ▸ Advanced, Connect), with the fix.
 struct NotInApplicationsNotice: View {
     let model: BridgeAppModel
     /// Inside a card row: the row's own padding.
@@ -325,16 +345,16 @@ struct NotInApplicationsNotice: View {
     }
 }
 
-/// Settings ▸ MCP Server (§13.4), with the Ask before changes defaults.
+/// Settings ▸ Advanced ▸ Local MCP server (§13.4).
 struct MCPServerSettings: View {
     let model: BridgeAppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "MCP Server"))
+            SectionTitle(title: String(localized: "Local MCP server"))
             Card {
                 SettingsRow(title: String(localized: "Local MCP server"),
-                            caption: String(localized: "On while \(AppIdentity.displayName) is on. Turn it off only if no agent on this Mac should connect.")) {
+                            caption: String(localized: "On while \(AppIdentity.displayName) is on. Each agent still needs a connection with access.")) {
                     Toggle(String(localized: "Local MCP server"),
                            isOn: Binding(get: { model.localMCPAllowed }, set: { model.setLocalMCPAllowed($0) }))
                         .toggleStyle(.switch)
@@ -384,31 +404,6 @@ struct MCPServerSettings: View {
                     }
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(String(localized: "Ask before changes")).font(.headline)
-                Text(String(localized: "Each connection can be changed on its page. Reads never ask."))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 6)
-            Card {
-                SettingsRow(title: String(localized: "New AI agent connections")) {
-                    approvalPicker(.agent)
-                }
-                RowDivider()
-                SettingsRow(title: String(localized: "New command-line connections")) {
-                    approvalPicker(.cli)
-                }
-                RowDivider()
-                SettingsRow(title: String(localized: "Set every existing connection to one mode.")) {
-                    Menu(String(localized: "Apply to All Connections…")) {
-                        Button(String(localized: "Ask me first")) { model.applyApprovalToAll(.ask) }
-                        Button(String(localized: "Allow without asking")) { model.applyApprovalToAll(.allow) }
-                    }
-                    .fixedSize()
-                    .disabled(model.activeClients.isEmpty)
-                }
-            }
         }
     }
 
@@ -446,6 +441,42 @@ struct MCPServerSettings: View {
             }
         }
     }
+
+}
+
+/// Settings ▸ General ▸ Ask before changes: the presets for new connections.
+struct ApprovalDefaults: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(String(localized: "Ask before changes")).font(.headline)
+                Text(String(localized: "Each connection can be changed on its page. Reads never ask."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Card {
+                SettingsRow(title: String(localized: "New AI agent connections")) {
+                    approvalPicker(.agent)
+                }
+                RowDivider()
+                SettingsRow(title: String(localized: "New command-line connections")) {
+                    approvalPicker(.cli)
+                }
+                RowDivider()
+                SettingsRow(title: String(localized: "Set every existing connection to one mode.")) {
+                    Menu(String(localized: "Apply to All Connections…")) {
+                        Button(String(localized: "Ask me first")) { model.applyApprovalToAll(.ask) }
+                        Button(String(localized: "Allow without asking")) { model.applyApprovalToAll(.allow) }
+                    }
+                    .fixedSize()
+                    .disabled(model.activeClients.isEmpty)
+                }
+            }
+        }
+    }
+
 
     private func approvalPicker(_ kind: ClientKind) -> some View {
         Picker(kind == .cli ? String(localized: "New command-line connections") : String(localized: "New AI agent connections"),

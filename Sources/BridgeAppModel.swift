@@ -95,6 +95,9 @@ enum ClientKind: String, CaseIterable, Identifiable {
 /// The client page's Connect tabs.
 enum ConnectTab: Hashable { case agent, cli }
 
+/// Settings' tabs (B11).
+enum SettingsTab: Hashable, CaseIterable { case general, advanced, about }
+
 /// A connection page's tabs (B08).
 enum ClientTab: Hashable, CaseIterable { case access, connect, activity }
 
@@ -251,8 +254,9 @@ final class BridgeAppModel {
     var accessFocus: GrantKey?
     /// The scroll target inside the client pane ("access" after creating a client).
     var clientScrollTarget: String?
-    /// The scroll target inside Settings ("mcp" or "remote").
+    /// The scroll target inside Settings: "mcp" and "developer" (Advanced), "about".
     var settingsScrollTarget: String?
+    var settingsTab = SettingsTab.general
     var accessTab = [String: ClientResource]()
     /// The tab each connection page shows, this session (B08).
     var clientTab = [String: ClientTab]()

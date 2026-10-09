@@ -153,7 +153,7 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 
 ## Live MCP matrix
 
-**Status: partly run.** A first check with four agents is recorded below; the list itself hasn't been worked through. These are the manual checks for each release, on the development Mac with a signed, installed build, an app-created empty test calendar and list (Settings ▸ Developer), a disposable client, and the user present to approve writes. Record results here with the same redaction rules as above: no titles, IDs, tokens or raw logs.
+**Status: partly run.** A first check with four agents is recorded below; the list itself hasn't been worked through. These are the manual checks for each release, on the development Mac with a signed, installed build, an app-created empty test calendar and list (Settings ▸ Advanced), a disposable client, and the user present to approve writes. Record results here with the same redaction rules as above: no titles, IDs, tokens or raw logs.
 
 - [ ] MCP Inspector (`npx @modelcontextprotocol/inspector`, Streamable HTTP with the `Authorization` header): list tools, call each read tool, check how errors render.
 - [ ] MCP conformance suite, if one covers servers for 2025-11-25 or 2026-07-28 at release time, against `build/mcp-server-test`.
@@ -206,7 +206,7 @@ This covers part of the four agents' rows above (not the token reset, grant remo
 | `conflict`, `item_unavailable`, or `occurrence_conflict` | Read the item again and use its current ID, version, due instant, and fingerprint. Provider sync can change them. |
 | `idempotency_pending_review`, `completion_readback_uncertain`, `journal_clock_rollback`, or timeout after a write | Stop automatic retries. Inspect the exact item and journal state locally with appropriate authorization; reconcile whether the write happened before sending any new key. Never delete the journal merely to clear a failure. |
 | Recurring completion is `recurrence_shape_unsupported` | Check the [exact supported shape](API.md#reminder-schedules) and whether a verified local source pin exists. The repository default intentionally disables this path. Do not clear a real item's recurrence to bypass the guard. |
-| An AI agent can't connect, or its calls fail | Run `bridge-mcp check --client <client ID>` with the launcher path from Settings ▸ MCP Server; it reports the token file, server, token, visible tools and bridge state without printing the token. See [MCP troubleshooting](MCP.md#troubleshooting) for each message. |
+| An AI agent can't connect, or its calls fail | Run `bridge-mcp check --client <client ID>` with the launcher path from Settings ▸ Advanced; it reports the token file, server, token, visible tools and bridge state without printing the token. See [MCP troubleshooting](MCP.md#troubleshooting) for each message. |
 | A cloud agent can't connect | Click **Test** on the Remote Access page; it says whether the tunnel, DNS or `Host` is the problem. See [MCP troubleshooting](MCP.md#troubleshooting) for the remote messages. Check Activity with the **Remote Access** filter: a refused request with a cloud icon reached the app. |
 | The window behaves oddly | Use the installed build; `MainWindowController` keeps the window across close and reopen, and `sh ui_test.sh` covers close/reopen with sheets in isolation. If a new crash appears, compare the crash report's executable UUID with the installed binary before attributing a fixture crash to the installed app. Avoid publishing raw crash reports containing local paths. |
 
