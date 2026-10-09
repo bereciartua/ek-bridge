@@ -1480,6 +1480,20 @@ final class BehaviorReview {
             self.model.tunnelChoice = .tailscaleFunnel
             return choosing && self.model.remoteGuideStep == .done
         }
+        step("guide: picking the default tunnel and Back redraw the page") {
+            // The page only redraws for observed changes: the default tunnel
+            // and Back used to change only UserDefaults.
+            final class Count: @unchecked Sendable { var value = 0 }
+            let changes = Count()
+            let observe = {
+                withObservationTracking { _ = self.model.remoteGuideStep } onChange: { changes.value += 1 }
+            }
+            observe()
+            self.model.chooseTunnelAgain()
+            observe()
+            self.model.tunnelChoice = .tailscaleFunnel
+            return changes.value == 2
+        }
         step("guide advances on address save") {
             self.model.remoteEditingAddress = true
             guard self.model.remoteGuideStep == .pasteAddress,
