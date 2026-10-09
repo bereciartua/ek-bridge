@@ -6,6 +6,31 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
+Remote Access can now switch tunnels properly and checks whether your tunnel is running on this Mac. **Switch Tunnel…** sets up and tests a new tunnel while the one in use keeps working, lists by name which cloud agents need the new URL and which signed-in cloud apps get disconnected, and saves nothing until you click **Switch**; EK Bridge remembers each tunnel's last address for switching back. The checks are read-only and local (the `tailscale` CLI's status, cloudflared's and ngrok's local status endpoints): they let the guide move on by itself once the tunnel runs, show the Tunnel row's state, and warn with **Down** in the sidebar when the tunnel stops; a notification for that is optional and off by default. **Address ▸ Edit…** now tests the new address before saving it. Agents need no changes; cloud agents need the new URL only when you switch tunnels or change the address, as before. The client registry stays at **version 4**, and the new settings (`RemoteTunnelAddresses`, `NotifyTunnelDown`) are ignored by 0.10.x, so going back to 0.10.3 works by installing its DMG over this one.
+
+### Added
+
+- **Remote Access checks whether your tunnel is running on this Mac.** For Tailscale Funnel it reads `tailscale status --json` and `tailscale funnel status --json`; for Cloudflare Tunnel and quick tunnels, cloudflared's local status server on `127.0.0.1:20241–20245`; for ngrok, its agent API on `127.0.0.1:4040`; and, when those are off, this user's process list. The checks are read-only: they never start, stop or change a tunnel, send nothing off the Mac, and never change what EK Bridge accepts. They run when you open Remote Access, every 60 seconds while it's on, after the Mac wakes and before each **Test**; nothing runs while Remote Access is off.
+- **The Remote Access guide finds the tunnel for you.** On step 2 it says *Waiting for Tailscale Funnel…* and checks every 3 seconds; once the tunnel runs and forwards to the Remote Access port, it moves on to step 3 by itself with the address filled in (you still check it and save it, and it's tested). If the tunnel forwards to the wrong port or isn't public, it says how to fix it. **I've Started It** stays for Other tunnel and whenever the check can't tell. After **Back** from step 3 it shows **Continue** instead of moving on again.
+- **Cloudflare Tunnel and ngrok ask for your hostname** in step 2, and the commands and `config.yml` use it.
+- **Switch Tunnel…** on the Remote Access page: Choose · Start it · Paste and test · Switch. The tunnel in use keeps working, and nothing is saved, until you click **Switch**; **Cancel** works on every step. The new address is tested through the new tunnel first (EK Bridge answers its health check for that address only, never MCP or sign-in), the test says which tunnel answered, and the confirmation lists by name which connections need the new URL, which signed-in cloud apps will be disconnected, and the command to stop the old tunnel. Afterwards the page says *Switched to <tunnel>.*
+- **A warning when the tunnel stops.** While Remote Access is on, the sidebar's Remote Access badge shows ⚠ **Down** and the menu bar menu says *Remote Access on · tunnel down* when the check on this Mac finds the tunnel isn't running (or forwards to the wrong port, or isn't public). An optional notification, *Tailscale Funnel stopped. Cloud agents can't reach this Mac.*, is off by default (Settings ▸ General ▸ Notifications ▸ **The Remote Access tunnel stopped**); it's posted once when a running tunnel stops, at most every 30 minutes, never at launch and never while Remote Access is off.
+- **EK Bridge remembers each tunnel's last address**, shown as *Last used* when you switch and filled in when you switch back.
+
+- **Live-test copy: Remote Access automation and quick tunnels for maintainers** ([details](docs/TESTING.md#live-test-copy)). EK Bridge Test's automation can turn Remote Access on, set the address, run Test and drive the guide, and `sh scripts/live_test.sh quicktunnel start|stop|stop-all|status` runs Cloudflare quick tunnels to the test copy's remote port only (never another port, never with `~/.cloudflared`). Nothing changes in the released app.
+
+### Fixed
+
+- Choosing another tunnel on a set-up Remote Access page went straight back to the tunnel in use, without showing its steps (the old **Tunnel ▸ Change**). **Switch Tunnel…** replaces it.
+- Cloudflare Tunnel's commands and `config.yml` in the Remote Access guide used the host of the address already in use (for example a Tailscale `…ts.net` name). They now use the hostname you type in step 2.
+
+### Changed
+
+- **Address ▸ Edit…** tests the new address through the tunnel before saving it (Paste and test · Save), with the same confirmation as Switch Tunnel…. Before, it saved first.
+- **The Remote Access page's Tunnel row** moves up under Status and says whether the tunnel is running on this Mac: *Running · on this Mac · forwards to 47616*, *Not running* with the command to start it (with Copy), *Wrong port*, *Not public* (Tailscale Serve without Funnel), *Not installed* with where to get it, or *Can't check on this Mac*. It names the tunnel that answered the last test, then what the address looks like, then the tunnel you picked, so it can't disagree with the address. When a test fails and the check explains why, the Status row says so (*Tailscale Funnel isn't running on this Mac.*). Its button is now **Switch Tunnel…**.
+
 ## [0.10.3] - 2026-10-09
 
 A small fix release for the Remote Access guide. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.2 works by installing its DMG over this one.

@@ -121,7 +121,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.mcpShouldRun, !self.model.mcpIsListening else { return }
+                guard let self else { return }
+                // Is the tunnel still up after sleep? (plan 08 §5.4)
+                self.model.checkTunnelNow()
+                guard self.model.mcpShouldRun, !self.model.mcpIsListening else { return }
                 self.model.retryMCPServer()
             }
         }
@@ -270,7 +273,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             agentSetup: Self.agentSetup,
             itemLookup: { [weak self] ref in self.map { ItemLookup.snapshot(ref, store: $0.store) } },
             showItem: { ItemLookup.show($0) },
-            notifications: notificationPoster.controls)
+            notifications: notificationPoster.controls,
+            tunnels: .live)
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {

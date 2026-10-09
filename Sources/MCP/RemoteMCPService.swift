@@ -10,11 +10,23 @@ struct RemoteConfiguration: Equatable {
 
     var secretPrefix: String { "/r/" + secret }
 
+    /// While Switch Tunnel… or Address ▸ Edit… tests a new address (plan 08
+    /// T05): accepted for the health check only, never for MCP or OAuth, and
+    /// never saved. Nil otherwise.
+    var candidateOrigin: String? = nil
+
     /// Hosts a tunnel may present: the public hostname (Tailscale Funnel keeps
     /// it), or this port on loopback (tunnels that rewrite Host).
     var allowedHosts: Set<String> {
-        var hosts: Set<String> = ["127.0.0.1:\(port)", "localhost:\(port)"]
-        if let url = publicOrigin.flatMap(URL.init(string:)), let host = url.host?.lowercased() {
+        Set(["127.0.0.1:\(port)", "localhost:\(port)"]).union(Self.hosts(publicOrigin))
+    }
+
+    /// The candidate's Host values, with the same port rules.
+    var candidateHosts: Set<String> { Self.hosts(candidateOrigin) }
+
+    private static func hosts(_ origin: String?) -> Set<String> {
+        var hosts = Set<String>()
+        if let url = origin.flatMap(URL.init(string:)), let host = url.host?.lowercased() {
             if let port = url.port {
                 hosts.insert(host + ":\(port)")
                 if port == 443 { hosts.insert(host) }
@@ -100,7 +112,9 @@ enum RemoteHTTPGate {
             return .respond(notFound(), close: false)
         }
         let host = (request.header("host") ?? "").lowercased()
-        guard configuration.allowedHosts.contains(host) else {
+        // A candidate address being tested gets the health check and nothing else.
+        guard configuration.allowedHosts.contains(host)
+                || (route == "health" && configuration.candidateHosts.contains(host)) else {
             return .respond(HTTPResponse(status: 421), close: true)
         }
         let address = forwardedAddress(request)

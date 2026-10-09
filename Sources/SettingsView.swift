@@ -468,6 +468,9 @@ struct NotificationSettings: View {
                     caption: String(localized: "When it couldn't ask for the access. At most one a connection every 10 minutes."))
                 RowDivider()
                 row(.update, String(localized: "An update is available"))
+                RowDivider()
+                row(.tunnelDown, String(localized: "The Remote Access tunnel stopped"),
+                    caption: String(localized: "While Remote Access is on, when the check on this Mac finds the tunnel isn't running. At most one every 30 minutes."))
                 if model.notificationPermission == .denied {
                     RowDivider()
                     SettingsNotice(text: String(localized: "Notifications are off for \(AppIdentity.displayName) in System Settings."),

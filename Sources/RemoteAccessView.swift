@@ -10,9 +10,10 @@ import SwiftUI
 struct RemoteAccessPage: View {
     let model: BridgeAppModel
 
-    private enum Mode { case intro, guide, setUp }
+    private enum Mode { case intro, guide, setUp, switching(TunnelSwitch) }
 
     private var mode: Mode {
+        if let change = model.tunnelSwitch { return .switching(change) }
         if model.remoteGuideActive { return .guide }
         if model.remoteOrigin != nil { return .setUp }
         return model.remoteEnabled ? .guide : .intro
@@ -21,11 +22,20 @@ struct RemoteAccessPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
                 switch mode {
-                case .intro: intro
-                case .guide: RemoteGuideView(model: model)
-                case .setUp: RemoteSetUpView(model: model)
+                case .intro:
+                    header
+                    intro
+                case .guide:
+                    header
+                    RemoteGuideView(model: model)
+                case .setUp:
+                    header
+                    RemoteSetUpView(model: model)
+                case .switching(let change):
+                    PaneTitle(title: change.kind == .editAddress ? String(localized: "Change address")
+                                                                 : String(localized: "Switch tunnel"))
+                    TunnelSwitchView(model: model, change: change)
                 }
             }
             .padding(24)
@@ -35,6 +45,8 @@ struct RemoteAccessPage: View {
         .onChange(of: model.remoteGuideStep) { _, step in
             if step == .done { model.remoteGuideActive = false }
         }
+        // Is the tunnel running on this Mac? (plan 08 §5.4)
+        .onAppear { model.checkTunnelNow() }
     }
 
     private var header: some View {
@@ -45,7 +57,7 @@ struct RemoteAccessPage: View {
                 Pill(label: String(localized: "Experimental"), tone: .warn)
                     .help(String(localized: "Not yet tested with every cloud agent and tunnel."))
                 Spacer()
-                if mode == .setUp {
+                if case .setUp = mode {
                     Toggle(String(localized: "Remote Access"),
                            isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccessEnabled($0) }))
                         .toggleStyle(.switch)
@@ -105,8 +117,7 @@ struct RemoteGuideView: View {
                 ForEach(Array(TunnelProvider.allCases.enumerated()), id: \.element) { index, provider in
                     if index > 0 { RowDivider() }
                     Button {
-                        model.tunnelChoice = provider
-                        model.remoteGuideActive = true
+                        model.guideChoose(provider)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: provider == model.tunnelChoice ? "largecircle.fill.circle" : "circle")
@@ -131,67 +142,19 @@ struct RemoteGuideView: View {
     }
 
     private var startTunnel: some View {
-        let provider = model.tunnelChoice
-        let hostname = model.remoteOrigin.flatMap(URL.init(string:))?.host
-        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        let state = model.tunnelStartState
         return VStack(alignment: .leading, spacing: 12) {
-            Card {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(provider.name).font(.headline)
-                    HStack(spacing: 4) {
-                        Text(provider.summary).foregroundStyle(.secondary)
-                        Button(String(localized: "Change tunnel")) { model.chooseTunnelAgain() }
-                            .buttonStyle(.link)
-                    }
-                    .font(.callout)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                RowDivider()
-                if !model.remoteEnabled {
-                    HStack(spacing: 12) {
-                        Text(String(localized: "First, turn on Remote Access. Port \(String(model.remotePort)) opens on this Mac for the tunnel; nothing is reachable until the tunnel runs."))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 12)
-                        Button(String(localized: "Turn On Remote Access")) { model.setRemoteAccessEnabled(true) }
-                            .buttonStyle(.borderedProminent)
-                            .fixedSize()
-                    }
-                    .padding(16)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if !commands.isEmpty {
-                            HStack(alignment: .top) {
-                                CodeBox(text: commands.joined(separator: "\n"))
-                                CopyButton(text: commands.joined(separator: "\n"), title: String(localized: "Copy"),
-                                           help: String(localized: "Copy Commands"))
-                            }
-                        }
-                        if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
-                            Text("~/.cloudflared/config.yml").font(.callout.monospaced()).foregroundStyle(.secondary)
-                            HStack(alignment: .top) {
-                                CodeBox(text: config)
-                                CopyButton(text: config, help: String(localized: "Copy config.yml"))
-                            }
-                        }
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(String(localized: "Run it in Terminal. It prints the tunnel's https address; you paste it next."))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 8)
-                            InfoButton(text: (provider.steps + provider.notes).joined(separator: "\n\n"))
-                        }
-                        .font(.callout)
-                    }
-                    .padding(16)
-                }
-            }
+            TunnelStartCard(model: model, provider: model.tunnelChoice, changeTunnel: { model.chooseTunnelAgain() })
             HStack {
                 Spacer()
                 Button(String(localized: "Back")) { model.chooseTunnelAgain() }
-                Button(String(localized: "I've Started It")) { model.remoteTunnelStarted = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.remoteEnabled)
+                if state.offersContinue {
+                    Button(String(localized: "Continue")) { model.guideContinue() }
+                        .buttonStyle(.borderedProminent)
+                } else if state.offersStarted {
+                    Button(String(localized: "I've Started It")) { model.guideContinue() }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }
@@ -200,7 +163,9 @@ struct RemoteGuideView: View {
         VStack(alignment: .leading, spacing: 12) {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
+                    Text(model.guideAddress != nil && model.guideAddress == address
+                         ? String(localized: "Filled in from the running tunnel. Check it, then save.")
+                         : String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     TextField(String(localized: "Address"), text: $address, prompt: Text("https://my-mac.tail1234.ts.net"))
@@ -215,16 +180,13 @@ struct RemoteGuideView: View {
             }
             HStack {
                 Spacer()
-                Button(String(localized: "Back")) {
-                    model.remoteTunnelStarted = false
-                    model.remoteEditingAddress = false
-                }
+                Button(String(localized: "Back")) { model.guideBackToStart() }
                 Button(String(localized: "Save Address"), action: save)
                     .buttonStyle(.borderedProminent)
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .onAppear { address = model.remoteOrigin ?? "" }
+        .onAppear { address = model.guideAddress ?? model.remoteOrigin ?? "" }
     }
 
     private func save() {
@@ -263,55 +225,146 @@ struct RemoteGuideView: View {
     }
 }
 
+/// Step 2, Start it (first setup and Switch Tunnel…): the hostname for
+/// Cloudflare Tunnel and ngrok, the commands to run, and whether the tunnel
+/// is running on this Mac yet (plan 08 §5, D8).
+struct TunnelStartCard: View {
+    let model: BridgeAppModel
+    let provider: TunnelProvider
+    /// First setup's "Change tunnel" link; the switch flow has Back instead.
+    var changeTunnel: (() -> Void)? = nil
+    var note: String? = nil
+
+    var body: some View {
+        let hostname = model.guideCommandHostname
+        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        Card {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.name).font(.headline)
+                HStack(spacing: 4) {
+                    Text(provider.summary).foregroundStyle(.secondary)
+                    if let changeTunnel {
+                        Button(String(localized: "Change tunnel"), action: changeTunnel)
+                            .buttonStyle(.link)
+                    }
+                }
+                .font(.callout)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            RowDivider()
+            if !model.remoteEnabled {
+                HStack(spacing: 12) {
+                    Text(String(localized: "First, turn on Remote Access. Port \(String(model.remotePort)) opens on this Mac for the tunnel; nothing is reachable until the tunnel runs."))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button(String(localized: "Turn On Remote Access")) { model.setRemoteAccessEnabled(true) }
+                        .buttonStyle(.borderedProminent)
+                        .fixedSize()
+                }
+                .padding(16)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    if provider.asksForHostname {
+                        HStack(spacing: 10) {
+                            Text(String(localized: "Hostname")).foregroundStyle(.secondary)
+                            TextField(String(localized: "Hostname"), text: Binding(
+                                get: { model.guideHostname }, set: { model.guideHostname = $0 }),
+                                      prompt: Text(provider.hostnamePlaceholder))
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel(String(localized: "Hostname for \(provider.name)"))
+                        }
+                        Text(provider == .ngrok
+                             ? String(localized: "Your ngrok dev domain, from the ngrok dashboard. The commands below use it.")
+                             : String(localized: "A hostname on your Cloudflare domain for this Mac. The commands below use it."))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !commands.isEmpty {
+                        HStack(alignment: .top) {
+                            CodeBox(text: commands.joined(separator: "\n"))
+                            CopyButton(text: commands.joined(separator: "\n"), title: String(localized: "Copy"),
+                                       help: String(localized: "Copy Commands"))
+                        }
+                    }
+                    if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
+                        Text("~/.cloudflared/config.yml").font(.callout.monospaced()).foregroundStyle(.secondary)
+                        HStack(alignment: .top) {
+                            CodeBox(text: config)
+                            CopyButton(text: config, help: String(localized: "Copy config.yml"))
+                        }
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text([String(localized: "Run it in Terminal. It prints the tunnel's https address; you paste it next."),
+                              note].compactMap { $0 }.joined(separator: " "))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        InfoButton(text: (provider.steps + provider.notes).joined(separator: "\n\n"))
+                    }
+                    .font(.callout)
+                }
+                .padding(16)
+                if provider != .other {
+                    RowDivider()
+                    TunnelStartStatus(model: model, provider: provider)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+}
+
+/// *Waiting for Tailscale Funnel…*, then *Running · on this Mac · forwards
+/// to 47616 · <address>*, or what's wrong.
+struct TunnelStartStatus: View {
+    let model: BridgeAppModel
+    let provider: TunnelProvider
+
+    var body: some View {
+        let state = TunnelStartState.make(remoteOn: model.remoteEnabled, provider: provider,
+                                          health: model.currentTunnelHealth)
+        VStack(alignment: .leading, spacing: 8) {
+            switch state {
+            case .turnOn:
+                EmptyView()
+            case .waiting:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(String(localized: "Waiting for \(provider.name)…")).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            case .found(let address):
+                TunnelHealthLine(health: model.currentTunnelHealth ?? .running(address: address, port: model.remotePort),
+                                 provider: provider, remotePort: model.remotePort, mcpPort: model.mcpPort,
+                                 address: address)
+                    .accessibilityElement(children: .combine)
+            case .problem(let health), .cantCheck(.some(let health)):
+                TunnelHealthLine(health: health, provider: provider, remotePort: model.remotePort,
+                                 mcpPort: model.mcpPort)
+                    .accessibilityElement(children: .combine)
+                TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
+                          hostname: model.guideCommandHostname)
+            case .cantCheck(nil):
+                EmptyView()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// ① Choose a tunnel ② Start it ③ Paste its address ④ Test.
 struct RemoteGuideHeader: View {
     let current: RemoteGuide.Step
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach([RemoteGuide.Step.chooseTunnel, .startTunnel, .pasteAddress, .test], id: \.rawValue) { step in
-                let done = step.rawValue < current.rawValue
-                let isCurrent = step == current || (current == .done && step == .test)
-                HStack(spacing: 8) {
-                    ZStack {
-                        Circle().strokeBorder(done ? Color.green : isCurrent ? Color.primary : Color.secondary,
-                                              lineWidth: 1.5)
-                        if done {
-                            Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.green)
-                        } else {
-                            Text("\(step.rawValue)").font(.caption.weight(.semibold))
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                    Text(title(step))
-                        .fontWeight(isCurrent ? .semibold : .regular)
-                        .foregroundStyle(done ? Color.green : isCurrent ? Color.primary : Color.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(String(localized: "Step \(step.rawValue), \(title(step)), \(done ? String(localized: "done") : isCurrent ? String(localized: "current") : String(localized: "not done"))"))
-                if step != .test { Divider() }
-            }
-        }
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func title(_ step: RemoteGuide.Step) -> String {
-        switch step {
-        case .chooseTunnel: String(localized: "Choose a tunnel")
-        case .startTunnel: String(localized: "Start it")
-        case .pasteAddress: String(localized: "Paste its address")
-        case .test, .done: String(localized: "Test")
-        }
+        GuideStepsHeader(titles: [String(localized: "Choose a tunnel"), String(localized: "Start it"),
+                                  String(localized: "Paste its address"), String(localized: "Test")],
+                         current: current.rawValue - 1,
+                         // Done shows every step checked, with Test highlighted.
+                         highlighted: min(current.rawValue, RemoteGuide.Step.test.rawValue) - 1)
     }
 }
 
@@ -325,6 +378,8 @@ struct RemoteSetUpView: View {
             Card {
                 statusRow
                 RowDivider()
+                tunnelRow
+                RowDivider()
                 ValueRow(label: String(localized: "Address")) {
                     if let origin = model.remoteOrigin {
                         MonoText(text: origin)
@@ -332,7 +387,8 @@ struct RemoteSetUpView: View {
                         Text("—").foregroundStyle(.tertiary)
                     }
                 } actions: {
-                    Button(String(localized: "Edit…")) { model.sheet = .remoteAddress }
+                    // The new address is tested before it's saved (plan 08 T07).
+                    Button(String(localized: "Edit…")) { model.beginEditAddress() }
                 }
                 RowDivider()
                 ValueRow(label: String(localized: "MCP URL")) {
@@ -375,13 +431,6 @@ struct RemoteSetUpView: View {
                             .fixedSize()
                     }
                 } actions: { EmptyView() }
-                RowDivider()
-                ValueRow(label: String(localized: "Tunnel")) {
-                    Text(model.tunnelChoice.name)
-                } actions: {
-                    Button(String(localized: "Change")) { model.chooseTunnelAgain() }
-                        .buttonStyle(.link)
-                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 SectionTitle(title: String(localized: "Cloud access"))
@@ -446,7 +495,9 @@ struct RemoteSetUpView: View {
                             .foregroundStyle(.secondary)
                     case .notReachable(let reason, _):
                         Pill(label: String(localized: "Not reachable"), tone: .warn, icon: true)
-                        Text(reason).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        // The check on this Mac says why, when it can (plan 08 §5.2).
+                        Text(model.remoteUnreachableReason ?? reason)
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -458,6 +509,121 @@ struct RemoteSetUpView: View {
                     .disabled(model.remoteOrigin == nil || model.remoteTest == .testing)
                     .help(String(localized: "Fetch this app's health URL through the tunnel"))
             }
+        }
+    }
+}
+
+extension RemoteSetUpView {
+    /// The tunnel in use (D4) and whether it runs on this Mac (plan 08 §5),
+    /// with the fix underneath when it doesn't.
+    @ViewBuilder fileprivate var tunnelRow: some View {
+        let provider = model.tunnelLabel
+        // Nothing is checked while Remote Access is off.
+        let health = model.remoteEnabled ? model.currentTunnelHealth : nil
+        ValueRow(label: String(localized: "Tunnel")) {
+            HStack(spacing: 10) {
+                Text(provider.name).fontWeight(.medium).fixedSize()
+                if let health {
+                    TunnelHealthLine(health: health, provider: provider, remotePort: model.remotePort,
+                                     mcpPort: model.mcpPort)
+                        .layoutPriority(1)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(TunnelHealthLine.accessibilityText(provider: provider, health: health,
+                                                                   remotePort: model.remotePort,
+                                                                   mcpPort: model.mcpPort))
+        } actions: {
+            Button(String(localized: "Switch Tunnel…")) { model.beginSwitch() }
+        }
+        if let health {
+            TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
+                      hostname: model.remoteOrigin.flatMap(URL.init(string:))?.host)
+                .padding(.leading, 104)
+                .padding(.trailing, 16)
+                .padding(.bottom, 12)
+        }
+    }
+}
+
+/// "Running · on this Mac · forwards to 47616": the pill and its text.
+struct TunnelHealthLine: View {
+    let health: TunnelHealth
+    let provider: TunnelProvider
+    let remotePort: Int
+    let mcpPort: Int
+    var address: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Pill(label: health.label, tone: Self.tone(health.tone), icon: health.tone == .ok)
+            let detail = [health.detail(provider, remotePort: remotePort, mcpPort: mcpPort), address]
+                .compactMap { $0 }.joined(separator: " · ")
+            if !detail.isEmpty {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    static func tone(_ tone: TunnelHealth.Tone) -> OutcomeTone {
+        switch tone {
+        case .ok: .ok
+        case .warn: .warn
+        case .neutral: .neutral
+        }
+    }
+
+    /// "Tailscale Funnel, Running, on this Mac · forwards to 47616".
+    static func accessibilityText(provider: TunnelProvider, health: TunnelHealth?, remotePort: Int,
+                                  mcpPort: Int) -> String {
+        guard let health else { return provider.name }
+        return ([provider.name, health.label] + [health.detail(provider, remotePort: remotePort, mcpPort: mcpPort)]
+            .compactMap { $0 }).joined(separator: ", ")
+    }
+}
+
+/// What to do about a tunnel that isn't running or is set up wrong: the
+/// command to run (with Copy) or where to get the tool. EK Bridge never
+/// runs it (D9).
+struct TunnelFix: View {
+    let health: TunnelHealth
+    let provider: TunnelProvider
+    let remotePort: Int
+    let hostname: String?
+
+    var body: some View {
+        if let fix {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(fix.intro).font(.callout).foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    CodeBox(text: fix.command)
+                    CopyButton(text: fix.command, title: String(localized: "Copy"),
+                               help: String(localized: "Copy Command"))
+                }
+            }
+        } else if case .notInstalled = health, let link = provider.installLink.flatMap(URL.init(string:)) {
+            Link(String(localized: "Download \(provider == .ngrok ? "ngrok" : "Tailscale")…"), destination: link)
+                .font(.callout)
+        }
+    }
+
+    private var fix: (intro: String, command: String)? {
+        switch health {
+        case .notRunning where health.showsStartCommand:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Start it in Terminal:"), $0) }
+        case .wrongPort:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Start it on port \(String(remotePort)) in Terminal:"), $0) }
+        case .notPublic where provider == .tailscaleFunnel:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Turn on Funnel in Terminal:"), $0) }
+        case .notInstalled where provider == .cloudflareTunnel || provider == .cloudflareQuick:
+            return (String(localized: "Install it in Terminal:"), "brew install cloudflared")
+        default:
+            return nil
         }
     }
 }
@@ -743,45 +909,6 @@ struct OAuthClientSheet: View {
             }
         }
     }
-}
-
-/// the Remote Access page ▸ Address.
-struct RemoteAddressSheet: View {
-    let model: BridgeAppModel
-    @State private var text = ""
-    @State private var submitted: String?
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "Tunnel Address")).font(.headline)
-            Text(String(localized: "The public https address your tunnel gives this Mac, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField(String(localized: "Address"), text: $text, prompt: Text("https://my-mac.tail1234.ts.net"))
-                .textFieldStyle(.roundedBorder)
-                .focused($focused)
-                .onSubmit(save)
-            if let submitted {
-                Text(submitted).font(.callout).foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button(String(localized: "Cancel")) { model.sheet = nil }.keyboardShortcut(.cancelAction)
-                Button(String(localized: "Save"), action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
-        .onAppear {
-            text = model.remoteOrigin ?? ""
-            focused = true
-        }
-    }
-
-    private func save() { submitted = model.setRemoteAddress(text) }
 }
 
 /// the Remote Access page ▸ Port.

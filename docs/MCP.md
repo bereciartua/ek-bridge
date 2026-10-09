@@ -232,34 +232,61 @@ Cloud agents reach EK Bridge through **Remote Access**: a second listener on `12
 
 #### Turn on Remote Access
 
-**Remote Access** has its own page in the sidebar, under the connections (with an **On** label while it's on). Until it's set up, the page explains what it does; **Set Up Remote Access…** starts a guide with four steps:
+**Remote Access** has its own page in the sidebar, under the connections (with an **On** label while it's on with an address, and ⚠ **Down** while the tunnel in use isn't running). Until it's set up, the page explains what it does; **Set Up Remote Access…** starts a guide with four steps:
 
 1. **Choose a tunnel:** Tailscale Funnel (recommended), Cloudflare Tunnel, ngrok, a Cloudflare quick tunnel (testing only) or another tunnel, each with one line on what it needs. The choice is remembered.
-2. **Start it:** **Turn On Remote Access** (it's off by default, and turning it on asks first). The app then listens on `127.0.0.1:47616`, only while Remote Access is on, and creates the URL's secret path the first time. Then the tunnel's command to copy and run in Terminal; its steps and notes are behind the ⓘ button. The app never runs a tunnel itself. Click **I've Started It**.
-3. **Paste its address:** the tunnel's public `https://` address, without a path, and **Save Address**.
+2. **Start it:** **Turn On Remote Access** (it's off by default, and turning it on asks first). The app then listens on `127.0.0.1:47616`, only while Remote Access is on, and creates the URL's secret path the first time. Cloudflare Tunnel and ngrok first ask for your **Hostname**; the commands and `config.yml` use it. Then the tunnel's command to copy and run in Terminal; its steps and notes are behind the ⓘ button. The app never runs a tunnel itself. Below the commands, the step says *Waiting for <tunnel>…* and [checks on this Mac](#is-the-tunnel-running-checks-on-this-mac) every 3 seconds; once the tunnel runs and forwards to the Remote Access port, it says *Running · on this Mac · forwards to 47616 · <address>* and moves on by itself with the address filled in. If the tunnel forwards to another port or isn't public, it stays and shows the fix. For Other tunnel, or when the check can't tell, click **I've Started It**. After **Back** from step 3 it shows **Continue** instead of moving on again.
+3. **Paste its address:** the tunnel's public `https://` address, without a path (filled in when step 2 found it), and **Save Address**.
 4. **Test:** runs by itself and fetches this app's health URL through the tunnel. **Reachable** finishes the guide; **Not reachable** shows why, with **Try Again** and **Back**.
 
 Once it's set up, the page shows the **Remote Access** switch at the top, then these rows. Remote Access is independent of the local MCP server; the two listeners are separate.
 
 | Row | What it shows or does |
 | --- | --- |
-| **Status** | **Not tested**, **Reachable** (when it was tested, the round trip, and the tunnel it detected) or **Not reachable** with the reason; **Off** while Remote Access is off. **Test** fetches this app's health URL through the tunnel. If the port is in use: **Couldn't start**, with **Choose Another Port…**. |
-| **Address** | The tunnel's public address: `https://`, a host name and an optional port, with no path (**Edit…**). |
+| **Status** | **Not tested**, **Reachable** (when it was tested, the round trip, and the tunnel it detected) or **Not reachable** with the reason (*Tailscale Funnel isn't running on this Mac.* when the check on this Mac explains it); **Off** while Remote Access is off. **Test** fetches this app's health URL through the tunnel. If the port is in use: **Couldn't start**, with **Choose Another Port…**. |
+| **Tunnel** | The tunnel in use: the one that answered the last test, else what the address looks like (`.ts.net`, `.trycloudflare.com`, an ngrok domain), else the one you chose, so it can't disagree with the address. Next to it, whether it runs on this Mac: **Running** (*on this Mac · forwards to 47616*), **Not running** (with the command to start it and Copy), **Wrong port** (*Forwards to 47615, the local MCP port. Use 47616.*), **Not public** (Tailscale Serve without Funnel), **Not installed** (with where to get it) or **Can't check on this Mac**. Nothing shows while Remote Access is off. **Switch Tunnel…** (below). |
+| **Address** | The tunnel's public address: `https://`, a host name and an optional port, with no path. **Edit…** tests a new address through the tunnel before saving it (below). |
 | **MCP URL** | `https://<host>/r/<secret>/mcp`, with a copy button and **Reset Path…**. |
 | **Port** | 47616 by default. **Change…** accepts 1024–65535 except the MCP server's port, and checks that the port is free. Point the tunnel at the new port afterwards. |
 | **Turn off** | **Turn off automatically**: Never (the default), After 1 hour, After 8 hours or After 1 day, counted from when you turn Remote Access on or change this choice, with the time it will turn off. |
 | **Keep this Mac awake while on power** | Off by default. Prevents idle sleep while Remote Access is on and the Mac runs on power. Closing the lid still sleeps the Mac unless an external display is attached. |
-| **Tunnel** | The tunnel you chose, with **Change** (the guide again). |
 
 Below the rows, the page lists the connections with cloud access, each linking to its Connect tab.
 
+#### Switch Tunnel… and Edit…
+
+One tunnel is in use at a time. **Switch Tunnel…** moves Remote Access to another one in four steps, titled **Switch tunnel**, with a banner on each: *Cloud agents keep using <address in use> until you switch.* and **Cancel**. The tunnel in use keeps working, and nothing is saved, until **Switch**; **Cancel**, quitting the app or turning Remote Access off leaves the address, the MCP URL, the tunnel and connected cloud apps as they were.
+
+1. **Choose:** the tunnel list. The one in use is marked **In use** and can't be picked (a new address for it is **Edit…**). A tunnel used before shows *Last used: <address>*: EK Bridge remembers each tunnel's last address.
+2. **Start it:** as in the first setup, with the hostname pre-filled from the remembered address, and a note that both tunnels can run at the same time.
+3. **Paste and test:** the address, filled in from the running tunnel, else the remembered one. **Test** goes through the new tunnel to this app's health URL; while a switch is testing, the server also accepts the new address's host for the health check only (never for MCP or sign-in), so this works for Tailscale Funnel too. It shows *Reachable through <tunnel> · <ms>* and *Nothing is saved yet*, and says so if a different tunnel answered than the one you picked (with **Continue as <tunnel>**).
+4. **Switch…:** a confirmation: the new MCP URL; **Update the URL in** each connection with cloud access and a remote token, by name; **Disconnected; connect again** for each signed-in cloud app, by name (their sign-ins are bound to the old URL); and *Then you can stop <old tunnel>* with its off command and Copy, when it has one. With no cloud connections it says *No cloud agents use the current URL yet.* **Switch** saves the address and the tunnel, disconnects the old sign-ins, and the page says *Switched to <tunnel>.*
+
+**Address ▸ Edit…** is the same flow for the tunnel in use at a new address (a renamed tailnet, a new quick-tunnel address): **Change address**, with **Paste and test** and **Save**.
+
+#### Is the tunnel running? (checks on this Mac)
+
+Knowing the tunnel lets EK Bridge ask that tool, on this Mac, whether it runs, where it forwards and what its address is. The checks are read-only and local: they never start, stop or change a tunnel, send nothing off the Mac, and never change what the server accepts (another program could answer on these ports, so the result is display only).
+
+| Tunnel | What EK Bridge reads |
+| --- | --- |
+| Tailscale Funnel | `tailscale status --json` and `tailscale funnel status --json`, run from Tailscale.app's built-in CLI (else Homebrew's), with fixed arguments and a 2-second timeout. Only the entry for the Remote Access port is shown; other Serve or Funnel entries aren't. |
+| Cloudflare Tunnel and quick tunnels | cloudflared's local status server on `127.0.0.1:20241–20245` (`/ready`, `/quicktunnel`, `/config`), and for a named tunnel the `ingress` rules of `~/.cloudflared/config.yml` (or the `--config` it was started with). |
+| ngrok | Its agent API on `127.0.0.1:4040` (then 4041, 4042): `/api/tunnels`. |
+| Fallback | When those are off: this user's running `cloudflared` or `ngrok` processes and their arguments. |
+| Other tunnel | Nothing; the reachability test is the only check. |
+
+They run when you open Remote Access, every 3 seconds while step 2 waits, every 60 seconds while Remote Access is on, after the Mac wakes and before each **Test**. Nothing runs while Remote Access is off.
+
+When Remote Access is on but the tunnel in use isn't running (or forwards to the wrong port, or isn't public), the sidebar's Remote Access label shows ⚠ **Down** and the menu bar menu says *Remote Access on · tunnel down*. **Settings ▸ General ▸ Notifications ▸ The Remote Access tunnel stopped** (off by default) adds a notification, *Tailscale Funnel stopped. Cloud agents can't reach this Mac.*, once when a running tunnel stops, at most every 30 minutes, never at launch or while Remote Access is off. Clicking it opens Remote Access.
+
 The secret path is 22 random characters (128 bits). Every route on the Remote Access port contains it: the MCP endpoint and OAuth live under `/r/<secret>`, and the OAuth discovery documents end with it (`/.well-known/…/r/<secret>…`). Any other path gets 404 before a credential is even read. It's defense in depth, not the credential: tunnel host names appear in public certificate logs and get scanned. **Reset Path…** makes a new one after a confirmation. Every cloud agent then needs the new URL, and connected cloud apps are disconnected, because their sign-ins are bound to the old URL. Changing the **Address** disconnects them too.
 
-While Remote Access is on, the menu bar icon shows a small globe, and the menu shows **Remote Access on · N cloud connections** (opens the Remote Access page) and **Turn Off Remote Access**. Overview adds a line such as *Remote Access · Reachable · my-mac.tail1234.ts.net*.
+While Remote Access is on, the menu bar icon shows a small globe, and the menu shows **Remote Access on · N cloud connections** (or **Remote Access on · tunnel down**; opens the Remote Access page) and **Turn Off Remote Access**. Overview adds a line such as *Remote Access · Reachable · my-mac.tail1234.ts.net*.
 
 #### Set up a tunnel
 
-The tunnel must point at `http://127.0.0.1:47616`, the Remote Access port. Never point it at 47615: the local port refuses tunneled requests, and local tokens don't work remotely anyway. Choose the provider in the Remote Access guide; the commands there use your port and address.
+The tunnel must point at `http://127.0.0.1:47616`, the Remote Access port. Never point it at 47615: the local port refuses tunneled requests, and local tokens don't work remotely anyway. Choose the provider in the Remote Access guide; the commands there use your port and the hostname you type.
 
 | Tunnel | Commands | Notes |
 | --- | --- | --- |
@@ -447,7 +474,7 @@ For cloud agents, start with **Test** on the Remote Access page. It shows why th
 | Symptom or message | What to do |
 | --- | --- |
 | "The tunnel sent a different host name" (HTTP 421) | The tunnel's `Host` matches neither **Address** nor `127.0.0.1:<port>`. Tailscale Funnel keeps the public host name, so **Address** must be exactly the address Funnel printed. For other tunnels, set them to rewrite `Host` (the commands in Settings do), or add their public host name under **Address**. |
-| "The address doesn't resolve yet" | A new Tailscale Funnel address can take about 10 minutes to appear in public DNS. Test again later. |
+| "The address doesn't resolve yet" | A new address can take a few minutes to appear in public DNS (about 10 for Tailscale Funnel). If you tested it before the tunnel was up, macOS may remember the failed lookup for a few minutes. Test again later. |
 | "No answer within 10 seconds", "The tunnel refused the connection" | The tunnel isn't running, or the Mac's side of it is down. Start it again with the commands in Settings. |
 | "Something answered at that address, but not EK Bridge" | The tunnel points at another port, or another service answers at that address. Point it at the Remote Access port (47616 unless you changed it). |
 | "The tunnel's HTTPS certificate wasn't accepted" | Check the address. For Tailscale Funnel, HTTPS certificates must be turned on in the admin console. |
@@ -640,7 +667,7 @@ Checks run in this order: the path must be under `/r/<secret>` (404 for anything
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `/r/<secret>/mcp` | POST | MCP |
-| `/r/<secret>/health?nonce=<nonce>` | GET | Settings' **Test**. Answers `{"ok":true,"nonce","headers","tunnel"}` (the tunnel headers that arrived, by name, and the tunnel they suggest) only for a nonce the app issued in the last 30 seconds, once; 404 otherwise |
+| `/r/<secret>/health?nonce=<nonce>` | GET | The page's **Test**, and step 3 of Switch Tunnel… or Edit…. Answers `{"ok":true,"nonce","headers","tunnel"}` (the tunnel headers that arrived, by name, and the tunnel they suggest) only for a nonce the app issued in the last 30 seconds, once; 404 otherwise |
 | `/.well-known/oauth-protected-resource/r/<secret>/mcp` | GET | Protected resource metadata (RFC 9728) |
 | `/.well-known/oauth-authorization-server/r/<secret>`, also `/.well-known/openid-configuration/r/<secret>` and `/r/<secret>/.well-known/openid-configuration` | GET | Authorization server metadata (RFC 8414) |
 | `/r/<secret>/oauth/authorize` | GET | The browser's sign-in page |
@@ -654,7 +681,7 @@ The discovery documents put the resource or issuer path after the well-known nam
 | Situation | Status | Body |
 | --- | --- | --- |
 | Path isn't under `/r/<secret>`, or isn't a route above | 404 | text |
-| `Host` isn't the **Address** host (also with `:443`, or with the address's port if it has one), `127.0.0.1:<port>` or `localhost:<port>` | 421 | none, connection closed |
+| `Host` isn't the **Address** host (also with `:443`, or with the address's port if it has one), `127.0.0.1:<port>` or `localhost:<port>` | 421 | none, connection closed. Exception: while Switch Tunnel… or Edit… tests a new address, its host (same port rules) passes for `/r/<secret>/health` only; MCP, OAuth and the discovery documents with that host are still 421. The candidate is kept in memory only and cleared on Switch, Cancel, quit and when Remote Access turns off. |
 | `Origin` present on `/mcp` | 403 | `-32600`, no `id` |
 | Wrong method on `/mcp` or an OAuth route | 405 | none, `Allow` |
 | No credential; a local token; a token the app didn't issue or that expired; an OAuth token for another URL; a client without cloud access | 401 | `-32001`, `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/r/<secret>/mcp", scope="calendar"` (before **Address** is set: `Bearer realm="EK Bridge"`) |

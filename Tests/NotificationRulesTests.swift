@@ -8,6 +8,8 @@ struct NotificationRulesTests {
         let on: Set<NotificationKind> = [.declined, .update]
         // Defaults (D6): declined and update on, refused off.
         precondition(NotificationKind.allCases.filter(\.isOnByDefault) == [.declined, .update])
+        precondition(NotificationKind.tunnelDown.defaultsKey == "NotifyTunnelDown" && !NotificationKind.tunnelDown.isOnByDefault,
+                     "tunnel down is off by default")
         precondition(NotificationKind.refused.defaultsKey == "NotifyRefused")
         let post = { (kind: NotificationKind, enabled: Set<NotificationKind>, showing: Bool, last: Date?) in
             NotificationRules.shouldPost(kind, enabled: enabled, windowShowsIt: showing, lastPosted: last, now: now)
@@ -42,10 +44,26 @@ struct NotificationRulesTests {
                      == "A can't complete reminders in a list.")
         let update = NotificationRules.update(version: "0.10.1")
         precondition(update.body == "\(AppIdentity.displayName) 0.10.1 is available." && update.identifier == "update-0.10.1")
+        // Tunnel down (plan 08, D10): once per running → down change, only while on, at most every 30 minutes.
+        let down = { (was: Bool?, now_: Bool, on: Bool, last: Date?) in
+            NotificationRules.shouldPostTunnelDown(wasDown: was, isDown: now_, remoteOn: on, lastPosted: last, now: now)
+        }
+        precondition(down(false, true, true, nil), "running → down")
+        precondition(!down(nil, true, true, nil), "not on launch (or turning on) when already down")
+        precondition(!down(true, true, true, nil), "only on the change")
+        precondition(!down(false, false, true, nil), "still running")
+        precondition(!down(false, true, false, nil), "not while Remote Access is off")
+        precondition(!down(false, true, true, now.addingTimeInterval(-1_799)), "at most every 30 minutes")
+        precondition(down(false, true, true, now.addingTimeInterval(-1_800)), "…then again")
+        precondition(down(false, true, true, now.addingTimeInterval(60)), "a clock that went back")
+        let tunnel = NotificationRules.tunnelDown(tunnelName: "Tailscale Funnel")
+        precondition(tunnel.title == "Tunnel down" && tunnel.body == "Tailscale Funnel stopped. Cloud agents can't reach this Mac."
+                     && tunnel.kind == .tunnelDown && tunnel.identifier == "tunnel-down" && tunnel.info.isEmpty)
+        precondition(!post(.tunnelDown, [], false, nil) && post(.tunnelDown, [.tunnelDown], false, nil), "the switch")
         // Never a key or a token in what's passed to macOS.
         for note in [declined, refused, update] {
             precondition(!(note.body + note.title + note.info.values.joined()).contains("ekb_"))
         }
-        print("Notification rules: defaults, the switch, window focus, one refusal per connection every 10 minutes, texts passed")
+        print("Notification rules: defaults, the switch, window focus, one refusal per connection every 10 minutes, tunnel down, texts passed")
     }
 }

@@ -8,16 +8,19 @@ enum NotificationKind: String, CaseIterable {
     case refused
     /// An update is available. On by default.
     case update
+    /// Remote Access is on but its tunnel stopped (plan 08, D10). Off by default.
+    case tunnelDown
 
     var defaultsKey: String {
         switch self {
         case .declined: "NotifyDeclined"
         case .refused: "NotifyRefused"
         case .update: "NotifyUpdate"
+        case .tunnelDown: "NotifyTunnelDown"
         }
     }
 
-    var isOnByDefault: Bool { self != .refused }
+    var isOnByDefault: Bool { self != .refused && self != .tunnelDown }
 
     /// The `UNNotificationCategory` identifier.
     var category: String { "ekb.\(self.rawValue)" }
@@ -104,6 +107,26 @@ enum NotificationRules {
         info[AppNotification.targetIDKey] = targetID
         return AppNotification(kind: .refused, title: String(localized: "An agent was refused"),
                                body: String(localized: "\(clientName) can't \(phrase)."), info: info)
+    }
+
+    /// At most one "tunnel down" notification in this time.
+    static let tunnelDownInterval: TimeInterval = 30 * 60
+
+    /// Once per running → down change of the tunnel in use, while Remote
+    /// Access is on: never for the first check after launch or after turning
+    /// it on (`wasDown` nil), and at most once every 30 minutes.
+    static func shouldPostTunnelDown(wasDown: Bool?, isDown: Bool, remoteOn: Bool, lastPosted: Date?,
+                                     now: Date) -> Bool {
+        guard remoteOn, isDown, wasDown == false else { return false }
+        if let lastPosted, now >= lastPosted, now.timeIntervalSince(lastPosted) < tunnelDownInterval { return false }
+        return true
+    }
+
+    /// "Tailscale Funnel stopped. Cloud agents can't reach this Mac."
+    static func tunnelDown(tunnelName: String) -> AppNotification {
+        AppNotification(kind: .tunnelDown, title: String(localized: "Tunnel down"),
+                        body: String(localized: "\(tunnelName) stopped. Cloud agents can't reach this Mac."),
+                        identifier: "tunnel-down")
     }
 
     /// "EK Bridge 0.10.1 is available."

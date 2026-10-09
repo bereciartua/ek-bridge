@@ -1,0 +1,19 @@
+{
+  "TCP": {
+    "8443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "my-mac.tail1234.ts.net:8443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://localhost:47616/"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "my-mac.tail1234.ts.net:8443": true
+  }
+}

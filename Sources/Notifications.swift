@@ -43,6 +43,9 @@ final class NotificationPoster: NSObject, UNUserNotificationCenterDelegate {
                                    intentIdentifiers: []),
             UNNotificationCategory(identifier: NotificationKind.update.category, actions: [install],
                                    intentIdentifiers: []),
+            // A click opens Remote Access.
+            UNNotificationCategory(identifier: NotificationKind.tunnelDown.category, actions: [],
+                                   intentIdentifiers: []),
         ])
     }
 

@@ -63,6 +63,20 @@ final class UIReview {
     var mcpMode: String
     /// What the fake Remote Access test answers.
     var remoteReachable = true
+    /// What the fake tunnel checks on this Mac answer, per tunnel (plan 08).
+    /// Other tunnel can't be checked.
+    var tunnelHealth: [TunnelProvider: TunnelHealth] = UIReview.defaultTunnelHealth
+    static let quickTunnelOrigin = "https://quiet-river-1234.trycloudflare.com"
+    static let defaultTunnelHealth: [TunnelProvider: TunnelHealth] = [
+        .tailscaleFunnel: .running(address: remoteOrigin, port: 47616),
+        .cloudflareQuick: .running(address: quickTunnelOrigin, port: 47616),
+        .cloudflareTunnel: .notRunning(reason: .noTunnel),
+        .ngrok: .notInstalled,
+    ]
+    /// Checks the fake ran, for the behavior test.
+    var tunnelChecks = 0
+    /// The tunnel the fake test says answered, instead of the address's.
+    var testTunnel: String?
     /// Calls to the fake MCP server, for the behavior test.
     var mcpStarts = 0
     var mcpStops = 0
@@ -194,9 +208,12 @@ final class UIReview {
                 },
                 update: { _ in },
                 stop: {},
-                test: { [unowned self] _, completion in
+                test: { [unowned self] configuration, completion in
+                    // The tunnel that "answers": what the address looks like (plan 08).
+                    let tunnel = self.testTunnel ?? TunnelProvider.detect(address: configuration.publicOrigin)?.name
+                        ?? "Tailscale Funnel"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        completion(self.remoteReachable ? .success((rtt: 0.18, tunnel: "Tailscale Funnel"))
+                        completion(self.remoteReachable ? .success((rtt: 0.18, tunnel: tunnel))
                             : .failure(RemoteTestFailure(reason: "The tunnel answered with HTTP 502. Check that it's running and points at port 47616.")))
                     }
                 },
@@ -231,7 +248,11 @@ final class UIReview {
                         done(self.notificationPermission == .allowed)
                     }
                 },
-                openSettings: {}))
+                openSettings: {}),
+            tunnels: TunnelChecks { [unowned self] provider, _, done in
+                self.tunnelChecks += 1
+                DispatchQueue.main.async { done(self.tunnelHealth[provider] ?? .unknown) }
+            })
     }
 
     /// The fake notification center (C05): what was posted, and what macOS allows.
@@ -373,6 +394,57 @@ final class UIReview {
                 .init(name: "code_challenge_method", value: "S256")]
             let authorize = Self.request("GET", context.secretPrefix + "/oauth/authorize?" + (query.query ?? ""))
             _ = self.oauth.handle(authorize, context: context) { _ in }
+        }
+    }
+
+    /// A signed-in cloud app for `clientID`, the whole way claude.ai would
+    /// connect: register, authorize, Allow, then the code for tokens. Bound
+    /// to the model's current MCP URL (plan 08: Switch disconnects it).
+    func connectCloudApp(for clientID: String) {
+        guard let context = model?.remoteConfiguration.oauthContext else { return }
+        oauth.openPairing(clientID: clientID)
+        let callback = "https://claude.ai/api/mcp/auth_callback"
+        let registration = try! JSONSerialization.data(withJSONObject: [
+            "redirect_uris": [callback], "client_name": "claude.ai"])
+        let register = Self.request("POST", context.secretPrefix + "/oauth/register", body: registration,
+                                    contentType: "application/json")
+        _ = oauth.handle(register, context: context) { [weak self] response in
+            guard let self,
+                  let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                  let appID = object["client_id"] as? String else { return }
+            var query = URLComponents()
+            query.queryItems = [
+                .init(name: "response_type", value: "code"), .init(name: "client_id", value: appID),
+                .init(name: "redirect_uri", value: callback), .init(name: "state", value: "review"),
+                // S256 of the verifier below, 64 "v"s.
+                .init(name: "code_challenge", value: "w1TpKUdYE9hUAcNSeeSRFioHDxfUxuHho_JHAfZ_vDM"),
+                .init(name: "code_challenge_method", value: "S256"), .init(name: "resource", value: context.resource)]
+            let authorize = Self.request("GET", context.secretPrefix + "/oauth/authorize?" + (query.query ?? ""))
+            _ = self.oauth.handle(authorize, context: context) { page in
+                let html = String(decoding: page.body, as: UTF8.self)
+                guard let start = html.range(of: "data-request=\""),
+                      let end = html[start.upperBound...].firstIndex(of: "\""),
+                      let pairing = self.oauth.pendingPairings.first(where: { $0.clientID == clientID }) else { return }
+                let requestID = String(html[start.upperBound..<end])
+                self.oauth.answerPairing(pairing.id, allow: true)
+                // Answered here, not in the pairing sheet the app opened for it.
+                if case .pairing? = self.model?.sheet { self.model?.sheet = nil }
+                let status = Self.request("GET", context.secretPrefix + "/oauth/authorize/status?request=" + requestID)
+                _ = self.oauth.handle(status, context: context) { answer in
+                    guard let object = try? JSONSerialization.jsonObject(with: answer.body) as? [String: Any],
+                          let redirect = (object["redirect"] as? String).flatMap(URLComponents.init(string:)),
+                          let code = redirect.queryItems?.first(where: { $0.name == "code" })?.value else { return }
+                    var form = URLComponents()
+                    form.queryItems = [
+                        .init(name: "grant_type", value: "authorization_code"), .init(name: "code", value: code),
+                        .init(name: "client_id", value: appID), .init(name: "redirect_uri", value: callback),
+                        .init(name: "code_verifier", value: String(repeating: "v", count: 64))]
+                    let token = Self.request("POST", context.secretPrefix + "/oauth/token",
+                                             body: Data((form.percentEncodedQuery ?? "").utf8),
+                                             contentType: "application/x-www-form-urlencoded")
+                    _ = self.oauth.handle(token, context: context) { _ in self.model?.refresh() }
+                }
+            }
         }
     }
 
@@ -1505,6 +1577,257 @@ final class BehaviorReview {
         step("the test makes it done") {
             self.model.remoteGuideStep == .done
         }
+        // Plan 08 T04: step 2 waits for the tunnel on this Mac, then moves on.
+        var guideReview: UIReview!
+        var guideModel: BridgeAppModel!
+        let quick = UIReview.quickTunnelOrigin
+        step("guide step 2 waits for the tunnel") {
+            let (fresh, model, _) = self.review.makeFreshEnvironment(calendar: .fullAccess, reminders: .fullAccess)
+            guideReview = fresh
+            guideModel = model
+            fresh.tunnelHealth[.cloudflareQuick] = .notRunning(reason: .noTunnel)
+            model.applyRemoteEnabled(true)
+            model.guideChoose(.cloudflareQuick)
+            return model.remoteGuideStep == .startTunnel
+        }
+        step("…and says so") {
+            guideModel.tunnelStartState == .waiting && guideModel.remoteGuideStep == .startTunnel
+                && !guideModel.tunnelStartState.offersStarted
+        }
+        step("found: it moves on by itself") {
+            guideReview.tunnelHealth[.cloudflareQuick] = .running(address: quick, port: 47616)
+            guideModel.checkTunnel()
+            return true
+        }
+        step("…to step 3 with the address filled in") {
+            guideModel.remoteGuideStep == .pasteAddress && guideModel.guideAddress == quick
+        }
+        step("Back from step 3 shows Continue, without bouncing forward") {
+            guideModel.guideBackToStart()
+            guideModel.checkTunnel()
+            return true
+        }
+        step("…still on step 2") {
+            guideModel.remoteGuideStep == .startTunnel && guideModel.tunnelStartState.offersContinue
+        }
+        step("Continue goes to step 3") {
+            guideModel.guideContinue()
+            return guideModel.remoteGuideStep == .pasteAddress && guideModel.guideAddress == quick
+        }
+        step("Other tunnel keeps I've Started It") {
+            guideModel.chooseTunnelAgain()
+            guideModel.guideChoose(.other)
+            return guideModel.tunnelStartState.offersStarted
+        }
+        step("Cloudflare Tunnel's commands use the hostname typed, never the address in use") {
+            // The main window has an address saved (other-mac.tail1234.ts.net).
+            self.model.guideChoose(.cloudflareTunnel)
+            let placeholder = TunnelProvider.cloudflareTunnel.commands(port: self.model.remotePort,
+                                                                       hostname: self.model.guideCommandHostname)
+            self.model.guideHostname = "https://mcp.example.com/"
+            let typed = TunnelProvider.cloudflareTunnel.commands(port: self.model.remotePort,
+                                                                 hostname: self.model.guideCommandHostname)
+            self.model.guideChoose(.tailscaleFunnel)
+            self.model.remoteGuideActive = false
+            return !placeholder.joined().contains("other-mac") && placeholder.contains("cloudflared tunnel route dns ek-bridge mcp.example.com")
+                && typed.contains("cloudflared tunnel route dns ek-bridge mcp.example.com")
+                && self.model.guideHostname.isEmpty
+        }
+        // Plan 08 T06: Switch Tunnel…, with fake checks and a fake test.
+        struct Before: Equatable {
+            let origin: String?, url: String?, label: TunnelProvider, choice: TunnelProvider, apps: Int
+        }
+        var before: Before!
+        func now() -> Before {
+            Before(origin: self.model.remoteOrigin, url: self.model.remoteMCPURL, label: self.model.tunnelLabel,
+                   choice: self.model.tunnelChoice, apps: self.model.oauthConnections(claude).count)
+        }
+        func unchanged() -> Bool {
+            now() == before && self.model.remoteCandidate == nil && self.model.tunnelSwitch == nil
+        }
+        let oldQuick = "https://old-name-1.trycloudflare.com"
+        step("switch: a cloud agent with a remote token and a signed-in app") {
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            if self.model.client(claude)?.cloudAccess != true { self.model.setCloudAccess(claude, true) }
+            _ = self.review.registry.issueRemoteToken(clientID: claude)
+            self.model.refresh()
+            self.review.connectCloudApp(for: claude)
+            self.model.rememberAddressForReview(.cloudflareQuick, oldQuick)
+            return self.model.client(claude)?.hasRemoteToken == true
+        }
+        step("switch: begins at Choose; the tunnel in use can't be picked") {
+            before = now()
+            final class Count: @unchecked Sendable { var value = 0 }
+            let changes = Count()
+            withObservationTracking { _ = self.model.tunnelSwitch } onChange: { changes.value += 1 }
+            self.model.beginSwitch()
+            guard let change = self.model.tunnelSwitch else { return false }
+            return changes.value == 1 && before.apps == 1 && change.step == .choose
+                && !change.canChoose(.tailscaleFunnel) && change.canChoose(.cloudflareQuick)
+                && self.model.rememberedAddresses[.cloudflareQuick] == oldQuick && self.model.route == .remoteAccess
+        }
+        step("switch: Cancel at Choose changes nothing") {
+            self.model.cancelSwitch()
+            return unchanged()
+        }
+        step("switch: picking a running tunnel moves on with its address") {
+            self.model.beginSwitch()
+            self.model.switchChoose(.cloudflareQuick)
+            return self.model.tunnelSwitch?.step == .start
+        }
+        step("…Paste and test, filled in from the running tunnel") {
+            let change = self.model.tunnelSwitch
+            return change?.step == .test && change?.address == quick && change?.addressSource == .runningTunnel
+                && self.model.remoteOrigin == before.origin
+        }
+        step("switch: Cancel at Start it changes nothing") {
+            self.model.switchBack()
+            guard self.model.tunnelSwitch?.step == .start, self.model.tunnelStartState.offersContinue else { return false }
+            self.model.cancelSwitch()
+            return unchanged()
+        }
+        step("switch: Test sets the candidate and saves nothing") {
+            self.model.beginSwitch()
+            self.model.switchChoose(.cloudflareQuick)
+            self.model.checkTunnel { _ in self.model.switchTest() }
+            return true
+        }
+        step("…reachable through the quick tunnel") {
+            guard case .reachable(quick, _, .cloudflareQuick)? = self.model.tunnelSwitch?.test else { return false }
+            return self.model.remoteCandidate == quick && self.model.remoteOrigin == before.origin
+                && self.model.tunnelSwitch?.canConfirm(normalized: quick) == true
+        }
+        step("switch: Cancel at Paste and test clears the candidate") {
+            self.model.cancelSwitch()
+            return unchanged()
+        }
+        step("switch: the confirmation names who's affected") {
+            self.model.beginSwitch()
+            self.model.switchChoose(.cloudflareQuick)
+            self.model.checkTunnel { _ in self.model.switchTest() }
+            return true
+        }
+        step("…Update the URL in, Disconnected, then stop Tailscale Funnel") {
+            self.model.switchConfirm()
+            guard self.model.sheet == .tunnelSwitch, let summary = self.model.tunnelSwitchSummary else { return false }
+            // Earlier steps renamed Claude Code; the list uses its name now.
+            return summary.updateURLIn == [self.model.clientName(claude)] && summary.disconnected == ["claude.ai"]
+                && summary.stopCommands == ["tailscale funnel --bg 47616 off"]
+                && summary.mcpURL == quick + "/r/••••••/mcp"
+        }
+        step("switch: Cancel in the confirmation goes back to Paste and test") {
+            self.model.switchBack()
+            return self.model.sheet == nil && self.model.tunnelSwitch?.step == .test && now() == before
+        }
+        step("switch: Switch saves the address, tunnel and remembered address") {
+            self.model.switchConfirm()
+            self.model.switchCommit()
+            return self.model.remoteOrigin == quick && self.model.tunnelChoice == .cloudflareQuick
+                && self.model.tunnelLabel == .cloudflareQuick && self.model.rememberedAddresses[.cloudflareQuick] == quick
+                && self.model.rememberedAddresses[.tailscaleFunnel] == before.origin
+                && self.model.banner?.title == "Switched to Cloudflare quick tunnel."
+                && self.model.oauthConnections(claude).isEmpty && self.model.remoteCandidate == nil
+                && self.model.tunnelSwitch == nil && self.model.remoteMCPURL?.hasPrefix(quick + "/r/") == true
+        }
+        step("switch: back to Tailscale Funnel pre-fills its remembered address") {
+            self.review.tunnelHealth[.tailscaleFunnel] = .notRunning(reason: .noTunnel)
+            self.model.beginSwitch()
+            self.model.switchChoose(.tailscaleFunnel)
+            return self.model.tunnelSwitch?.canChoose(.cloudflareQuick) == false
+        }
+        step("…Waiting, then Continue fills in the remembered address") {
+            guard self.model.tunnelStartState == .waiting else { return false }
+            self.model.switchContinue()
+            return self.model.tunnelSwitch?.address == before.origin && self.model.tunnelSwitch?.addressSource == .remembered
+        }
+        step("switch: turning Remote Access off mid-switch changes nothing") {
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            before = now()
+            self.model.switchTest()
+            self.model.applyRemoteEnabled(false)
+            let kept = self.model.remoteCandidate == nil && self.model.tunnelSwitch?.test == .notTested
+            self.model.cancelSwitch()
+            self.model.applyRemoteEnabled(true)
+            return kept && unchanged()
+        }
+        // Plan 08 T07: Address ▸ Edit… goes through the same test.
+        let renamed = "https://new-name-77.trycloudflare.com"
+        step("Edit… opens Paste and test for the tunnel in use") {
+            before = now()
+            self.model.beginEditAddress()
+            guard let change = self.model.tunnelSwitch else { return false }
+            return change.kind == .editAddress && change.step == .test && change.address == before.origin
+                && change.steps.map(change.title) == ["Paste and test", "Save"] && change.picked == before.label
+        }
+        step("Edit… ▸ Cancel changes nothing") {
+            self.model.setSwitchAddress(renamed)
+            self.model.cancelSwitch()
+            return unchanged()
+        }
+        step("Edit… ▸ a new address, tested") {
+            self.model.beginEditAddress()
+            self.model.setSwitchAddress(renamed)
+            self.model.switchTest()
+            return self.model.remoteCandidate == renamed && self.model.remoteOrigin == before.origin
+        }
+        step("…then Save updates it") {
+            guard case .reachable? = self.model.tunnelSwitch?.test else { return false }
+            self.model.switchConfirm()
+            guard self.model.sheet == .tunnelSwitch, self.model.tunnelSwitchSummary?.stopTunnel == nil else { return false }
+            self.model.switchCommit()
+            return self.model.remoteOrigin == renamed && self.model.tunnelLabel == before.label
+                && self.model.banner?.title == "The Remote Access address changed."
+                && self.model.rememberedAddresses[before.label] == renamed && self.model.remoteCandidate == nil
+        }
+        // Plan 08 T08: tunnel down in the sidebar, the menu and a notification (off by default).
+        var postedBefore = 0
+        step("tunnel down: On while the tunnel runs") {
+            self.model.navigate(to: .overview)
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel()
+            return !self.model.notificationKinds.contains(.tunnelDown)
+        }
+        step("…badge On, menu without tunnel down") {
+            !self.model.tunnelDown && self.model.remoteActive && !self.model.remoteMenuLine.contains("tunnel down")
+        }
+        step("tunnel down: the tunnel stops, with the notification turned on") {
+            self.model.setNotification(.tunnelDown, true)
+            postedBefore = self.review.posted.count
+            self.review.tunnelHealth[self.model.tunnelLabel] = .notRunning(reason: .noTunnel)
+            self.model.checkTunnel()
+            return true
+        }
+        step("…Down, tunnel down in the menu, one notification") {
+            let note = self.review.posted.last
+            return self.model.tunnelDown && self.model.remoteMenuLine == "Remote Access on · tunnel down"
+                && self.review.posted.count == postedBefore + 1 && note?.kind == .tunnelDown
+                && note?.body == "\(self.model.tunnelLabel.name) stopped. Cloud agents can't reach this Mac."
+        }
+        step("tunnel down: still down posts nothing more") {
+            self.model.checkTunnel()
+            return true
+        }
+        step("…still one") { self.review.posted.count == postedBefore + 1 }
+        step("tunnel down: back up, then down again within 30 minutes posts nothing") {
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel { _ in
+                self.review.tunnelHealth[self.model.tunnelLabel] = .wrongPort(port: 47615, address: nil)
+                self.model.checkTunnel()
+            }
+            return true
+        }
+        step("…Down again, no second notification") {
+            self.model.tunnelDown && self.review.posted.count == postedBefore + 1
+        }
+        step("tunnel down: never while Remote Access is off") {
+            self.model.applyRemoteEnabled(false)
+            let off = !self.model.tunnelDown
+            self.model.applyRemoteEnabled(true)
+            self.model.setNotification(.tunnelDown, false)
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel()
+            return off
+        }
         step("turning off from the page") {
             self.model.setRemoteAccessEnabled(false)
             return !self.model.remoteEnabled && self.model.remoteStatus == .off
@@ -2230,6 +2553,9 @@ final class SnapshotReview {
             // Remote Access (B10): the page before setup, the guide, then set up.
             step("remote-not-set-up") {
                 self.review.approvals.withdrawAll()
+                // The dark pass starts where the light one did, not set up.
+                self.model.resetRemoteAccessForReview()
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
                 self.model.navigate(to: .remoteAccess)
                 return main
             }
@@ -2237,16 +2563,32 @@ final class SnapshotReview {
                 self.model.remoteGuideActive = true
                 return main
             }
-            step("remote-guide-2") {
-                self.model.tunnelChoice = .tailscaleFunnel
+            step("remote-guide-2-waiting") {
+                // Plan 08 T04: step 2 waits for the tunnel on this Mac.
+                self.review.tunnelHealth[.tailscaleFunnel] = .notRunning(reason: .noTunnel)
+                self.model.guideChoose(.tailscaleFunnel)
                 self.model.applyRemoteEnabled(true)
+                self.model.checkTunnel()
+                return main
+            }
+            step("remote-guide-2-hostname") {
+                self.model.guideChoose(.cloudflareTunnel)
+                self.model.guideHostname = "mcp.example.com"
                 return main
             }
             step("remote-guide-3") {
-                self.model.remoteTunnelStarted = true
+                // Found: step 2 moved on by itself, with the address filled in.
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
+                self.model.guideChoose(.tailscaleFunnel)
+                return main
+            }
+            step("remote-guide-2-found") {
+                // Back from step 3: the found state with Continue, no bounce.
+                self.model.guideBackToStart()
                 return main
             }
             step("remote-guide-4-failed") {
+                self.model.guideContinue()
                 self.review.remoteReachable = false
                 _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
                 self.model.testRemoteAccess()
@@ -2257,7 +2599,99 @@ final class SnapshotReview {
                 self.model.testRemoteAccess()
                 return main
             }
+            // Plan 08: the Tunnel row's states, from the checks on this Mac.
+            step("remote-tunnel-down") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .notRunning(reason: .noTunnel)
+                self.review.remoteReachable = false
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-wrong-port") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .wrongPort(port: 47615, address: UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-not-public") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .notPublic(address: UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-cant-check") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .unknown
+                self.review.remoteReachable = true
+                self.model.testRemoteAccess()
+                return main
+            }
+            // Plan 08 T06: Switch Tunnel… from Tailscale Funnel to a quick tunnel.
+            step("remote-switch-1-choose") {
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
+                self.review.remoteReachable = true
+                if self.model.client(UIReview.claudeID)?.cloudAccess != true {
+                    self.model.setCloudAccess(UIReview.claudeID, true)
+                }
+                _ = self.review.registry.issueRemoteToken(clientID: UIReview.claudeID)
+                if self.model.oauthConnections(UIReview.claudeID).isEmpty {
+                    self.review.connectCloudApp(for: UIReview.claudeID)
+                }
+                self.model.rememberAddressForReview(.cloudflareTunnel, "https://mcp.example.com")
+                self.model.testRemoteAccess()
+                self.model.beginSwitch()
+                return main
+            }
+            step("remote-switch-2-start") {
+                // Found at once, so it moved on; Back shows step 2 with Continue (mockup 03).
+                self.model.switchChoose(.cloudflareQuick)
+                self.model.checkTunnel { _ in self.model.switchBack() }
+                return main
+            }
+            step("remote-switch-3-test") {
+                self.model.switchContinue()
+                self.model.switchTest()
+                return main
+            }
+            step("remote-switch-3-other-tunnel") {
+                self.review.testTunnel = "Tailscale Funnel"
+                self.model.switchTest()
+                return main
+            }
+            step("remote-switch-4-confirm") {
+                // Reachable (through another tunnel, which doesn't change the lists).
+                self.review.testTunnel = nil
+                self.model.switchConfirm()
+                return main
+            }
+            step("remote-switched") {
+                self.model.switchCommit()
+                return main
+            }
+            step("remote-switch-4-no-cloud") {
+                // Back to Tailscale Funnel (its address remembered), with no cloud agents.
+                if self.model.client(UIReview.claudeID)?.hasRemoteToken == true {
+                    _ = self.review.registry.removeRemoteToken(clientID: UIReview.claudeID)
+                    self.model.refresh()
+                }
+                self.model.beginSwitch()
+                self.model.switchChoose(.tailscaleFunnel)
+                self.model.checkTunnel { _ in
+                    self.model.switchTest()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.model.switchConfirm() }
+                }
+                return main
+            }
+            // Plan 08 T07: Address ▸ Edit… tests the new address before saving it.
+            step("remote-edit-address") {
+                if self.model.tunnelSwitch?.confirming == true { self.model.switchCommit() }
+                self.model.beginEditAddress()
+                self.model.setSwitchAddress("https://my-mac-2.tail1234.ts.net")
+                self.model.switchTest()
+                return main
+            }
             step("client-cloud") {
+                // Back to Tailscale Funnel and a running tunnel for the steps that follow.
+                if self.model.tunnelSwitch?.confirming == true { self.model.switchCommit() }
+                self.model.cancelSwitch()
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
+                self.model.testRemoteAccess()
                 if self.model.client(UIReview.claudeID)?.cloudAccess != true {
                     self.model.setCloudAccess(UIReview.claudeID, true)
                 }
@@ -2517,7 +2951,8 @@ final class SnapshotReview {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }
         }
         guard let main = controller.window else { return nil }
-        return name.hasPrefix("sheet") || name.hasPrefix("new-client-sheet") ? (main.attachedSheet ?? main) : main
+        return name.hasPrefix("sheet") || name.hasPrefix("new-client-sheet") || name.hasPrefix("remote-switch-4")
+            ? (main.attachedSheet ?? main) : main
     }
 
     private func capture(_ window: NSWindow, name: String) {

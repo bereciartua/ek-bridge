@@ -1,0 +1,29 @@
+{
+  "tunnels": [
+    {
+      "name": "wiki",
+      "ID": "0000000000000000000000000000000a",
+      "uri": "/api/tunnels/wiki",
+      "public_url": "https://wiki-example.ngrok-free.app",
+      "proto": "https",
+      "config": {
+        "addr": "http://localhost:8080",
+        "inspect": true
+      },
+      "metrics": {}
+    },
+    {
+      "name": "command_line",
+      "ID": "0000000000000000000000000000000b",
+      "uri": "/api/tunnels/command_line",
+      "public_url": "https://my-mac-example.ngrok-free.app",
+      "proto": "https",
+      "config": {
+        "addr": "http://localhost:47616",
+        "inspect": true
+      },
+      "metrics": {}
+    }
+  ],
+  "uri": "/api/tunnels"
+}

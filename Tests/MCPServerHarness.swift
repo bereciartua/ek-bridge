@@ -495,6 +495,12 @@ final class Harness {
                                                       publicOrigin: "https://remote.test", port: 0)
             remote.start(remoteConfiguration)
             return ["ok": true]
+        case "remote_candidate":
+            // Switch Tunnel…'s test of a new address (plan 08 T05): applied without a restart.
+            if case .listening(let port) = remote.status { remoteConfiguration.port = port }
+            remoteConfiguration.candidateOrigin = command["origin"] as? String
+            remote.update(remoteConfiguration)
+            return ["ok": true]
         case "remote_port":
             if case .listening(let port) = remote.status { return ["port": port] }
             return ["port": NSNull()]
