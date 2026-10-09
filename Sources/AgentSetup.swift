@@ -50,6 +50,46 @@ struct SetupSnippet {
     var extraSnippets: [(title: String, kind: Kind, text: String)] = []
 }
 
+/// What Add to <Agent>… does (B07): merge an entry into a JSON config file,
+/// or run the agent's own command. Never contains a token: entries start
+/// the launcher, which reads the token file.
+enum OneClickSetup: Equatable {
+    /// `file` in tilde form; the entry goes under `root` ▸ `key`.
+    case jsonMerge(file: String, root: String, key: String, entry: SetupJSON)
+    /// `claude` with these arguments (an argument array, never a shell string).
+    case claudeCode(key: String, arguments: [String])
+}
+
+extension AgentKind {
+    /// Agents with one-click setup. Others keep Copy (C07 adds more).
+    var oneClick: Bool { [.claudeDesktop, .cursor, .claudeCode].contains(self) }
+
+    /// The one-click setup for the recommended method, matching its snippet.
+    func oneClickSetup(_ c: SetupContext) -> OneClickSetup? {
+        let stdio: [(String, SetupJSON)] = [
+            ("command", .string(c.launcherPath)), ("args", .strings(["--client", c.clientID])),
+        ]
+        switch self {
+        case .claudeDesktop:
+            return .jsonMerge(file: "~/Library/Application Support/Claude/claude_desktop_config.json",
+                              root: "mcpServers", key: c.serverKey, entry: .object(stdio))
+        case .cursor:
+            return .jsonMerge(file: "~/.cursor/mcp.json", root: "mcpServers", key: c.serverKey,
+                              entry: .object([("type", .string("stdio"))] + stdio))
+        case .claudeCode:
+            let helper = "\(ConnectCommand.shellQuoted(c.launcherPath)) headers --client "
+                + "\(SetupShell.word(c.clientID)) --url \(SetupShell.word(c.url))"
+            let json = SetupJSON.object([
+                ("type", .string("http")), ("url", .string(c.url)), ("headersHelper", .string(helper)),
+            ]).text
+            return .claudeCode(key: c.serverKey,
+                               arguments: ["mcp", "add-json", "--scope", "user", c.serverKey, json])
+        default:
+            return nil
+        }
+    }
+}
+
 enum AgentSetup {
     static let tokenEnvironmentVariable = "EK_BRIDGE_TOKEN"
 
@@ -1004,7 +1044,8 @@ private enum SetupValues {
 
 /// Compact JSON with a fixed key order, so snippets match the goldens byte for byte.
 /// Strings go through JSONSerialization; only the punctuation is assembled here.
-private indirect enum SetupJSON {
+/// Also used by one-click setup (`AgentConfigWriter`).
+indirect enum SetupJSON: Equatable {
     case string(String), number(Int), bool(Bool), array([SetupJSON]), object([(String, SetupJSON)])
 
     static func strings(_ values: [String]) -> SetupJSON { .array(values.map { .string($0) }) }
@@ -1023,6 +1064,28 @@ private indirect enum SetupJSON {
                 .joined(separator: ",") + "}"
         }
     }
+
+    /// Pretty text: `unit` per level, starting at `level` (the first line isn't indented).
+    func pretty(unit: String, level: Int) -> String {
+        let inner = String(repeating: unit, count: level + 1)
+        let outer = String(repeating: unit, count: level)
+        switch self {
+        case .array(let items) where !items.isEmpty:
+            // Short arrays of plain values stay on one line, as editors write them.
+            if items.allSatisfy({ if case .array = $0 { false } else if case .object = $0 { false } else { true } }) {
+                return "[" + items.map(\.text).joined(separator: ", ") + "]"
+            }
+            return "[\n" + items.map { inner + $0.pretty(unit: unit, level: level + 1) }
+                .joined(separator: ",\n") + "\n" + outer + "]"
+        case .object(let pairs) where !pairs.isEmpty:
+            return "{\n" + pairs.map { inner + SetupJSON.string($0.0).text + ": " + $0.1.pretty(unit: unit, level: level + 1) }
+                .joined(separator: ",\n") + "\n" + outer + "}"
+        default:
+            return text
+        }
+    }
+
+    static func == (lhs: SetupJSON, rhs: SetupJSON) -> Bool { lhs.text == rhs.text }
 }
 
 private enum SetupTOML {

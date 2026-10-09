@@ -254,7 +254,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 onACPower: { KeepAwake.onACPower },
                 oauth: oauth),
             updater: updater.controls,
-            installedAgents: { [weak self] in self?.installedAgents.current() ?? [] })
+            installedAgents: { [weak self] in self?.installedAgents.current() ?? [] },
+            agentSetup: Self.agentSetup)
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {
@@ -281,6 +282,29 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     }
 
     private static var installedLocation: Bool { AppMover.location == .applications }
+
+    /// One-click setup. The live-test copy writes only into a scratch home
+    /// (EKB_AGENT_HOME) and runs Claude Code only with its own config folder
+    /// (CLAUDE_CONFIG_DIR), so a live test can never change the owner's agents.
+    private static var agentSetup: AgentSetupControls {
+        #if EVENTKIT_LIVE_TEST
+        let environment = ProcessInfo.processInfo.environment
+        guard let home = environment["EKB_AGENT_HOME"], home.hasPrefix("/"), home != NSHomeDirectory() else {
+            return .refusing(String(localized: "The test copy sets agents up only in a scratch home (EKB_AGENT_HOME)."))
+        }
+        let live = OneClickAgents.live(home: home)
+        return AgentSetupControls(
+            preview: { agent, context, done in
+                guard agent != .claudeCode || environment["CLAUDE_CONFIG_DIR"]?.hasPrefix("/") == true else {
+                    return done(.failure(OneClickFailure(message: "The test copy runs Claude Code only with CLAUDE_CONFIG_DIR set.")))
+                }
+                live.preview(agent, context, done)
+            },
+            apply: live.apply, restart: { _, done in done(false) })
+        #else
+        return OneClickAgents.live()
+        #endif
+    }
 
     private var quitGate: UpdateRelaunchGate?
 

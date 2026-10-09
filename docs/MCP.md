@@ -43,6 +43,17 @@ Each change takes effect on the next request.
 
 ### Set up your agent
 
+#### One click: Claude Desktop, Cursor and Claude Code
+
+For these three, the connection's **Connect** tab has **Add to Claude Desktop…** (or Cursor, or Claude Code). It never writes anything until you click **Add** in the preview, and never writes the token: the entry starts EK Bridge's launcher, which reads the token file.
+
+- **Claude Desktop and Cursor:** EK Bridge reads `~/Library/Application Support/Claude/claude_desktop_config.json` or `~/.cursor/mcp.json` and shows the exact change (the file, a summary such as *Adds “ek-bridge” to mcpServers*, and the lines it adds or replaces). **Add** re-reads the file (if it changed since the preview, nothing is written), saves a copy next to it as `<file>.ekbridge-backup-<date>-<time>` (mode 0600), and writes the new file in one step, keeping its permissions. Every other server and setting stays as it was, and so does the file's layout: the entry is inserted as text, matching the file's indentation, instead of rewriting the file. A missing file (and folder) is created; an entry that's already there and identical is left alone (*Already set up*); a different `ek-bridge` entry is replaced. A file that isn't valid JSON, isn't an object, or is over 1 MB isn't touched: the sheet says why and offers **Copy the Setup Instead**. A symbolic link (dotfiles) is followed, so the link stays. Afterwards, Claude Desktop needs a restart: **Restart Claude Desktop** quits it and opens it again (or says to do it by hand if it doesn't quit within 5 seconds).
+- **Claude Code:** EK Bridge finds `claude` (in `~/.claude/local`, `~/.local/bin`, Homebrew, `/usr/local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, or through your login shell) and shows the command it will run: the same `claude mcp add-json --scope user ek-bridge …` as below, run with an argument list, never through a shell. If Claude Code already has an `ek-bridge` server, the sheet asks to **Replace** it (`claude mcp remove --scope user ek-bridge` first). The output is shown. Claude Code connects the next time it starts (or run `/mcp`).
+
+**Copy the setup instead** and **Advanced options** show the copyable setups below and the other methods.
+
+#### Copy the setup
+
 The Connect ▸ AI agent tab generates these for the connection and your installed app; copy them from there rather than from this page. The examples below use the app at `/Applications/EKBridge.app`, client ID `3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c`, port 47615 and home folder `/Users/you`. They're the test goldens in `Tests/agent-setup/`.
 
 There are two methods:

@@ -58,7 +58,7 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
 2. **Open the app.** It opens on a short setup checklist; later, you'll find it in the menu bar. First, allow Calendar and/or Reminders access; you need only the one your agent uses.
 3. **Add your agent.** Click **Add a Connection…**, pick your agent's tile and its starting access (for example **Read all calendars and lists**), then **Add and Connect**. Grant Read only where the agent needs it: what it reads goes to its AI provider.
 4. **Turn on EK Bridge** from the checklist. The MCP server follows it.
-5. **Copy the setup.** On the connection's **Connect** tab, pick your agent and copy the command or config into it. The status changes to **Connected** when the agent's first request arrives.
+5. **Connect it.** On the connection's **Connect** tab, click **Add to Claude Desktop…** (or Cursor, or Claude Code): EK Bridge shows the exact change, keeps a backup and never writes the token. For other agents, copy the command or config. The status changes to **Connected** when the agent's first request arrives.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect-agent-dark.png">

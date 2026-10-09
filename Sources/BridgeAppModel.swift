@@ -57,6 +57,8 @@ enum ModelSheet: Identifiable, Equatable {
     case remoteAddress
     case pairing(UUID)
     case oauthClient
+    /// Add to <Agent>…: the preview, then the result (B07).
+    case configPreview
 
     var id: String {
         switch self {
@@ -69,6 +71,7 @@ enum ModelSheet: Identifiable, Equatable {
         case .remoteAddress: "remote-address"
         case .pairing(let id): "pairing-\(id)"
         case .oauthClient: "oauth-client"
+        case .configPreview: "config-preview"
         }
     }
 }
@@ -176,6 +179,23 @@ struct BridgeServices {
     /// Agents found on this Mac (B04). The live version answers from a cache
     /// refreshed in the background; the UI-review build returns fixed ones.
     var installedAgents: () -> Set<AgentKind> = { [] }
+    /// Add to <Agent>…: preview, apply, restart (B07).
+    var agentSetup: AgentSetupControls = .unavailable
+}
+
+/// One Add to <Agent>… from click to result.
+struct OneClickSession: Equatable {
+    enum Phase: Equatable {
+        case loading
+        case preview(OneClickPreview)
+        case running(OneClickPreview)
+        case done(OneClickResult)
+        case failed(OneClickFailure)
+    }
+
+    let clientID: String
+    let agent: AgentKind
+    var phase: Phase
 }
 
 /// The single source of truth for every surface: menu bar, main window and
@@ -210,6 +230,7 @@ final class BridgeAppModel {
     var sheet: ModelSheet? {
         didSet {
             // A pairing request that arrived while another sheet was open is shown once it closes.
+            if oldValue == .configPreview, sheet != .configPreview { oneClick = nil }
             if sheet == nil, oldValue != nil {
                 DispatchQueue.main.async { [weak self] in self?.presentNextPairing() }
             }
@@ -295,6 +316,14 @@ final class BridgeAppModel {
     private(set) var connectionAgents = [String: AgentKind]()
     /// Agents found on this Mac, for the Add a Connection sheet and setup.
     private(set) var installedAgents = Set<AgentKind>()
+    /// The Add to <Agent>… in progress, shown in the config preview sheet.
+    private(set) var oneClick: OneClickSession?
+    /// Finished one-click setups this session, keyed "clientID|agent".
+    private(set) var oneClickDone = [String: OneClickResult]()
+    /// Connections whose Connect tab shows the setup to copy instead of the one-click card.
+    var copySetup = Set<String>()
+    /// Restart <Agent> running for this agent.
+    private(set) var restarting: AgentKind?
     /// Keyed by "clientID|agent".
     var methodChoice = [String: SetupMethod]()
 
@@ -548,6 +577,84 @@ final class BridgeAppModel {
         guard kept != connectionAgents else { return }
         connectionAgents = kept
         ConnectionAgentKinds.save(kept, services.defaults)
+    }
+
+    // MARK: One-click setup (B07)
+
+    /// What a connection's agent setup points at: this app's launcher and token file.
+    func setupContext(_ clientID: String) -> SetupContext {
+        SetupContext(url: mcpURL, launcherPath: launcherPath, clientID: clientID,
+                     tokenPath: tokenFileURL(clientID)?.path ?? "")
+    }
+
+    func oneClickResult(_ clientID: String, _ agent: AgentKind) -> OneClickResult? {
+        oneClickDone["\(clientID)|\(agent.rawValue)"]
+    }
+
+    /// Add to <Agent>…: builds the change and opens the preview sheet. Nothing
+    /// is written until the user clicks Add there.
+    func beginOneClick(_ clientID: String, agent: AgentKind? = nil) {
+        let agent = agent ?? self.agent(for: clientID)
+        guard agent.oneClick, client(clientID)?.hasMCPToken == true else { return }
+        oneClick = OneClickSession(clientID: clientID, agent: agent, phase: .loading)
+        sheet = .configPreview
+        services.agentSetup.preview(agent, setupContext(clientID)) { [weak self] result in
+            guard let self, self.oneClick?.clientID == clientID, self.oneClick?.phase == .loading else { return }
+            switch result {
+            case .success(let preview): self.oneClick?.phase = .preview(preview)
+            case .failure(let failure): self.oneClick?.phase = .failed(failure)
+            }
+        }
+    }
+
+    /// Add (or Replace) in the preview sheet.
+    func confirmOneClick() {
+        guard let session = oneClick, case .preview(let preview) = session.phase else { return }
+        oneClick?.phase = .running(preview)
+        services.agentSetup.apply(preview) { [weak self] result in
+            guard let self, self.oneClick?.clientID == session.clientID else { return }
+            switch result {
+            case .success(let done):
+                self.oneClickDone["\(session.clientID)|\(session.agent.rawValue)"] = done
+                self.setAgent(session.agent, for: session.clientID)
+                if case .file = preview {
+                    // A file agent is done: close the sheet and say where the backup is.
+                    self.oneClick = nil
+                    self.sheet = nil
+                    self.showBanner(Banner(
+                        kind: .success,
+                        title: done.alreadySetUp ? String(localized: "\(session.agent.displayName) was already set up.")
+                                                 : String(localized: "Added to \(session.agent.displayName)."),
+                        message: done.backup.map { String(localized: "Backup: \($0.lastPathComponent)") },
+                        actionTitle: done.backup == nil ? nil : String(localized: "Show in Finder"),
+                        action: done.backup.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } }))
+                } else {
+                    self.oneClick?.phase = .done(done)
+                }
+            case .failure(let failure):
+                self.oneClick?.phase = .failed(failure)
+            }
+        }
+    }
+
+    func closeOneClick() {
+        oneClick = nil
+        if sheet == .configPreview { sheet = nil }
+    }
+
+    /// Restart Claude Desktop: quits it, waits up to 5 s, opens it again.
+    func restartAgent(_ agent: AgentKind) {
+        guard restarting == nil else { return }
+        restarting = agent
+        services.agentSetup.restart(agent) { [weak self] restarted in
+            guard let self else { return }
+            self.restarting = nil
+            if !restarted {
+                self.showBanner(Banner(kind: .warning,
+                                       title: String(localized: "\(agent.displayName) didn't quit."),
+                                       message: String(localized: "Quit \(agent.displayName) and open it again.")))
+            }
+        }
     }
 
     // MARK: Derived state

@@ -147,6 +147,7 @@ final class LiveTestAutomation {
             case "setMCP": completion(.success(try setMCP(command)))
             case "requestAccess": completion(.success(try requestAccess(command)))
             case "answerPanel": try answerPanel(command, completion: completion)
+            case "oneClick": try oneClick(command, completion: completion)
             case "capture": completion(.success(try capture(command)))
             case "bannerAction":
                 guard let action = model.banner?.action else { throw CommandError(message: "no banner action") }
@@ -520,6 +521,65 @@ final class LiveTestAutomation {
 
     /// Waits for a pending item, then for the panel's arming delay, then
     /// answers through the same functions as the panel's buttons.
+    /// Add to <Agent>… as a click would (B07): the preview, then Add when
+    /// `confirm` is true. Only into the scratch home the copy was started with.
+    private func oneClick(_ command: [String: Any], completion: @escaping Completion) throws {
+        let id = try clientID(command)
+        guard let agent = AgentKind(rawValue: command["agent"] as? String ?? ""), agent.oneClick else {
+            throw CommandError(message: "agent is claudeDesktop, cursor or claudeCode")
+        }
+        let confirm = command["confirm"] as? Bool ?? false
+        model.beginOneClick(id, agent: agent)
+        let deadline = Date().addingTimeInterval(command["timeout"] as? Double ?? 40)
+        var confirmed = false
+        func describe(_ preview: OneClickPreview) -> [String: Any] {
+            switch preview {
+            case .file(_, let change):
+                return ["file": (change.fileURL.path as NSString).abbreviatingWithTildeInPath,
+                        "outcome": "\(change.outcome)", "summary": change.summary,
+                        "diff": change.diffLines.map { ($0.kind == .added ? "+ " : $0.kind == .removed ? "- " : "  ") + $0.text }]
+            case .command(_, let executable, let arguments, _, let replacing):
+                return ["command": ([executable] + arguments.prefix(5)).joined(separator: " ") + " <json>",
+                        "replacing": replacing]
+            }
+        }
+        func poll() {
+            guard let session = model.oneClick else {
+                // A file agent closes the sheet when it's done.
+                if let result = model.oneClickResult(id, agent) {
+                    model.closeOneClick()
+                    return completion(.success(["done": true, "backup": (result.backup?.lastPathComponent).map { $0 as Any } ?? NSNull(),
+                                                "banner": (model.banner?.title).map { $0 as Any } ?? NSNull()]))
+                }
+                return completion(.failure(CommandError(message: "the sheet closed")))
+            }
+            switch session.phase {
+            case .preview(let preview) where !confirm:
+                model.closeOneClick()
+                completion(.success(["preview": describe(preview)]))
+            case .preview(let preview) where !confirmed:
+                confirmed = true
+                let described = describe(preview)
+                model.confirmOneClick()
+                if model.oneClick == nil { return completion(.success(["preview": described, "done": true])) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { poll() }
+            case .done(let result):
+                model.closeOneClick()
+                completion(.success(["done": true, "output": result.output.map { $0 as Any } ?? NSNull()]))
+            case .failed(let failure):
+                model.closeOneClick()
+                completion(.failure(CommandError(message: failure.message + (failure.output.map { "\n" + $0 } ?? ""))))
+            default:
+                guard Date() < deadline else {
+                    model.closeOneClick()
+                    return completion(.failure(CommandError(message: "no answer in time")))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { poll() }
+            }
+        }
+        poll()
+    }
+
     private func answerPanel(_ command: [String: Any], completion: @escaping Completion) throws {
         let decision = command["decision"] as? String ?? ""
         guard ["allow", "deny", "allowWindow"].contains(decision) else {

@@ -24,6 +24,7 @@ struct MainView: View {
             case .remoteAddress: RemoteAddressSheet(model: model)
             case .pairing(let id): PairingSheet(model: model, id: id)
             case .oauthClient: OAuthClientSheet(model: model)
+            case .configPreview: ConfigPreviewSheet(model: model)
             }
         }
     }

@@ -66,6 +66,23 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
+    "$project_dir/Sources/AgentSetup.swift" \
+    "$project_dir/Sources/AgentConfigWriter.swift" \
+    "$project_dir/Sources/ExecutableLocator.swift" \
+    "$project_dir/Tests/AgentConfigWriterTests.swift" \
+    -o "$project_dir/build/agent-config-writer-tests"
+"$project_dir/build/agent-config-writer-tests" "$project_dir/Tests/agent-config"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    -framework EventKit \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ClientGrantEditing.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/AppPresentation.swift" \
     "$project_dir/Sources/CollectionLabels.swift" \
     "$project_dir/Tests/CollectionLabelsTests.swift" \
     -o "$project_dir/build/collection-labels-tests"

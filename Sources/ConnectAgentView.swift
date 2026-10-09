@@ -74,10 +74,49 @@ struct AgentSetupCard: View {
     }
 
     var body: some View {
-        let context = SetupContext(url: model.mcpURL, launcherPath: model.launcherPath, clientID: client.id,
-                                   tokenPath: model.tokenFileURL(client.id)?.path ?? "")
+        let context = model.setupContext(client.id)
         let snippet = agent.snippet(method, context)
+        if agent.oneClick && !model.copySetup.contains(client.id) {
+            oneClick(context)
+        } else {
+            copySetup(snippet)
+        }
+    }
+
+    /// Add to <Agent>… (B07), with the other ways behind links.
+    private func oneClick(_ context: SetupContext) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            OneClickCard(model: model, client: client, agent: agent,
+                         snippet: agent.snippet(agent.recommended, context))
+            HStack(spacing: 20) {
+                Button(String(localized: "Copy the setup instead")) { model.copySetup.insert(client.id) }
+                Button(String(localized: "Advanced options (method, token file)")) { model.copySetup.insert(client.id) }
+            }
+            .buttonStyle(.link)
+            Card {
+                statusRow
+                RowDivider()
+                tokenRow(agent.snippet(agent.recommended, context))
+                RowDivider()
+                ConnectRow(label: String(localized: "Server")) {
+                    MonoText(text: model.mcpURL)
+                } actions: {
+                    MCPServerPill(model: model)
+                    CopyButton(text: model.mcpURL, help: String(localized: "Copy URL"))
+                }
+            }
+            if !model.isInstalledInApplications {
+                NotInApplicationsNotice(model: model, padded: false)
+            }
+        }
+    }
+
+    private func copySetup(_ snippet: SetupSnippet) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if agent.oneClick {
+                Button(String(localized: "Use Add to \(agent.displayName) instead")) { model.copySetup.remove(client.id) }
+                    .buttonStyle(.link)
+            }
             Card {
                 ConnectRow(label: String(localized: "Agent")) {
                     FlowLayout(spacing: 6) {
@@ -412,4 +451,287 @@ struct FlowLayout: Layout {
 
 extension String {
     var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}
+
+// MARK: - One-click setup (B07, mockup 04)
+
+/// The top of Connect for agents with one-click setup: what Add does, the
+/// button, and what to do afterwards.
+struct OneClickCard: View {
+    let model: BridgeAppModel
+    let client: ClientView
+    let agent: AgentKind
+    let snippet: SetupSnippet
+
+    var body: some View {
+        let done = model.oneClickResult(client.id, agent)
+        Card {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "Add \(AppIdentity.displayName) to \(agent.displayName)"))
+                        .font(.headline)
+                    Text(explanation)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                if done != nil {
+                    Label(String(localized: "Added"), systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .fixedSize()
+                        .padding(.top, 2)
+                } else {
+                    Button(String(localized: "Add to \(agent.displayName)…")) { model.beginOneClick(client.id, agent: agent) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .fixedSize()
+                }
+            }
+            .padding(16)
+            if agent != .claudeCode {
+                RowDivider()
+                VStack(alignment: .leading, spacing: 6) {
+                    if let destination = snippet.destination {
+                        Text(destination)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    CodeBox(text: snippet.text)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            RowDivider()
+            HStack(spacing: 12) {
+                Text(afterwards)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                if agent == .claudeDesktop {
+                    Button(model.restarting == agent ? String(localized: "Restarting…")
+                                                     : String(localized: "Restart \(agent.displayName)")) {
+                        model.restartAgent(agent)
+                    }
+                    .disabled(model.restarting != nil)
+                    .fixedSize()
+                } else if done != nil {
+                    Button(String(localized: "Add Again…")) { model.beginOneClick(client.id, agent: agent) }
+                        .fixedSize()
+                }
+            }
+            .font(.callout)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "Add \(AppIdentity.displayName) to \(agent.displayName)"))
+    }
+
+    private var explanation: String {
+        switch agent {
+        case .claudeCode:
+            String(localized: "Runs claude mcp add-json for you after showing the command. The token isn't in it; Claude Code reads it through \(AppIdentity.displayName)'s launcher.")
+        default:
+            String(localized: "Adds an “\(AppIdentity.mcpServerKey)” entry to \(agent.displayName)'s settings file. A backup is kept. The token isn't written; \(agent.displayName) reads it through \(AppIdentity.displayName)'s launcher.")
+        }
+    }
+
+    private var afterwards: String {
+        switch agent {
+        case .claudeCode: String(localized: "Claude Code connects the next time it starts (or run /mcp). Then ask it “What's on my calendar today?”")
+        case .claudeDesktop: String(localized: "After adding: quit and reopen Claude Desktop, then ask “What's on my calendar today?”")
+        default: String(localized: "After adding: restart \(agent.displayName), then ask “What's on my calendar today?”")
+        }
+    }
+}
+
+/// Add to <Agent>…: the exact change, then Add; or why it can't.
+struct ConfigPreviewSheet: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let session = model.oneClick {
+                content(session)
+            } else {
+                Text(String(localized: "Nothing to add.")).font(.headline)
+                buttons(primary: nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 620)
+    }
+
+    @ViewBuilder private func content(_ session: OneClickSession) -> some View {
+        let name = session.agent.displayName
+        switch session.phase {
+        case .loading:
+            Text(String(localized: "Add \(AppIdentity.displayName) to \(name)?")).font(.headline)
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(session.agent == .claudeCode ? String(localized: "Looking for Claude Code…")
+                                                  : String(localized: "Reading the settings file…"))
+                    .foregroundStyle(.secondary)
+            }
+            buttons(primary: nil)
+        case .preview(let preview), .running(let preview):
+            let running: Bool = { if case .running = session.phase { true } else { false } }()
+            previewBody(preview, name: name)
+            buttons(primary: (primaryTitle(preview), running))
+        case .done(let result):
+            Text(String(localized: "Added to \(name)")).font(.headline)
+            if let output = result.output, !output.isEmpty {
+                DisclosureGroup(String(localized: "Output")) { CodeBox(text: output) }
+                    .font(.callout)
+            }
+            Text(String(localized: "Claude Code connects the next time it starts (or run /mcp). Then ask it “What's on my calendar today?”"))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(String(localized: "Done")) { model.closeOneClick() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        case .failed(let failure):
+            Label(String(localized: "Couldn't add \(AppIdentity.displayName) to \(name)"),
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+            Text(failure.message).fixedSize(horizontal: false, vertical: true)
+            if let output = failure.output, !output.isEmpty {
+                DisclosureGroup(String(localized: "Output")) { CodeBox(text: output) }
+                    .font(.callout)
+            }
+            HStack {
+                if failure.copyInstead {
+                    Button(String(localized: "Copy the Setup Instead")) {
+                        model.copySetup.insert(session.clientID)
+                        model.closeOneClick()
+                    }
+                }
+                Spacer()
+                Button(String(localized: "Close")) { model.closeOneClick() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    @ViewBuilder private func previewBody(_ preview: OneClickPreview, name: String) -> some View {
+        switch preview {
+        case .file(_, let change):
+            Text(change.outcome == .unchanged ? String(localized: "\(name) is already set up")
+                                              : String(localized: "Add \(AppIdentity.displayName) to \(name)?"))
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((change.fileURL.path as NSString).abbreviatingWithTildeInPath)
+                    .font(.callout.monospaced())
+                    .textSelection(.enabled)
+                Text(change.summary).foregroundStyle(.secondary)
+            }
+            if !change.diffLines.isEmpty { DiffBox(lines: change.diffLines) }
+            if change.outcome != .unchanged {
+                Text(change.before == nil ? String(localized: "The file is created; there's nothing to back up.")
+                                          : String(localized: "A backup is saved next to it."))
+                    .foregroundStyle(.secondary)
+            }
+            Label(String(localized: "The token isn't written; \(name) reads it through \(AppIdentity.displayName)'s launcher."),
+                  systemImage: "lock")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .command(_, let executable, let arguments, let key, let replacing):
+            Text(replacing ? String(localized: "Replace the existing \(key) setup in Claude Code?")
+                           : String(localized: "Add \(AppIdentity.displayName) to Claude Code?"))
+                .font(.headline)
+            Text(replacing ? String(localized: "Claude Code already has a server called \(key). EK Bridge removes it, then runs:")
+                           : String(localized: "EK Bridge runs:"))
+                .foregroundStyle(.secondary)
+            CodeBox(text: ([(executable as NSString).abbreviatingWithTildeInPath] + arguments.map {
+                $0.rangeOfCharacter(from: CharacterSet(charactersIn: " \"'{}$\\")) == nil ? $0 : ConnectCommand.shellQuoted($0)
+            }).joined(separator: " "))
+            Label(String(localized: "The token isn't in the command; Claude Code reads it through \(AppIdentity.displayName)'s launcher."),
+                  systemImage: "lock")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func primaryTitle(_ preview: OneClickPreview) -> String? {
+        switch preview {
+        case .file(_, let change): change.outcome == .unchanged ? nil : String(localized: "Add")
+        case .command(_, _, _, _, let replacing): replacing ? String(localized: "Replace") : String(localized: "Add")
+        }
+    }
+
+    private func buttons(primary: (title: String?, running: Bool)?) -> some View {
+        HStack {
+            if primary?.running == true {
+                ProgressView().controlSize(.small)
+            }
+            Spacer()
+            Button(primary?.title == nil && primary != nil ? String(localized: "Done") : String(localized: "Cancel")) {
+                model.closeOneClick()
+            }
+            .keyboardShortcut(.cancelAction)
+            .disabled(primary?.running == true)
+            if let title = primary?.title {
+                Button(title) { model.confirmOneClick() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(primary?.running == true)
+            }
+        }
+    }
+}
+
+/// A diff: + lines green, − lines red, context secondary.
+struct DiffBox: View {
+    let lines: [DiffLine]
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(marker(line.kind)).frame(width: 10, alignment: .leading)
+                        Text(line.text.isEmpty ? " " : line.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(color(line.kind))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(accessibility(line))
+                }
+            }
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+        }
+        .frame(maxHeight: 260)
+        .fixedSize(horizontal: false, vertical: lines.count <= 14)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func marker(_ kind: DiffLine.Kind) -> String {
+        switch kind {
+        case .added: "+"
+        case .removed: "−"
+        case .context: " "
+        }
+    }
+
+    private func color(_ kind: DiffLine.Kind) -> Color {
+        switch kind {
+        case .added: .green
+        case .removed: .red
+        case .context: .secondary
+        }
+    }
+
+    private func accessibility(_ line: DiffLine) -> String {
+        switch line.kind {
+        case .added: String(localized: "Added: \(line.text)")
+        case .removed: String(localized: "Removed: \(line.text)")
+        case .context: line.text
+        }
+    }
 }

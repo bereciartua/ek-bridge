@@ -208,7 +208,60 @@ final class UIReview {
                 automaticChecks: { [unowned self] in self.automaticUpdateChecks },
                 setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
                 lastCheck: { [unowned self] in self.lastUpdateCheck }),
-            installedAgents: { [.claudeCode, .claudeDesktop, .cursor] })
+            installedAgents: { [.claudeCode, .claudeDesktop, .cursor] },
+            agentSetup: fakeAgentSetup())
+    }
+
+    /// Add to <Agent>… without touching any real file: Claude Desktop's file
+    /// already has another server; applying "writes" nothing.
+    var oneClickApplies = 0
+    var restarts = 0
+    func fakeAgentSetup() -> AgentSetupControls {
+        AgentSetupControls(
+            preview: { agent, context, done in
+                guard let setup = agent.oneClickSetup(context) else { return }
+                switch setup {
+                case .jsonMerge(let file, let root, let key, let entry):
+                    let before = Data("""
+                        {
+                          "mcpServers": {
+                            "filesystem": {
+                              "command": "npx",
+                              "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Desktop"]
+                            }
+                          }
+                        }
+
+                        """.utf8)
+                    let merged = try! AgentConfigWriter.merge(current: before, root: root, key: key, entry: entry)
+                    let change = ConfigChange(
+                        fileURL: OneClickAgents.expand(file, home: NSHomeDirectory()), before: before,
+                        after: merged.after, outcome: merged.outcome,
+                        summary: String(localized: "Adds “\(key)” to \(root)"),
+                        diffLines: AgentConfigWriter.diff(before, merged.after))
+                    DispatchQueue.main.async { done(.success(.file(agent: agent, change: change))) }
+                case .claudeCode(let key, let arguments):
+                    DispatchQueue.main.async {
+                        done(.success(.command(agent: agent, executable: NSHomeDirectory() + "/.local/bin/claude",
+                                               arguments: arguments, key: key, replacing: false)))
+                    }
+                }
+            },
+            apply: { [unowned self] preview, done in
+                self.oneClickApplies += 1
+                let result: OneClickResult = switch preview {
+                case .file(let agent, let change):
+                    OneClickResult(agent: agent, backup: URL(fileURLWithPath: change.fileURL.path
+                        + ".ekbridge-backup-20261008-154210"))
+                case .command(let agent, _, _, let key, _):
+                    OneClickResult(agent: agent, output: "Added stdio MCP server \(key) to user config\nFile modified: ~/.claude.json")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { done(.success(result)) }
+            },
+            restart: { [unowned self] _, done in
+                self.restarts += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done(true) }
+            })
     }
 
     /// Starts a pairing request the way claude.ai would: register (DCR),
@@ -946,6 +999,34 @@ final class BehaviorReview {
             self.model.setAgent(.cursor, for: UIReview.cursorID)
             return stored && saved && self.model.installedAgents.contains(.claudeDesktop)
         }
+        step("Add to Claude Desktop shows the preview") {
+            self.model.navigate(to: .client(claude))
+            self.model.beginOneClick(claude, agent: .claudeDesktop)
+            return self.model.sheet == .configPreview
+        }
+        step("the preview holds the change, no token") {
+            guard case .preview(.file(_, let change))? = self.model.oneClick?.phase else { return false }
+            let text = String(decoding: change.after, as: UTF8.self)
+            return change.outcome == .added && text.contains("\"filesystem\"") && text.contains("--client") &&
+                !text.contains("ekb_mcp_v1_") && self.review.oneClickApplies == 0
+        }
+        step("Add applies through the fake") {
+            self.model.confirmOneClick()
+            return self.review.oneClickApplies == 1
+        }
+        step("added: the sheet closes with the backup's name") {
+            self.model.sheet == nil && self.model.oneClickResult(claude, .claudeDesktop) != nil &&
+                self.model.banner?.message?.contains(".ekbridge-backup-") == true &&
+                self.model.agent(for: claude) == .claudeDesktop
+        }
+        step("Restart Claude Desktop") {
+            self.model.restartAgent(.claudeDesktop)
+            return self.review.restarts == 1 && self.model.restarting == .claudeDesktop
+        }
+        step("restarted") {
+            self.model.setAgent(.claudeCode, for: claude)
+            return self.model.restarting == nil
+        }
         step("switch Connect tabs") {
             self.model.navigate(to: .client(claude))
             self.model.connectTab[claude] = .cli
@@ -1498,7 +1579,26 @@ final class SnapshotReview {
                 self.model.agentChoice[UIReview.claudeID] = .claudeDesktop
                 return main
             }
+            step("sheet-config-preview") {
+                self.model.beginOneClick(UIReview.claudeID, agent: .claudeDesktop)
+                return main
+            }
+            step("client-connect-one-click-done") {
+                self.model.confirmOneClick()
+                return main
+            }
+            step("sheet-config-preview-claude-code") {
+                self.model.dismissBanner()
+                self.model.beginOneClick(UIReview.claudeID, agent: .claudeCode)
+                return main
+            }
+            step("client-connect-copy") {
+                self.model.closeOneClick()
+                self.model.copySetup.insert(UIReview.claudeID)
+                return main
+            }
             step("client-connect-direct-other") {
+                self.model.copySetup.remove(UIReview.claudeID)
                 self.model.agentChoice[UIReview.claudeID] = .other
                 return main
             }
