@@ -22,7 +22,7 @@ ingress:
 steps:
 1. You need a domain on Cloudflare. The login command opens your browser.
 2. Before you run the tunnel, save the configuration as ~/.cloudflared/config.yml, with <tunnel-UUID> replaced by the ID that tunnel create printed.
-3. Paste https:// and your hostname under Address, then click Test.
+3. Paste https:// and your hostname in step 3.
 4. To turn it off, press Control-C in the Terminal window running cloudflared.
 
 notes:

@@ -537,6 +537,21 @@ enum ConnectCommand {
     }
 }
 
+/// The Remote Access page's guide (B10): 1 choose a tunnel, 2 turn on and
+/// start it, 3 paste its address, 4 test. Derived, not stored, apart from the
+/// tunnel choice and "I've started it".
+enum RemoteGuide {
+    enum Step: Int, Equatable { case chooseTunnel = 1, startTunnel, pasteAddress, test, done }
+
+    static func step(tunnelChosen: Bool, remoteOn: Bool, started: Bool, origin: String?,
+                     reachable: Bool) -> Step {
+        guard tunnelChosen else { return .chooseTunnel }
+        guard remoteOn, started || origin != nil else { return .startTunnel }
+        guard origin != nil else { return .pasteAddress }
+        return reachable ? .done : .test
+    }
+}
+
 /// When the local MCP server runs (D1): only while EK Bridge is on, the
 /// user allows it (Settings ▸ Advanced) and some connection has an MCP token.
 enum MCPRunPolicy {

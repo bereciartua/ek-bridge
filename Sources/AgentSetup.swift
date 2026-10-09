@@ -817,6 +817,22 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
         }
     }
 
+    /// One line for the guide's tunnel choice.
+    var summary: String {
+        switch self {
+        case .tailscaleFunnel:
+            return String(localized: "Free; TLS ends on this Mac. Needs Tailscale installed and signed in.")
+        case .cloudflareTunnel:
+            return String(localized: "Free with your own domain on Cloudflare. TLS ends at Cloudflare.")
+        case .ngrok:
+            return String(localized: "A free dev domain with an ngrok account. TLS ends at ngrok.")
+        case .cloudflareQuick:
+            return String(localized: "No account, but a random address each time. For testing only.")
+        case .other:
+            return String(localized: "Any HTTPS tunnel that forwards to the Remote Access port.")
+        }
+    }
+
     /// Start commands, then `offCommands`, to run in order in Terminal.
     func commands(port: Int, hostname: String?) -> [String] {
         let name = Self.cloudflareTunnelName
@@ -866,7 +882,7 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
 
     var steps: [String] {
         let paste = { (address: String) in
-            String(localized: "Paste \(address) under Address, then click Test.")
+            String(localized: "Paste \(address) in step 3.")
         }
         let controlC = { (tool: String) in
             String(localized: "To turn it off, press Control-C in the Terminal window running \(tool).")
@@ -918,8 +934,8 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
                     local agents use.
                     """),
                 String(localized: """
-                    Have it rewrite Host to 127.0.0.1 and the port, or add its public hostname under \
-                    Address.
+                    Have it rewrite Host to 127.0.0.1 and the port, or keep its public hostname, which \
+                    must then be the address you paste.
                     """),
                 paste(String(localized: "its HTTPS address")),
             ]

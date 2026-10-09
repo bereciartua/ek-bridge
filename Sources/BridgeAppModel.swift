@@ -8,6 +8,8 @@ enum Route: Hashable {
     case activity
     case client(String)
     case settings
+    /// Remote Access's own page (B10).
+    case remoteAccess
 }
 
 enum DockIconMode: String, CaseIterable, Identifiable {
@@ -300,7 +302,7 @@ final class BridgeAppModel {
     private(set) var mcpConnections = [String: MCPServer.Connection]()
     private(set) var newAgentApproval = ApprovalMode.ask
     private(set) var newCLIApproval = ApprovalMode.allow
-    // Remote Access (Settings ▸ Remote Access, client Cloud sections).
+    // Remote Access (the Remote Access page, client Cloud sections).
     private(set) var remoteEnabled = false
     private(set) var remotePort = RemoteDefaults.port
     private(set) var remoteSecret = ""
@@ -316,7 +318,17 @@ final class BridgeAppModel {
     private(set) var remoteConnections = [String: MCPServer.Connection]()
     /// Bumped when OAuth connections or pairing change, so views re-read them.
     private(set) var oauthChanges = 0
-    var tunnelChoice = TunnelProvider.tailscaleFunnel
+    /// The guide's tunnel, saved once chosen (UserDefaults RemoteTunnelChoice).
+    var tunnelChoice = TunnelProvider.tailscaleFunnel {
+        didSet { services.defaults.set(tunnelChoice.rawValue, forKey: Keys.tunnelChoice) }
+    }
+    var tunnelChosen: Bool { services.defaults.string(forKey: Keys.tunnelChoice) != nil }
+    /// The Remote Access guide is in progress (shown even once Remote Access is on).
+    var remoteGuideActive = false
+    /// Guide step 2's "I've Started It", this session.
+    var remoteTunnelStarted = false
+    /// Guide step 3 shown again from step 4's Back.
+    var remoteEditingAddress = false
     var cloudAgentChoice = [String: CloudAgentKind]()
     var connectTab = [String: ConnectTab]()
     /// The agent picked on a Connect tab this session; falls back to the
@@ -376,6 +388,7 @@ final class BridgeAppModel {
         static let remoteOffAt = "RemoteAccessOffAt"
         static let keepAwake = "RemoteAccessKeepAwake"
         static let resumeAt = "BridgeResumeAt"
+        static let tunnelChoice = "RemoteTunnelChoice"
     }
 
     init(services: BridgeServices) {
@@ -407,12 +420,16 @@ final class BridgeAppModel {
         let offAt = defaults.double(forKey: Keys.remoteOffAt)
         remoteOffAt = offAt > 0 ? Date(timeIntervalSinceReferenceDate: offAt) : nil
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
+        if let tunnel = defaults.string(forKey: Keys.tunnelChoice).flatMap(TunnelProvider.init(rawValue:)) {
+            tunnelChoice = tunnel
+        }
         connectionAgents = ConnectionAgentKinds.load(defaults)
         let resume = defaults.double(forKey: Keys.resumeAt)
         resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
         switch defaults.string(forKey: Keys.lastRoute) {
         case "activity": route = .activity
         case "settings": route = .settings
+        case "remote": route = .remoteAccess
         default: route = .overview
         }
         refresh()
@@ -667,10 +684,23 @@ final class BridgeAppModel {
         }
     }
 
-    /// Remote Access's settings (its own page after B10).
-    func showRemoteAccess() {
-        settingsScrollTarget = "remote"
-        navigate(to: .settings)
+    /// The Remote Access page (B10).
+    func showRemoteAccess() { show(.remoteAccess) }
+
+    var remoteGuideStep: RemoteGuide.Step {
+        let reachable: Bool = if case .reachable = remoteTest { true } else { false }
+        return RemoteGuide.step(tunnelChosen: tunnelChosen, remoteOn: remoteEnabled,
+                                // Editing the address means the tunnel was started.
+                                started: remoteTunnelStarted || remoteEditingAddress,
+                                origin: remoteEditingAddress ? nil : remoteOrigin,
+                                reachable: reachable)
+    }
+
+    /// Guide step 1: forget the choice, so the tunnel chips show again.
+    func chooseTunnelAgain() {
+        services.defaults.removeObject(forKey: Keys.tunnelChoice)
+        remoteTunnelStarted = false
+        remoteGuideActive = true
     }
 
     // MARK: Derived state
@@ -731,8 +761,7 @@ final class BridgeAppModel {
             settingsScrollTarget = "mcp"
             show(.settings)
         case .remoteAccessFailed:
-            settingsScrollTarget = "remote"
-            show(.settings)
+            show(.remoteAccess)
         }
     }
 
@@ -823,6 +852,7 @@ final class BridgeAppModel {
         case .overview: services.defaults.set("overview", forKey: Keys.lastRoute)
         case .activity: services.defaults.set("activity", forKey: Keys.lastRoute)
         case .settings: services.defaults.set("settings", forKey: Keys.lastRoute)
+        case .remoteAccess: services.defaults.set("remote", forKey: Keys.lastRoute)
         case .client: break
         }
         reconcileDraft()
@@ -2411,6 +2441,7 @@ final class BridgeAppModel {
     func setRemoteAddress(_ text: String) -> String? {
         if let issue = remoteAddressIssue(text) { return issue }
         sheet = nil
+        remoteEditingAddress = false
         let previous = remoteOrigin
         remoteOrigin = RemoteConfiguration.normalizedOrigin(text)
         services.defaults.set(remoteOrigin, forKey: Keys.remoteOrigin)

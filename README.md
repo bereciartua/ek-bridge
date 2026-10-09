@@ -176,7 +176,7 @@ Until the tool is installed, the copied command uses the app's full path, `/Appl
 
 ### From cloud agents (experimental)
 
-Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (Settings ▸ Remote Access, off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each connection also needs **Allow cloud access**.
+Cloud agents run on their vendor's servers and can't reach `127.0.0.1`. **Remote Access** (its own page in the sidebar, with a guided setup; off by default) opens a second loopback port, 47616, for a tunnel you run, such as Tailscale Funnel; the app shows the commands and tests the result. Each connection also needs **Allow cloud access**.
 
 - Agents that send a header (the Anthropic and OpenAI APIs, Claude Code on the web, Cursor and Copilot cloud agents, Devin) use the connection's separate remote token.
 - claude.ai, ChatGPT and Gemini Enterprise sign in with OAuth, which you approve on the Mac by matching a six-digit code.
@@ -202,8 +202,8 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 | Connection | When |
 | --- | --- |
 | MCP server, listening on `127.0.0.1:47615` | Only while EK Bridge is on and a connection has MCP access (Settings ▸ Advanced ▸ Local MCP server turns it off). Loopback only: other computers can't connect. |
-| Remote Access, listening on `127.0.0.1:47616` | Only while **Settings ▸ Remote Access** is on (off by default). Loopback only; a tunnel you run forwards cloud agents to it. |
-| One HTTPS request to your Remote Access address | Only when you click **Test** in Settings ▸ Remote Access. |
+| Remote Access, listening on `127.0.0.1:47616` | Only while **Remote Access** is on (off by default). Loopback only; a tunnel you run forwards cloud agents to it. |
+| One HTTPS request to your Remote Access address | Only when the Remote Access guide tests the tunnel, or you click **Test** on the Remote Access page. |
 | One HTTPS request for a cloud agent's client metadata | Only while you pair an OAuth cloud agent (claude.ai, ChatGPT), to the address that agent gives. Private and local addresses are refused. |
 | `bridge-mcp` connecting to `127.0.0.1` | When an agent on your Mac starts it, to reach the MCP server. |
 | One HTTPS request to GitHub for `appcast.xml`, the list of the latest version | Once a day while **Settings ▸ General ▸ Check for updates automatically** is on (on in downloaded copies; a copy built from source never checks), and when you choose **Check for Updates…**. GitHub sees your IP address and the app's version; nothing else is sent. |

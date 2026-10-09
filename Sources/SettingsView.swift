@@ -13,8 +13,6 @@ struct SettingsView: View {
                     general
                     MCPServerSettings(model: model)
                         .id("mcp")
-                    RemoteAccessSettings(model: model)
-                        .id("remote")
                     developer
                         .id("developer")
                     about

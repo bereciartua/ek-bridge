@@ -140,10 +140,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
         if model.remoteEnabled {
             let line = model.remoteMenuLine
-            let remoteItem = item(line) { [weak self] in
-                self?.model.settingsScrollTarget = "remote"
-                self?.model.show(.settings)
-            }
+            let remoteItem = item(line) { [weak self] in self?.model.show(.remoteAccess) }
             remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)
             menu.addItem(remoteItem)
             // One click cuts all cloud access (R5).

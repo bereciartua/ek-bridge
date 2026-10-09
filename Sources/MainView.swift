@@ -97,12 +97,31 @@ struct SidebarView: View {
             VStack(spacing: 0) {
                 Divider().opacity(crowded ? 1 : 0)
                 List(selection: selection) {
+                    Label {
+                        HStack {
+                            Text(String(localized: "Remote Access"))
+                            Spacer()
+                            if model.remoteEnabled {
+                                Text(String(localized: "On"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(Color.accentColor, in: Capsule())
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "globe")
+                    }
+                    .tag(Route.remoteAccess)
+                    .accessibilityLabel(model.remoteEnabled ? String(localized: "Remote Access, on")
+                                                            : String(localized: "Remote Access"))
                     Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
                         .tag(Route.settings)
                 }
                 .listStyle(.sidebar)
                 .scrollDisabled(true)
-                .frame(height: 44)
+                .frame(height: 76)
             }
             // Clients scroll under this row, so it needs its own surface.
             .background(crowded ? AnyShapeStyle(.bar) : AnyShapeStyle(.clear))
@@ -229,6 +248,7 @@ struct DetailView: View {
                 case .overview: OverviewView(model: model)
                 case .activity: ActivityView(model: model)
                 case .settings: SettingsView(model: model)
+                case .remoteAccess: RemoteAccessPage(model: model)
                 case .client(let id):
                     if let client = model.client(id) {
                         if client.revoked {

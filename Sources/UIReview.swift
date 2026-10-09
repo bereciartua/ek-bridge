@@ -61,6 +61,8 @@ final class UIReview {
     let many: Bool
     /// "listening", "off" or "port-in-use".
     var mcpMode: String
+    /// What the fake Remote Access test answers.
+    var remoteReachable = true
     /// Calls to the fake MCP server, for the behavior test.
     var mcpStarts = 0
     var mcpStops = 0
@@ -188,9 +190,10 @@ final class UIReview {
                 },
                 update: { _ in },
                 stop: {},
-                test: { _, completion in
+                test: { [unowned self] _, completion in
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        completion(.success((rtt: 0.18, tunnel: "Tailscale Funnel")))
+                        completion(self.remoteReachable ? .success((rtt: 0.18, tunnel: "Tailscale Funnel"))
+                            : .failure(RemoteTestFailure(reason: "The tunnel answered with HTTP 502. Check that it's running and points at port 47616.")))
                     }
                 },
                 portIsFree: { $0 != 47615 },
@@ -581,6 +584,7 @@ final class UIReview {
             switch value("--ui-route") {
             case "activity": model.navigate(to: .activity)
             case "settings": model.navigate(to: .settings)
+            case "remote": model.navigate(to: .remoteAccess)
             case "client": model.navigate(to: .client(Self.claudeID))
             default: model.navigate(to: .overview)
             }
@@ -686,7 +690,7 @@ final class WindowLifecycleReview {
 
     private func cycle(_ number: Int) {
         let routes: [Route] = [.overview, .activity, .client(UIReview.claudeID), .settings,
-                               .client(UIReview.revokedID)]
+                               .client(UIReview.revokedID), .remoteAccess]
         model.navigate(to: routes[number % routes.count])
         model.sheet = number.isMultiple(of: 2) ? .newClient : .rename(UIReview.claudeID)
         // Generous: the window server is slower with the display asleep, and the
@@ -1324,6 +1328,31 @@ final class BehaviorReview {
                 self.model.client(claude)?.hasRemoteToken == false &&
                 self.model.remoteTokenStatus(claude) == .missing
         }
+        step("Remote Access page reachable from the menu's problem line") {
+            self.model.fix(.remoteAccessFailed("x"))
+            return self.model.route == .remoteAccess
+        }
+        step("guide: starting over shows the tunnels; a set-up address skips to done") {
+            self.model.chooseTunnelAgain()
+            let choosing = self.model.remoteGuideStep == .chooseTunnel
+            self.model.tunnelChoice = .tailscaleFunnel
+            return choosing && self.model.remoteGuideStep == .done
+        }
+        step("guide advances on address save") {
+            self.model.remoteEditingAddress = true
+            guard self.model.remoteGuideStep == .pasteAddress,
+                  self.model.setRemoteAddress("https://other-mac.tail1234.ts.net") == nil,
+                  self.model.remoteGuideStep == .test else { return false }
+            self.model.testRemoteAccess()
+            return true
+        }
+        step("the test makes it done") {
+            self.model.remoteGuideStep == .done
+        }
+        step("turning off from the page") {
+            self.model.setRemoteAccessEnabled(false)
+            return !self.model.remoteEnabled && self.model.remoteStatus == .off
+        }
         step("Remote Access off from the menu") {
             self.model.applyRemoteEnabled(false)
             return !self.model.remoteEnabled && self.model.remoteStatus == .off
@@ -1782,17 +1811,34 @@ final class SnapshotReview {
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window
             }
-            step("settings-remote") {
+            // Remote Access (B10): the page before setup, the guide, then set up.
+            step("remote-not-set-up") {
                 self.review.approvals.withdrawAll()
-                self.model.applyRemoteEnabled(true)
-                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
-                self.model.testRemoteAccess()
-                self.model.settingsScrollTarget = "remote"
-                self.model.navigate(to: .settings)
+                self.model.navigate(to: .remoteAccess)
                 return main
             }
-            step("settings-remote-more") {
-                self.model.settingsScrollTarget = "developer"
+            step("remote-guide-1") {
+                self.model.remoteGuideActive = true
+                return main
+            }
+            step("remote-guide-2") {
+                self.model.tunnelChoice = .tailscaleFunnel
+                self.model.applyRemoteEnabled(true)
+                return main
+            }
+            step("remote-guide-3") {
+                self.model.remoteTunnelStarted = true
+                return main
+            }
+            step("remote-guide-4-failed") {
+                self.review.remoteReachable = false
+                _ = self.model.setRemoteAddress(UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-set-up") {
+                self.review.remoteReachable = true
+                self.model.testRemoteAccess()
                 return main
             }
             step("client-cloud") {

@@ -4,90 +4,99 @@ import SwiftUI
 // the pairing sheet, and the address and port sheets. Remote tokens are never
 // displayed; Copy Remote Token… asks first.
 
-struct RemoteAccessSettings: View {
+/// The Remote Access page (B10, mockup 08): an introduction until it's set
+/// up, a four-step guide (choose a tunnel, turn on and start it, paste its
+/// address, test), then status and settings.
+struct RemoteAccessPage: View {
     let model: BridgeAppModel
 
+    private enum Mode { case intro, guide, setUp }
+
+    private var mode: Mode {
+        if model.remoteGuideActive { return .guide }
+        if model.remoteOrigin != nil { return .setUp }
+        return model.remoteEnabled ? .guide : .intro
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                SectionTitle(title: String(localized: "Remote Access"))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                switch mode {
+                case .intro: intro
+                case .guide: RemoteGuideView(model: model)
+                case .setUp: RemoteSetUpView(model: model)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 860, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onChange(of: model.remoteGuideStep) { _, step in
+            if step == .done { model.remoteGuideActive = false }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                PaneTitle(title: String(localized: "Remote Access"))
                 // Until the live cloud matrix has run (docs/TESTING.md).
                 Pill(label: String(localized: "Experimental"), tone: .warn)
                     .help(String(localized: "Not yet tested with every cloud agent and tunnel."))
-                Text(String(localized: "For cloud agents, through a tunnel you run"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Card {
-                SettingsRow(title: String(localized: "Remote Access"),
-                            caption: String(localized: "Only connections with cloud access turned on can connect.")) {
+                Spacer()
+                if mode == .setUp {
                     Toggle(String(localized: "Remote Access"),
                            isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccessEnabled($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
-                if model.remoteEnabled {
-                    RowDivider()
-                    statusRow
-                    RowDivider()
-                    TunnelGuideRow(model: model)
-                    RowDivider()
-                    ValueRow(label: String(localized: "Address")) {
-                        if let origin = model.remoteOrigin {
-                            MonoText(text: origin)
-                        } else {
-                            Text(String(localized: "Paste the tunnel's address after it's running."))
-                                .foregroundStyle(.secondary)
-                        }
-                    } actions: {
-                        Button(model.remoteOrigin == nil ? String(localized: "Add…") : String(localized: "Edit…")) {
-                            model.sheet = .remoteAddress
-                        }
-                    }
-                    RowDivider()
-                    ValueRow(label: String(localized: "MCP URL")) {
-                        if let url = model.remoteMCPURL {
-                            MonoText(text: url)
-                        } else {
-                            Text("—").foregroundStyle(.tertiary)
-                        }
-                    } actions: {
-                        if let url = model.remoteMCPURL {
-                            CopyButton(text: url, help: String(localized: "Copy URL"))
-                        }
-                        Button(String(localized: "Reset Path…")) { model.resetRemoteSecret() }
-                    }
-                    RowDivider()
-                    ValueRow(label: String(localized: "Port")) {
-                        MonoText(text: String(model.remotePort))
-                    } actions: {
-                        Button(String(localized: "Change…")) { model.sheet = .remotePort }
-                    }
-                    RowDivider()
-                    ValueRow(label: String(localized: "Turn off")) {
-                        HStack(spacing: 16) {
-                            Picker(String(localized: "Turn off automatically"), selection: Binding(
-                                get: { model.remoteAutoOff }, set: { model.setRemoteAutoOff($0) })) {
-                                ForEach(RemoteDefaults.autoOffChoices, id: \.self) { interval in
-                                    Text(Self.autoOffTitle(interval)).tag(interval)
-                                }
-                            }
-                            .labelsHidden()
-                            .fixedSize()
-                            if let offAt = model.remoteOffAt {
-                                Text(String(localized: "at \(offAt.formatted(date: .omitted, time: .shortened))"))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Toggle(String(localized: "Keep this Mac awake while on power"),
-                                   isOn: Binding(get: { model.keepAwake }, set: { model.setKeepAwake($0) }))
-                                .toggleStyle(.checkbox)
-                                .fixedSize()
-                        }
-                    } actions: { EmptyView() }
-                }
             }
-            Label(String(localized: "Port \(String(model.remotePort)) is open only while Remote Access is on. Cloud agents reach this Mac only while it's awake, logged in and running \(AppIdentity.displayName). Remote tokens and cloud apps never work on this Mac's local port, and local tokens never work remotely."),
+            // Kept inline: it says what turning this on exposes.
+            Text(String(localized: "Lets cloud agents (claude.ai, ChatGPT, cloud coding agents) reach this Mac through a tunnel you run. Off by default; one click turns it off."))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(String(localized: "Only connections you allow can be used from the cloud, each with its own token or signed-in app, and only while this Mac is awake and running \(AppIdentity.displayName)."),
+                          systemImage: "lock")
+                    Label(String(localized: "Agents on this Mac don't need it: they connect locally."),
+                          systemImage: "desktopcomputer")
+                }
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(String(localized: "Set Up Remote Access…")) { model.remoteGuideActive = true }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        }
+    }
+}
+
+/// The guide's four steps.
+struct RemoteGuideView: View {
+    let model: BridgeAppModel
+    @State private var address = ""
+    @State private var addressIssue: String?
+
+    var body: some View {
+        let step = model.remoteGuideStep
+        VStack(alignment: .leading, spacing: 14) {
+            RemoteGuideHeader(current: step)
+            switch step {
+            case .chooseTunnel: chooseTunnel
+            case .startTunnel: startTunnel
+            case .pasteAddress: pasteAddress
+            case .test, .done: test
+            }
+            Label(String(localized: "Once it's reachable, this page shows only status, address, URL, port, turn-off timer and keep-awake. Each connection's cloud switch is on its Connect tab."),
                   systemImage: "info.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -95,17 +104,338 @@ struct RemoteAccessSettings: View {
         }
     }
 
+    private var chooseTunnel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Card {
+                ForEach(Array(TunnelProvider.allCases.enumerated()), id: \.element) { index, provider in
+                    if index > 0 { RowDivider() }
+                    Button {
+                        model.tunnelChoice = provider
+                        model.remoteGuideActive = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: provider == model.tunnelChoice ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(provider == model.tunnelChoice ? Color.accentColor : Color.secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(provider.displayName)
+                                Text(provider.summary).font(.callout).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(RowButtonStyle())
+                    .accessibilityLabel("\(provider.displayName). \(provider.summary)")
+                }
+            }
+        }
+    }
+
+    private var startTunnel: some View {
+        let provider = model.tunnelChoice
+        let hostname = model.remoteOrigin.flatMap(URL.init(string:))?.host
+        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        return VStack(alignment: .leading, spacing: 12) {
+            Card {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(provider.name).font(.headline)
+                    HStack(spacing: 4) {
+                        Text(provider.summary).foregroundStyle(.secondary)
+                        Button(String(localized: "Change tunnel")) { model.chooseTunnelAgain() }
+                            .buttonStyle(.link)
+                    }
+                    .font(.callout)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                RowDivider()
+                if !model.remoteEnabled {
+                    HStack(spacing: 12) {
+                        Text(String(localized: "First, turn on Remote Access. Port \(String(model.remotePort)) opens on this Mac for the tunnel; nothing is reachable until the tunnel runs."))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 12)
+                        Button(String(localized: "Turn On Remote Access")) { model.setRemoteAccessEnabled(true) }
+                            .buttonStyle(.borderedProminent)
+                            .fixedSize()
+                    }
+                    .padding(16)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !commands.isEmpty {
+                            HStack(alignment: .top) {
+                                CodeBox(text: commands.joined(separator: "\n"))
+                                CopyButton(text: commands.joined(separator: "\n"), title: String(localized: "Copy"),
+                                           help: String(localized: "Copy Commands"))
+                            }
+                        }
+                        if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
+                            Text("~/.cloudflared/config.yml").font(.callout.monospaced()).foregroundStyle(.secondary)
+                            HStack(alignment: .top) {
+                                CodeBox(text: config)
+                                CopyButton(text: config, help: String(localized: "Copy config.yml"))
+                            }
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(String(localized: "Run it in Terminal. It prints the tunnel's https address; you paste it next."))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            InfoButton(text: (provider.steps + provider.notes).joined(separator: "\n\n"))
+                        }
+                        .font(.callout)
+                    }
+                    .padding(16)
+                }
+            }
+            HStack {
+                Spacer()
+                Button(String(localized: "Back")) { model.chooseTunnelAgain() }
+                Button(String(localized: "I've Started It")) { model.remoteTunnelStarted = true }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.remoteEnabled)
+            }
+        }
+    }
+
+    private var pasteAddress: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Card {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    TextField(String(localized: "Address"), text: $address, prompt: Text("https://my-mac.tail1234.ts.net"))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(save)
+                        .accessibilityLabel(String(localized: "Tunnel address"))
+                    if let addressIssue {
+                        Text(addressIssue).font(.callout).foregroundStyle(.red)
+                    }
+                }
+                .padding(16)
+            }
+            HStack {
+                Spacer()
+                Button(String(localized: "Back")) {
+                    model.remoteTunnelStarted = false
+                    model.remoteEditingAddress = false
+                }
+                Button(String(localized: "Save Address"), action: save)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .onAppear { address = model.remoteOrigin ?? "" }
+    }
+
+    private func save() {
+        addressIssue = model.setRemoteAddress(address)
+        if addressIssue == nil { model.testRemoteAccess() }
+    }
+
+    private var test: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Card {
+                HStack(spacing: 10) {
+                    switch model.remoteTest {
+                    case .notTested, .testing:
+                        ProgressView().controlSize(.small)
+                        Text(String(localized: "Testing \(model.remoteOrigin ?? "")…")).foregroundStyle(.secondary)
+                    case .reachable:
+                        Pill(label: String(localized: "Reachable"), tone: .ok, icon: true)
+                    case .notReachable(let reason, _):
+                        Pill(label: String(localized: "Not reachable"), tone: .warn, icon: true)
+                        Text(reason).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                }
+                .padding(16)
+            }
+            if case .notReachable = model.remoteTest {
+                HStack {
+                    Spacer()
+                    Button(String(localized: "Back")) { model.remoteEditingAddress = true }
+                    Button(String(localized: "Try Again")) { model.testRemoteAccess() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .onAppear { if model.remoteTest == .notTested { model.testRemoteAccess() } }
+    }
+}
+
+/// ① Choose a tunnel ② Start it ③ Paste its address ④ Test.
+struct RemoteGuideHeader: View {
+    let current: RemoteGuide.Step
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach([RemoteGuide.Step.chooseTunnel, .startTunnel, .pasteAddress, .test], id: \.rawValue) { step in
+                let done = step.rawValue < current.rawValue
+                let isCurrent = step == current || (current == .done && step == .test)
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle().strokeBorder(done ? Color.green : isCurrent ? Color.primary : Color.secondary,
+                                              lineWidth: 1.5)
+                        if done {
+                            Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.green)
+                        } else {
+                            Text("\(step.rawValue)").font(.caption.weight(.semibold))
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                    Text(title(step))
+                        .fontWeight(isCurrent ? .semibold : .regular)
+                        .foregroundStyle(done ? Color.green : isCurrent ? Color.primary : Color.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(String(localized: "Step \(step.rawValue), \(title(step)), \(done ? String(localized: "done") : isCurrent ? String(localized: "current") : String(localized: "not done"))"))
+                if step != .test { Divider() }
+            }
+        }
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func title(_ step: RemoteGuide.Step) -> String {
+        switch step {
+        case .chooseTunnel: String(localized: "Choose a tunnel")
+        case .startTunnel: String(localized: "Start it")
+        case .pasteAddress: String(localized: "Paste its address")
+        case .test, .done: String(localized: "Test")
+        }
+    }
+}
+
+/// Set up: status, address, URL, port, turn-off timer, keep awake, the
+/// tunnel, and the connections that can be used from the cloud.
+struct RemoteSetUpView: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card {
+                statusRow
+                RowDivider()
+                ValueRow(label: String(localized: "Address")) {
+                    if let origin = model.remoteOrigin {
+                        MonoText(text: origin)
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                    }
+                } actions: {
+                    Button(String(localized: "Edit…")) { model.sheet = .remoteAddress }
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "MCP URL")) {
+                    if let url = model.remoteMCPURL {
+                        MonoText(text: url)
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                    }
+                } actions: {
+                    if let url = model.remoteMCPURL {
+                        CopyButton(text: url, help: String(localized: "Copy URL"))
+                    }
+                    Button(String(localized: "Reset Path…")) { model.resetRemoteSecret() }
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "Port")) {
+                    MonoText(text: String(model.remotePort))
+                } actions: {
+                    Button(String(localized: "Change…")) { model.sheet = .remotePort }
+                }
+                RowDivider()
+                ValueRow(label: String(localized: "Turn off")) {
+                    HStack(spacing: 16) {
+                        Picker(String(localized: "Turn off automatically"), selection: Binding(
+                            get: { model.remoteAutoOff }, set: { model.setRemoteAutoOff($0) })) {
+                            ForEach(RemoteDefaults.autoOffChoices, id: \.self) { interval in
+                                Text(RemoteAccessPage.autoOffTitle(interval)).tag(interval)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        if let offAt = model.remoteOffAt {
+                            Text(String(localized: "at \(offAt.formatted(date: .omitted, time: .shortened))"))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle(String(localized: "Keep this Mac awake while on power"),
+                               isOn: Binding(get: { model.keepAwake }, set: { model.setKeepAwake($0) }))
+                            .toggleStyle(.checkbox)
+                            .fixedSize()
+                    }
+                } actions: { EmptyView() }
+                RowDivider()
+                ValueRow(label: String(localized: "Tunnel")) {
+                    Text(model.tunnelChoice.name)
+                } actions: {
+                    Button(String(localized: "Change")) { model.chooseTunnelAgain() }
+                        .buttonStyle(.link)
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                SectionTitle(title: String(localized: "Cloud access"))
+                if model.cloudClients.isEmpty {
+                    Text(String(localized: "No connection can be used from the cloud yet. Turn on Allow cloud access on a connection's Connect tab."))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    CardRows(data: model.cloudClients) { client in
+                        Button {
+                            model.clientTab[client.id] = .connect
+                            model.clientScrollTarget = "cloud"
+                            model.navigate(to: .client(client.id))
+                        } label: {
+                            HStack(spacing: 10) {
+                                AvatarView(name: client.name, id: client.id, size: 24)
+                                Text(client.name)
+                                Spacer()
+                                Text(String(localized: "Connect ▸ From the cloud")).foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(RowButtonStyle())
+                    }
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "info.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(String(localized: "Use a separate connection for each cloud agent, with only the access it needs."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                InfoButton(text: String(localized: "Port \(String(model.remotePort)) is open only while Remote Access is on. Cloud agents reach this Mac only while it's awake, logged in and running \(AppIdentity.displayName).\n\nRemote tokens and cloud apps never work on this Mac's local port, and local tokens never work remotely. Turning off Remote Access cuts off every cloud agent at once."))
+            }
+            .font(.callout)
+        }
+    }
+
     private var statusRow: some View {
         ValueRow(label: String(localized: "Status")) {
             HStack(spacing: 10) {
-                if let failure = model.remoteFailureText {
+                if !model.remoteEnabled {
+                    Pill(label: String(localized: "Off"), tone: .neutral)
+                } else if let failure = model.remoteFailureText {
                     Pill(label: String(localized: "Couldn't start"), tone: .bad, icon: true)
                     Text(failure).fixedSize(horizontal: false, vertical: true)
                 } else if model.remoteOrigin == nil {
                     Pill(label: String(localized: "Waiting for tunnel"), tone: .neutral)
-                    Text(String(localized: "Set up a tunnel to port \(String(model.remotePort)), then add its address."))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     switch model.remoteTest {
                     case .notTested:
@@ -128,14 +458,16 @@ struct RemoteAccessSettings: View {
         } actions: {
             if model.remoteFailureText != nil {
                 Button(String(localized: "Choose Another Port…")) { model.sheet = .remotePort }
-            } else {
+            } else if model.remoteEnabled {
                 Button(String(localized: "Test")) { model.testRemoteAccess() }
                     .disabled(model.remoteOrigin == nil || model.remoteTest == .testing)
                     .help(String(localized: "Fetch this app's health URL through the tunnel"))
             }
         }
     }
+}
 
+extension RemoteAccessPage {
     static func autoOffTitle(_ interval: TimeInterval) -> String {
         switch interval {
         case 0: String(localized: "Never")
@@ -143,63 +475,6 @@ struct RemoteAccessSettings: View {
         case 28_800: String(localized: "After 8 hours")
         default: String(localized: "After 1 day")
         }
-    }
-}
-
-/// Provider chips and the commands to run (the app never runs tunnels).
-struct TunnelGuideRow: View {
-    let model: BridgeAppModel
-
-    var body: some View {
-        let provider = model.tunnelChoice
-        let hostname = model.remoteOrigin.flatMap(URL.init(string:))?.host
-        let commands = provider.commands(port: model.remotePort, hostname: hostname)
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                Text(String(localized: "Tunnel"))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 76, alignment: .leading)
-                FlowLayout(spacing: 6) {
-                    ForEach(TunnelProvider.allCases) { option in
-                        AgentChip(title: option.name, selected: option == provider) {
-                            model.tunnelChoice = option
-                        }
-                    }
-                }
-            }
-            if !commands.isEmpty {
-                HStack(alignment: .top) {
-                    CodeBox(text: commands.joined(separator: "\n"))
-                    CopyButton(text: commands.joined(separator: "\n"), help: String(localized: "Copy Commands"))
-                }
-            }
-            if let config = provider.configFile(port: model.remotePort, hostname: hostname) {
-                Text(String(localized: "~/.cloudflared/config.yml"))
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
-                HStack(alignment: .top) {
-                    CodeBox(text: config)
-                    CopyButton(text: config, help: String(localized: "Copy config.yml"))
-                }
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(provider.steps.enumerated()), id: \.offset) { index, step in
-                    Text(provider.steps.count == 1 ? step : "\(index + 1). \(step)")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(Array(provider.notes.enumerated()), id: \.offset) { _, note in
-                    Label(note, systemImage: "info.circle")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .font(.callout)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(String(localized: "Tunnel setup"))
     }
 }
 
@@ -227,11 +502,8 @@ struct CloudSection: View {
                 if client.cloudAccess { details }
             }
             if client.cloudAccess {
-                Label(String(localized: "Use a separate connection for each cloud agent, with only the access it needs. Turning off Remote Access cuts off every cloud agent at once."),
-                      systemImage: "info.circle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // "Use a separate connection for each cloud agent" lives on the Remote Access page (B13).
+                EmptyView()
             }
         }
     }
@@ -256,7 +528,7 @@ struct CloudSection: View {
             if let url = model.remoteMCPURL {
                 MonoText(text: url)
             } else {
-                Text(String(localized: "Add the tunnel's address in Settings ▸ Remote Access first."))
+                Text(String(localized: "Add the tunnel's address on the Remote Access page first."))
                     .foregroundStyle(.secondary)
             }
         } actions: {
@@ -352,7 +624,7 @@ struct CloudSection: View {
                 .modifier(Prominent(on: agent.credential == .oauth))
                 .disabled(model.remoteOrigin == nil)
                 .help(model.remoteOrigin == nil
-                      ? String(localized: "Add the tunnel's address in Settings first.") : "")
+                      ? String(localized: "Add the tunnel's address on the Remote Access page first.") : "")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -478,7 +750,7 @@ struct OAuthClientSheet: View {
     }
 }
 
-/// Settings ▸ Remote Access ▸ Address.
+/// the Remote Access page ▸ Address.
 struct RemoteAddressSheet: View {
     let model: BridgeAppModel
     @State private var text = ""
@@ -517,7 +789,7 @@ struct RemoteAddressSheet: View {
     private func save() { submitted = model.setRemoteAddress(text) }
 }
 
-/// Settings ▸ Remote Access ▸ Port.
+/// the Remote Access page ▸ Port.
 struct RemotePortSheet: View {
     let model: BridgeAppModel
     @State private var text = ""

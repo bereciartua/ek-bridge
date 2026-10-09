@@ -6,8 +6,8 @@ commands:
 
 steps:
 1. Point the tunnel at http://127.0.0.1 and the Remote Access port, never at the port local agents use.
-2. Have it rewrite Host to 127.0.0.1 and the port, or add its public hostname under Address.
-3. Paste its HTTPS address under Address, then click Test.
+2. Have it rewrite Host to 127.0.0.1 and the port, or keep its public hostname, which must then be the address you paste.
+3. Paste its HTTPS address in step 3.
 
 notes:
 - The tunnel must pass the Authorization header through unchanged.

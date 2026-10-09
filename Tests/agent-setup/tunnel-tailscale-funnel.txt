@@ -10,7 +10,7 @@ steps:
 1. Install Tailscale on this Mac and sign in.
 2. In the Tailscale admin console, turn on MagicDNS and HTTPS certificates, and add the funnel node attribute to your tailnet policy.
 3. Run the first command in Terminal. Funnel prints your public address, such as https://my-mac.tail1234.ts.net.
-4. Paste that address under Address, then click Test. Public DNS can take about 10 minutes the first time.
+4. Paste that address in step 3. Public DNS can take about 10 minutes the first time.
 5. To turn it off, run the last command.
 
 notes:

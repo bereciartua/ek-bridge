@@ -329,6 +329,19 @@ struct AppPresentationTests {
                                               calendar: newYork).contains("tomorrow"))
         precondition(PauseSchedule.untilText(utc.date(from: "2026-10-09T12:00:00Z")!, now: afternoon,
                                              calendar: newYork).hasPrefix("until tomorrow at "))
+        // The Remote Access guide's step is derived from what's done.
+        func guide(_ chosen: Bool, _ on: Bool, _ started: Bool, _ origin: String?, _ reachable: Bool) -> RemoteGuide.Step {
+            RemoteGuide.step(tunnelChosen: chosen, remoteOn: on, started: started, origin: origin, reachable: reachable)
+        }
+        precondition(guide(false, false, false, nil, false) == .chooseTunnel)
+        precondition(guide(false, true, true, "https://a", true) == .chooseTunnel, "choosing again starts over")
+        precondition(guide(true, false, false, nil, false) == .startTunnel)
+        precondition(guide(true, false, true, "https://a", false) == .startTunnel, "Remote Access off")
+        precondition(guide(true, true, false, nil, false) == .startTunnel, "on, not started yet")
+        precondition(guide(true, true, true, nil, false) == .pasteAddress)
+        precondition(guide(true, true, false, "https://a", false) == .test, "an address means it was started")
+        precondition(guide(true, true, true, "https://a", false) == .test)
+        precondition(guide(true, true, true, "https://a", true) == .done)
         // The local MCP server runs only while EK Bridge is on, allowed, and used.
         precondition(MCPRunPolicy.shouldRun(bridgeOn: true, allowed: true, hasMCPConnections: true))
         precondition(!MCPRunPolicy.shouldRun(bridgeOn: false, allowed: true, hasMCPConnections: true))
