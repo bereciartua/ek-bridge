@@ -218,13 +218,7 @@ fi
 # 6. The DMG (drag to Applications), signed, notarized and stapled; then the zip
 # from the stapled app, which Sparkle installs from.
 step "Building the disk image"
-staging="$build_dir/dmg"
-rm -rf "$staging"
-mkdir -p "$staging"
-ditto "$app" "$staging/$app_name.app"
-ln -s /Applications "$staging/Applications"
-hdiutil create -quiet -ov -volname "$display_name" -srcfolder "$staging" -fs HFS+ -format ULFO "$dmg"
-rm -rf "$staging"
+sh "$project_dir/scripts/make_dmg.sh" "$app" "$display_name" "$dmg"
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
 codesign --force --sign "$EVENTKIT_SIGN_IDENTITY" --timestamp --identifier "$bundle_id.dmg" "$dmg"
 if [ "$notarize" = 1 ]; then

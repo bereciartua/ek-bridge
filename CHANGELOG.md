@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Changed
+
+- The DMG opens to a drag-to-install window: EK Bridge and the Applications folder side by side on a cream background, with a dotted arc from the app to Applications and *Drag to Applications to install* below, no toolbar or sidebar, and the app icon on the disk.
+
 ## [0.10.1] - 2026-10-09
 
 A small fix release. The sidebar's Remote Access badge now says **Off** until Remote Access is turned on *and* has a tunnel address, so a Mac without a tunnel never shows **On**. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.0 works by installing its DMG over this one.
