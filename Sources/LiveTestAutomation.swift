@@ -161,6 +161,15 @@ final class LiveTestAutomation {
             case "setRemoteAddress": completion(.success(try setRemoteAddress(command)))
             case "testRemote": testRemote(command, completion: completion)
             case "remoteGuide": completion(.success(try remoteGuide(command)))
+            case "remoteToken":
+                // Cloud access and a remote token for a test connection; the
+                // token stays in its 0600 credential file, never in a response.
+                let id = try clientID(command)
+                guard model.ensureRemoteToken(id),
+                      let url = model.services.credentialFiles.url(for: id, kind: .remoteToken) else {
+                    throw CommandError(message: "couldn't create the remote token")
+                }
+                completion(.success(["tokenFile": url.path]))
             case "switchTunnel", "editAddress": try switchTunnel(command, completion: completion)
             case "tunnelCheck":
                 // Runs the check on this Mac now (read-only) and waits for it.

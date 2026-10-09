@@ -214,7 +214,7 @@ struct TunnelSwitchView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Text(String(localized: "\(change.fromTunnel.name) keeps working")).font(.callout).foregroundStyle(.secondary)
+                Text(String(localized: "The tunnel in use keeps working")).font(.callout).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         }
@@ -229,7 +229,7 @@ struct TunnelSwitchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             if let change = model.tunnelSwitch, let summary = model.tunnelSwitchSummary {
                 Text(change.kind == .editAddress ? String(localized: "Save the new address?")
-                                                 : String(localized: "Switch to \(summary.tunnel.name)?"))
+                                                 : String(localized: "Switch to \(summary.tunnel.inSentence)?"))
                     .font(.headline)
                 (Text(String(localized: "The MCP URL becomes ")) + Text(summary.mcpURL).font(.body.monospaced())
                  + Text("."))

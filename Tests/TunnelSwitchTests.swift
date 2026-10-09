@@ -62,6 +62,10 @@ struct TunnelSwitchTests {
         check(change.otherTunnel == .tailscaleFunnel, "says which tunnel answered")
         change.test = .reachable(address: quick, ms: 84, tunnel: .other)
         check(change.otherTunnel == nil, "an unrecognized tunnel says nothing")
+        change.picked = .other
+        change.test = .reachable(address: quick, ms: 84, tunnel: .cloudflareQuick)
+        check(change.otherTunnel == nil, "Other tunnel means any tunnel")
+        check(TunnelProvider.other.inSentence == "another tunnel" && TunnelProvider.ngrok.inSentence == "ngrok", "in a sentence")
         // Nothing would change: the same address through the same tunnel.
         var edit = TunnelSwitch(kind: .editAddress, fromTunnel: .cloudflareQuick, fromOrigin: quick)
         edit.test = .reachable(address: quick, ms: 50, tunnel: .cloudflareQuick)

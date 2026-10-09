@@ -77,7 +77,7 @@ enum RemoteProbe {
         switch error.code {
         case .timedOut: String(localized: "No answer within 10 seconds. Is the tunnel running?")
         case .cannotFindHost, .dnsLookupFailed:
-            String(localized: "The address doesn't resolve yet. New Tailscale Funnel addresses can take about 10 minutes.")
+            String(localized: "The address doesn't resolve yet. A new address can take a few minutes (about 10 for Tailscale Funnel).")
         case .cannotConnectToHost: String(localized: "The tunnel refused the connection.")
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate:
             String(localized: "The tunnel's HTTPS certificate wasn't accepted.")

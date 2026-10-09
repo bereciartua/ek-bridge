@@ -2848,7 +2848,7 @@ final class BridgeAppModel {
             ? String(localized: "Update the URL in each cloud agent. Connected cloud apps were disconnected; connect them again.")
             : String(localized: "Update the URL in each cloud agent.")
         if let switchedTo {
-            showBanner(Banner(kind: .info, title: String(localized: "Switched to \(switchedTo.name)."),
+            showBanner(Banner(kind: .info, title: String(localized: "Switched to \(switchedTo.inSentence)."),
                               message: changed ? message : nil))
         } else if changed {
             showBanner(Banner(kind: .info, title: String(localized: "The Remote Access address changed."),
@@ -3326,6 +3326,18 @@ final class BridgeAppModel {
             }
         }
     }
+
+    #if EVENTKIT_LIVE_TEST
+    /// Live-test automation: cloud access on and a remote token, as Copy
+    /// Remote Token… would, without the alert or the clipboard.
+    func ensureRemoteToken(_ clientID: String) -> Bool {
+        guard let client = client(clientID) else { return false }
+        if !client.cloudAccess { setCloudAccess(clientID, true) }
+        guard let updated = self.client(clientID), updated.cloudAccess else { return false }
+        if updated.hasRemoteToken && remoteTokenStatus(clientID) == .present { return true }
+        return issueRemoteToken(updated)
+    }
+    #endif
 
     @discardableResult
     private func issueRemoteToken(_ client: ClientView) -> Bool {

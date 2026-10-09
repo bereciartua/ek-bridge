@@ -93,8 +93,10 @@ struct TunnelSwitch: Equatable {
 
     /// A different tunnel answered than the one picked: say so, and offer to
     /// continue as that one. An unrecognized tunnel ("Other") says nothing.
+    /// Other tunnel means any tunnel, so a recognized one answering isn't news.
     var otherTunnel: TunnelProvider? {
-        guard case .reachable(_, _, let tunnel?) = test, tunnel != .other, tunnel != picked else { return nil }
+        guard case .reachable(_, _, let tunnel?) = test, tunnel != .other, tunnel != picked,
+              picked != .other else { return nil }
         return tunnel
     }
 
@@ -136,6 +138,12 @@ struct TunnelSwitchSummary: Equatable {
             stopTunnel: stopping ? change.fromTunnel : nil,
             stopCommands: stopping ? change.fromTunnel.offCommands(port: port) : [])
     }
+}
+
+extension TunnelProvider {
+    /// The tunnel inside a sentence: "Switch to Tailscale Funnel?", but
+    /// "Switch to another tunnel?" for Other tunnel.
+    var inSentence: String { self == .other ? String(localized: "another tunnel") : name }
 }
 
 /// Each tunnel's last address (D2): UserDefaults `RemoteTunnelAddresses`,
