@@ -49,7 +49,7 @@ Pausing saves immediately and doesn't ask first, because it's undone by resuming
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/client-paused-dark.png">
-  <img alt="A paused connection's page: a Paused label next to its name, and a card saying it's paused since a date, that every request is refused and shows in Activity as Connection was paused, that its keys, tokens, access and cloud connections are kept, with a Resume button." src="images/client-paused-light.png" width="720">
+  <img alt="A paused connection's page: the header says Paused since a date, and a card above the Access, Connect and Activity tabs says every request is refused and shows in Activity as Connection was paused, and that its keys, tokens, access and cloud connections are kept, with a Resume button." src="images/client-paused-light.png" width="720">
 </picture>
 
 Only active connections count toward the limit of 32. Removed connections stay in the sidebar under **Removed**, read only, so Activity stays understandable; the app keeps up to 200 of them and drops the oldest first.

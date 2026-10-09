@@ -24,7 +24,7 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-  <img alt="EK Bridge Overview: EK Bridge is on, Calendars and Reminders have Full Access, and three connections are listed with their access and last request." src="docs/images/overview-light.png" width="720">
+  <img alt="EK Bridge Overview: EK Bridge is on with three connections and MCP on port 47615; Needs you lists a change waiting for approval, an unavailable calendar and refused requests; Today shows 29 requests, 4 changes and 5 problems with the latest changes." src="docs/images/overview-light.png" width="720">
 </picture>
 </p>
 
@@ -61,8 +61,8 @@ Twelve tools cover events and reminders, with every field Calendar supports: tim
    3. **Connect it.** **Add to Claude Desktop…** (or Cursor, or Claude Code) shows the exact change to the agent's settings, keeps a backup and never writes the token; it also turns EK Bridge on. For other agents, copy the command or config from the connection's **Connect** tab. The step is done when the agent's first request arrives.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect-agent-dark.png">
-  <img alt="Connect ▸ AI agent on a connection's page: Claude Code is selected with the recommended direct HTTP method, a claude mcp add-json command to copy, a Connected status, a hidden token with Reset, and the server URL." src="docs/images/connect-agent-light.png" width="720">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/setup-dark.png">
+  <img alt="Set up EK Bridge: Calendar and Reminders allowed with Full Access, Claude Code added to read all calendars and lists and ask before changes, and step 3, Connect Claude Code, with an Add to Claude Code button. Below: Copy the setup instead, the update checkbox and Add a command-line connection." src="docs/images/setup-light.png" width="660">
 </picture>
 
 That's it: ask your agent one of the questions above. Setups for every agent and troubleshooting are in the [MCP guide](docs/MCP.md).
@@ -79,7 +79,7 @@ Every agent has its own key and its own access: Read, Create, Edit and Delete fo
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/access-dark.png">
-  <img alt="A connection's Access table: Work has Read, Create and Edit; Home has Read; Family and a Google team calendar have nothing; Birthdays and US Holidays are read-only calendars. Changes are set to Ask me first." src="docs/images/access-light.png" width="640">
+  <img alt="A connection's Access tab: Work has Read, Create and Edit; Home has Read; Family and a Google team calendar have nothing; Birthdays and US Holidays are read-only. Changes are set to Ask me first, each column header has a menu and each row a ⋯ button with presets." src="docs/images/access-light.png" width="640">
 </picture>
 
 ### You approve each change
