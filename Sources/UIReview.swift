@@ -1477,6 +1477,14 @@ final class BehaviorReview {
             return SetupChecklist.isComplete(freshModel.checklistInput) &&
                 freshModel.setupJustCompletedName == "Claude Desktop"
         }
+        step("Needs you lists a waiting change and the unavailable calendar") {
+            self.queue(.createReminder, ["listID": "list-errands", "title": "x"])
+            let items = self.model.needsYouItems
+            self.review.approvals.withdrawAll()
+            return items.first == .approvals(1) && items.contains {
+                if case .unavailable(_, _, let key, _, _) = $0 { key.targetID == "cal-signed-out" } else { false }
+            }
+        }
         step("a copy built from source can't check") {
             self.review.updaterAvailable = false
             self.model.refresh()
@@ -1562,6 +1570,8 @@ final class SnapshotReview {
     let folder: URL
     private var steps = [(String, @MainActor () -> NSWindow?)]()
     private var written = [String]()
+    /// Claude Code's grants while `overview-quiet` hides its unavailable one.
+    private var quietGrants: [ClientGrant]?
 
     init(review: UIReview, model: BridgeAppModel, controller: MainWindowController, folder: URL) {
         self.review = review
@@ -1588,11 +1598,37 @@ final class SnapshotReview {
                 return window
             }
             step("overview") {
+                // Needs you: a change waiting for approval and an unavailable calendar.
                 self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
+                self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": "Buy oat milk"],
+                                          agent: "claude-code 2.4.1")
                 return main
+            }
+            step("overview-quiet") {
+                // Nothing needs you: no approvals, Activity seen, every granted calendar listed.
+                self.review.approvals.withdrawAll()
+                self.model.markActivityViewed()
+                self.quietGrants = self.review.registry.clients()?.first { $0.id == UIReview.claudeID }?.grants
+                _ = self.review.registry.replaceGrants(
+                    clientID: UIReview.claudeID,
+                    grants: (self.quietGrants ?? []).filter { $0.targetID != "cal-signed-out" })
+                self.model.refresh()
+                return main
+            }
+            step("overview-paused") {
+                self.model.setBridgeEnabled(false)
+                return main
+            }
+            step("restore-overview") {
+                self.model.setBridgeEnabled(true)
+                if let grants = self.quietGrants {
+                    _ = self.review.registry.replaceGrants(clientID: UIReview.claudeID, grants: grants)
+                }
+                self.model.refresh()
+                return nil
             }
             step("client") {
                 self.model.navigate(to: .client(UIReview.claudeID))

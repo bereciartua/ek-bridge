@@ -22,6 +22,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - Setup takes three steps instead of seven: allow Calendar and Reminders (skip the one you don't need), add your agent, connect it. Connecting turns EK Bridge on and, for Claude Desktop, Cursor and Claude Code, is one click; the step is done when the agent's first request arrives. Its wording leads with AI agents; **Add a command-line connection…** is there for scripts.
 - **Remote Access** has its own page in the sidebar (with an **On** label) and a guided setup: choose a tunnel, turn it on and start the tunnel, paste its address, and a test that runs by itself. Once set up, the page shows its status and settings and the connections with cloud access; the tunnel's steps and notes are behind ⓘ.
 - Settings has **General · Advanced · About** tabs. General: start at login, Dock, updates and the Ask before changes defaults. Advanced: the local MCP server, the command-line tool and developer tools. About: version, links and the setup checklist.
+- Overview is about today: a compact on/paused card, **Needs you** (changes waiting for approval, problems, unavailable calendars, refused requests you haven't seen, an update) only when something does, and **Today** with the day's requests, changes and problems and the latest changes. The connection list moved to the sidebar only, and the macOS access card shows only when access is missing.
 
 ## [0.8.3] - 2026-10-08
 

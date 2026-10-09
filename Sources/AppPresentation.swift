@@ -286,6 +286,10 @@ enum ActivityStats {
         let requests: Int
         let notAllowed: Int
         let last: Date?
+        /// Adds, edits, completions and deletes that went through.
+        var changes = 0
+        /// Rows a problem: refused, failed or needing review.
+        var problems = 0
     }
 
     static func today(_ entries: [ActivityEntry], now: Date = Date(),
@@ -293,7 +297,9 @@ enum ActivityStats {
         let today = entries.filter { calendar.isDate($0.at, inSameDayAs: now) }
         return Today(requests: today.count,
                      notAllowed: today.filter { $0.code == "forbidden" || $0.code == "unauthorized" }.count,
-                     last: entries.first?.at)
+                     last: entries.first?.at,
+                     changes: today.filter { $0.isWrite && $0.code == "success" }.count,
+                     problems: today.filter(\.isProblem).count)
     }
 
     static func unseenProblems(_ entries: [ActivityEntry], since: Date?) -> Int {
@@ -564,6 +570,43 @@ enum MCPRunPolicy {
     /// connection uses MCP. `old` is nil when the switch was never touched.
     static func migratedAllowed(old: Bool?, hasMCPConnections: Bool) -> Bool {
         old == nil || old == true || hasMCPConnections
+    }
+}
+
+/// Overview's Needs you (B12): what's waiting for the user, in order.
+enum NeedsYouItem: Equatable {
+    case approvals(Int)
+    case problem(AttentionProblem)
+    /// A granted calendar or list EventKit doesn't list; `name` from its label.
+    case unavailable(connectionID: String, connectionName: String, key: GrantKey, name: String?, mask: Int)
+    case refused(count: Int, since: Date?)
+    case update(version: String, critical: Bool)
+}
+
+enum NeedsYou {
+    struct Unavailable: Equatable {
+        let connectionID: String
+        let connectionName: String
+        let key: GrantKey
+        let name: String?
+        let mask: Int
+    }
+
+    /// Approvals, problems, unavailable calendars, refused requests not yet
+    /// seen, then an update (only when Overview has no update card).
+    static func items(pendingApprovals: Int, problems: [AttentionProblem], unavailable: [Unavailable],
+                      unseenProblems: Int, lastViewed: Date?, update: (version: String, critical: Bool)?,
+                      updateCardShown: Bool) -> [NeedsYouItem] {
+        var items = [NeedsYouItem]()
+        if pendingApprovals > 0 { items.append(.approvals(pendingApprovals)) }
+        items += problems.map { .problem($0) }
+        items += unavailable.map {
+            .unavailable(connectionID: $0.connectionID, connectionName: $0.connectionName, key: $0.key,
+                         name: $0.name, mask: $0.mask)
+        }
+        if unseenProblems > 0 { items.append(.refused(count: unseenProblems, since: lastViewed)) }
+        if let update, !updateCardShown { items.append(.update(version: update.version, critical: update.critical)) }
+        return items
     }
 }
 

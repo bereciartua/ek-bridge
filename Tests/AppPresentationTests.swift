@@ -265,6 +265,30 @@ struct AppPresentationTests {
         let today = ActivityStats.today(entries, now: now)
         let expected = Calendar.current.isDate(now.addingTimeInterval(-120), inSameDayAs: now) ? 3 : 1
         precondition(today.requests == expected && today.last == now)
+        // Changes are writes that went through; problems are any problem row.
+        let writes = ActivityEntry.entries(from: [
+            ClientActivity(at: now, clientID: "a", command: "update_event", outcome: "success", targetID: "w"),
+            ClientActivity(at: now, clientID: "a", command: "create_reminder", outcome: "forbidden", targetID: "l"),
+            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
+            ClientActivity(at: now, clientID: "a", command: "delete_event", outcome: "error:approval_denied", targetID: "w"),
+        ])
+        let counts = ActivityStats.today(writes, now: now)
+        precondition(counts.requests == 4 && counts.changes == 1 && counts.problems == 1,
+                     "\(counts.changes) changes, \(counts.problems) problems")
+        precondition(writes.filter(\.isWrite).count == 3)
+        // Needs you: order, the update only without its card, and nothing when all is well.
+        let gone = NeedsYou.Unavailable(connectionID: "c", connectionName: "Claude Code",
+                                        key: GrantKey(resource: .calendar, targetID: "x"), name: "Project", mask: 1)
+        let items = NeedsYou.items(pendingApprovals: 2, problems: [.bridgeFailed], unavailable: [gone],
+                                   unseenProblems: 3, lastViewed: now, update: ("1.0", false), updateCardShown: false)
+        precondition(items == [.approvals(2), .problem(.bridgeFailed),
+                               .unavailable(connectionID: "c", connectionName: "Claude Code",
+                                            key: GrantKey(resource: .calendar, targetID: "x"), name: "Project", mask: 1),
+                               .refused(count: 3, since: now), .update(version: "1.0", critical: false)])
+        precondition(NeedsYou.items(pendingApprovals: 0, problems: [], unavailable: [], unseenProblems: 0,
+                                    lastViewed: nil, update: ("1.0", true), updateCardShown: true).isEmpty)
+        precondition(NeedsYou.items(pendingApprovals: 0, problems: [], unavailable: [], unseenProblems: 0,
+                                    lastViewed: nil, update: nil, updateCardShown: false).isEmpty)
         precondition(ActivityStats.unseenProblems(entries, since: nil) == 3)
         precondition(ActivityStats.unseenProblems(entries, since: now.addingTimeInterval(-90)) == 1)
         let again = ActivityEntry.entries(from: [ClientActivity(at: now, clientID: "x",

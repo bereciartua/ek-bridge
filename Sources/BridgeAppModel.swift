@@ -755,6 +755,34 @@ final class BridgeAppModel {
 
     var needsAttention: Bool { !problems.isEmpty }
 
+    /// Overview's Needs you (B12). Problems Overview already shows as a
+    /// banner or in its header (settings unreadable, MCP or EK Bridge
+    /// failing to start) aren't repeated.
+    var needsYouItems: [NeedsYouItem] {
+        let shown = problems.filter {
+            switch $0 {
+            case .policyStoreUnavailable, .mcpServerFailed, .bridgeFailed: false
+            default: true
+            }
+        }
+        let unavailable = activeClients.flatMap { client in
+            unavailableGrants(client, staged: false).map { key in
+                NeedsYou.Unavailable(connectionID: client.id, connectionName: client.name, key: key,
+                                     name: unavailableName(key),
+                                     mask: client.grants.first { $0.resource == key.resource && $0.targetID == key.targetID }?.mask ?? 0)
+            }
+        }
+        return NeedsYou.items(pendingApprovals: pendingApprovalCount, problems: shown, unavailable: unavailable,
+                              unseenProblems: unseenProblemCount, lastViewed: activityLastViewed,
+                              update: foundUpdate.map { ($0.version, $0.critical) }, updateCardShown: showsUpdateCard)
+    }
+
+    /// Needs you ▸ refused requests: Activity with Problems only.
+    func openProblems() {
+        openActivity()
+        activityProblemsOnly = true
+    }
+
     /// The fix for a problem, shared by the menu bar and Overview's Needs you.
     func fix(_ problem: AttentionProblem) {
         switch problem {
@@ -2126,21 +2154,6 @@ final class BridgeAppModel {
         guard writes || client.approval == .ask else { return reads }
         return reads + " · " + (client.approval == .ask ? String(localized: "asks before changes")
                                                         : String(localized: "changes without asking"))
-    }
-
-    /// The agent subtitle on Overview: "claude-code 2.4.1". The time is in its
-    /// own column. "Waiting for the agent…" only until the client's first
-    /// request by any transport.
-    func agentSubtitle(_ client: ClientView) -> String? {
-        guard client.hasMCPToken else { return nil }
-        switch mcpConnection(for: client) {
-        case .waiting:
-            return lastRequest(for: client.id) == nil ? String(localized: "Waiting for the agent…") : nil
-        case .connected(let agent, _):
-            return agent
-        case .refused(let code, _):
-            return String(localized: "Refused: \(OutcomePresentation.of(code).label)")
-        }
     }
 
     func turnOnMCPAccess(_ clientID: String) {

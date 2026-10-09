@@ -28,17 +28,27 @@ struct OverviewView: View {
                     SetupChecklistView(model: model)
                 } else {
                     BridgeStatusCard(model: model)
-                    TodayLine(model: model)
-                    VStack(alignment: .leading, spacing: 10) {
-                        SectionTitle(title: String(localized: "macOS access"))
-                        Card {
-                            AccessStatusRow(model: model, resource: .calendar)
-                            Divider().padding(.leading, 52)
-                            AccessStatusRow(model: model, resource: .reminderList)
+                    NeedsYouSection(model: model)
+                    TodaySection(model: model)
+                    if model.calendarAccess != .fullAccess || model.remindersAccess != .fullAccess {
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionTitle(title: String(localized: "macOS access"))
+                            Card {
+                                AccessStatusRow(model: model, resource: .calendar)
+                                Divider().padding(.leading, 52)
+                                AccessStatusRow(model: model, resource: .reminderList)
+                            }
                         }
                     }
-                    if model.policyStoreAvailable {
-                        OverviewClients(model: model)
+                    if model.policyStoreAvailable && model.activeClients.isEmpty {
+                        Card {
+                            HStack {
+                                Text(String(localized: "No connections yet.")).foregroundStyle(.secondary)
+                                Spacer()
+                                NewClientButton(model: model)
+                            }
+                            .padding(16)
+                        }
                     }
                 }
             }
@@ -112,12 +122,13 @@ struct BridgeStatusCard: View {
                 AppIconTile(dimmed: !model.bridge.isOn)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.title2.weight(.semibold))
-                    Text(subtitle)
+                    Text(([subtitle] + (model.mcpFailureText == nil ? [model.mcpStatusLine].compactMap { $0 } : []))
+                            .joined(separator: " · "))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let line = model.mcpStatusLine {
+                    if model.mcpFailureText != nil, let line = model.mcpStatusLine {
                         Label(line, systemImage: "server.rack")
-                            .foregroundStyle(model.mcpFailureText == nil ? Color.secondary : Color.orange)
+                            .foregroundStyle(Color.orange)
                             .font(.callout)
                     }
                     if let remote = model.remoteStatusLine {
@@ -181,56 +192,194 @@ struct AppIconTile: View {
     }
 }
 
-struct TodayLine: View {
+/// Needs you (B12): approvals waiting, problems, unavailable calendars,
+/// refused requests since Activity was last seen, an update. Hidden when empty.
+struct NeedsYouSection: View {
     let model: BridgeAppModel
 
     var body: some View {
-        HStack {
-            Text(text).foregroundStyle(.secondary)
-            Spacer()
-            if !model.activity.isEmpty {
-                Button(String(localized: "View Activity")) { model.navigate(to: .activity) }
-                    .buttonStyle(.link)
+        let items = model.needsYouItems
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: String(localized: "Needs you"))
+                Card {
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        if index > 0 { Divider().padding(.leading, 52) }
+                        row(item)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 4)
     }
 
-    private var text: String {
-        let today = ActivityStats.today(model.activity, now: model.now)
-        guard let last = today.last else { return String(localized: "No requests yet.") }
-        var parts = [today.requests == 1 ? String(localized: "Today: 1 request")
-                                         : String(localized: "Today: \(today.requests) requests")]
-        if today.notAllowed > 0 { parts.append(String(localized: "\(today.notAllowed) not allowed")) }
-        parts.append(String(localized: "last \(RelativeTime.ago(last, now: model.now).lowercased())"))
-        return parts.joined(separator: " · ")
+    private func row(_ item: NeedsYouItem) -> some View {
+        let (symbol, color, title, detail, action, perform) = describe(item)
+        return HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                if let detail {
+                    Text(detail).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 12)
+            Button(action, action: perform).fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func describe(_ item: NeedsYouItem)
+        -> (String, Color, String, String?, String, () -> Void) {
+        switch item {
+        case .approvals(let count):
+            return ("hand.raised", .accentColor,
+                    count == 1 ? String(localized: "1 change waiting for approval")
+                               : String(localized: "\(count) changes waiting for approval"),
+                    String(localized: "Answer in the approval panel."), String(localized: "Review…"),
+                    { model.showApprovals() })
+        case .problem(let problem):
+            let fix: String = switch problem {
+            case .calendarAccess, .remindersAccess: String(localized: "Open Privacy Settings…")
+            case .remoteAccessFailed: String(localized: "Open Remote Access…")
+            default: String(localized: "Fix…")
+            }
+            let detail: String? = switch problem {
+            case .calendarAccess(let status): AccessText.detail(.calendar, status)
+            case .remindersAccess(let status): AccessText.detail(.reminderList, status)
+            case .remoteAccessFailed(let reason): reason
+            default: nil
+            }
+            return ("exclamationmark.triangle.fill", .orange, problem.title, detail, fix, { model.fix(problem) })
+        case .unavailable(let id, let connection, let key, let name, let mask):
+            let title = name.map { String(localized: "\($0) isn't available") }
+                ?? (key.resource == .calendar ? String(localized: "A calendar isn't available")
+                                              : String(localized: "A list isn't available"))
+            let words = AccessWords.words(mask).isEmpty ? String(localized: "its") : AccessWords.words(mask)
+            return ("exclamationmark.triangle.fill", .orange, title,
+                    String(localized: "\(connection) keeps \(words) access until you remove it"),
+                    String(localized: "Review…"), { model.openClientAccess(id, focus: nil) })
+        case .refused(let count, let since):
+            let title: String
+            if let since {
+                let when = Calendar.current.isDateInToday(since)
+                    ? since.formatted(date: .omitted, time: .shortened)
+                    : since.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+                title = count == 1 ? String(localized: "1 request was refused since \(when)")
+                                   : String(localized: "\(count) requests were refused since \(when)")
+            } else {
+                title = count == 1 ? String(localized: "1 request was refused")
+                                   : String(localized: "\(count) requests were refused")
+            }
+            return ("xmark.octagon", .red, title, String(localized: "Activity says why, and how to fix it."),
+                    String(localized: "Open Activity"), { model.openProblems() })
+        case .update(let version, let critical):
+            return ("arrow.down.circle", critical ? .red : .accentColor,
+                    critical ? String(localized: "A security update is available: version \(version)")
+                             : String(localized: "Version \(version) is available"),
+                    nil, String(localized: "Install Update…"), { model.checkForUpdates() })
+        }
     }
 }
 
-struct OverviewClients: View {
+/// Today (B12): requests, changes and problems, then the latest changes.
+struct TodaySection: View {
     let model: BridgeAppModel
 
     var body: some View {
+        let today = ActivityStats.today(model.activity, now: model.now)
+        let changes = Array(model.activity.filter {
+            $0.isWrite && Calendar.current.isDate($0.at, inSameDayAs: model.now)
+        }.prefix(5))
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: String(localized: "Connections"),
-                         subtitle: String(localized: "Each connection has its own key and access."))
-            if model.activeClients.isEmpty {
-                Card {
-                    Text(String(localized: "No connections yet. A connection is one agent or script with its own key."))
-                        .foregroundStyle(.secondary)
-                        .padding(16)
-                }
-            } else {
-                CardRows(data: model.activeClients) { client in
-                    Button { model.navigate(to: .client(client.id)) } label: {
-                        OverviewClientRow(model: model, client: client)
-                    }
-                    .buttonStyle(RowButtonStyle())
+            HStack(alignment: .firstTextBaseline) {
+                SectionTitle(title: String(localized: "Today"))
+                Spacer()
+                if !model.activity.isEmpty {
+                    Button(String(localized: "Open Activity")) { model.openActivity() }
+                        .buttonStyle(.link)
                 }
             }
-            NewClientButton(model: model)
-                .padding(.top, 4)
+            Card {
+                HStack(spacing: 0) {
+                    stat(today.requests, today.requests == 1 ? String(localized: "request") : String(localized: "requests"))
+                    Divider()
+                    stat(today.changes, today.changes == 1 ? String(localized: "change") : String(localized: "changes"))
+                    Divider()
+                    stat(today.problems, today.problems == 1 ? String(localized: "problem") : String(localized: "problems"),
+                         warn: today.problems > 0)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                if changes.isEmpty {
+                    Divider()
+                    Text(today.requests == 0 ? String(localized: "No requests yet today.")
+                                             : String(localized: "No changes today; agents only read."))
+                        .foregroundStyle(.secondary)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(changes) { entry in
+                        Divider()
+                        Button { model.openActivity(selecting: entry.id) } label: {
+                            ChangeRow(model: model, entry: entry)
+                        }
+                        .buttonStyle(RowButtonStyle())
+                    }
+                }
+            }
         }
+    }
+
+    private func stat(_ value: Int, _ label: String, warn: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(value)").font(.title.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(warn ? Color.orange : Color.primary)
+            Text(label).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "9:48 · ● Update event · Work · Claude Code · Approved" (item names come with C06).
+struct ChangeRow: View {
+    let model: BridgeAppModel
+    let entry: ActivityEntry
+
+    var body: some View {
+        let collection = entry.targetKey.flatMap(model.collection)
+        HStack(spacing: 10) {
+            Text(entry.at.formatted(date: .omitted, time: .shortened))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 70, alignment: .leading)
+            ColorDot(color: collection?.color, size: 8)
+            (Text(CommandPresentation.label(entry.command))
+             + Text(collection.map { " · \($0.name)" } ?? "")
+             + Text(" · \(model.clientName(entry.clientID))").foregroundColor(.secondary))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Pill(label: label, tone: entry.outcome.tone)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "Approved" for a change the user allowed in the panel.
+    private var label: String {
+        entry.code == "success" && (entry.approval == "user" || entry.approval == "window")
+            ? String(localized: "Approved") : entry.outcome.label
     }
 }
 
@@ -246,59 +395,6 @@ struct NewClientButton: View {
         .disabled(!model.canCreateClient)
         .help(model.canCreateClient ? ""
               : String(localized: "You have 32 connections, the maximum. Remove one to add another."))
-    }
-}
-
-struct OverviewClientRow: View {
-    let model: BridgeAppModel
-    let client: ClientView
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(name: client.name, id: client.id, size: 34)
-                .opacity(client.paused ? 0.5 : 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(client.name).font(.body.weight(.medium)).lineLimit(1)
-                HStack(spacing: 6) {
-                    if let badge = ClientTransport(client).badge {
-                        TransportBadge(text: badge)
-                    }
-                    Text([model.agentSubtitle(client),
-                          AccessSummary.text(grants: client.grants, collections: model.collections,
-                                             hidden: model.hiddenResources,
-                                             unavailableName: model.unavailableName)]
-                        .compactMap { $0 }.joined(separator: " · "))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    if AccessSummary.hasUngrantableBits(grants: client.grants, collections: model.collections) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .help(String(localized: "Some access can't apply: a calendar or list is read only. Open the connection to review it."))
-                            .accessibilityLabel(String(localized: "Some access can't apply"))
-                    }
-                }
-            }
-            Spacer(minLength: 12)
-            if client.paused {
-                Pill(label: String(localized: "Paused"), tone: .neutral)
-            }
-            Text(model.lastRequest(for: client.id).map { RelativeTime.ago($0, now: model.now) }
-                 ?? String(localized: "No requests yet"))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .fixedSize()
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
     }
 }
 
