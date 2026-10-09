@@ -96,11 +96,6 @@ struct RemoteGuideView: View {
             case .pasteAddress: pasteAddress
             case .test, .done: test
             }
-            Label(String(localized: "Once it's reachable, this page shows only status, address, URL, port, turn-off timer and keep-awake. Each connection's cloud switch is on its Connect tab."),
-                  systemImage: "info.circle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -292,8 +287,9 @@ struct RemoteGuideHeader: View {
                         .fontWeight(isCurrent ? .semibold : .regular)
                         .foregroundStyle(done ? Color.green : isCurrent ? Color.primary : Color.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
@@ -416,7 +412,6 @@ struct RemoteSetUpView: View {
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "info.circle").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(String(localized: "Use a separate connection for each cloud agent, with only the access it needs."))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -564,10 +559,10 @@ struct CloudSection: View {
                     .font(.callout)
                 }
                 if let footnote = agent.footnote {
-                    Label(footnote, systemImage: "info.circle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 4) {
+                        Text(String(localized: "About \(agent.displayName)")).font(.callout).foregroundStyle(.secondary)
+                        InfoButton(text: footnote)
+                    }
                 }
             }
             .padding(.horizontal, 16)

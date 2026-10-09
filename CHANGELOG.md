@@ -23,6 +23,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - **Remote Access** has its own page in the sidebar (with an **On** label) and a guided setup: choose a tunnel, turn it on and start the tunnel, paste its address, and a test that runs by itself. Once set up, the page shows its status and settings and the connections with cloud access; the tunnel's steps and notes are behind ⓘ.
 - Settings has **General · Advanced · About** tabs. General: start at login, Dock, updates and the Ask before changes defaults. Advanced: the local MCP server, the command-line tool and developer tools. About: version, links and the setup checklist.
 - Overview is about today: a compact on/paused card, **Needs you** (changes waiting for approval, problems, unavailable calendars, refused requests you haven't seen, an update) only when something does, and **Today** with the day's requests, changes and problems and the latest changes. The connection list moved to the sidebar only, and the macOS access card shows only when access is missing.
+- Less text on screen: explanations that don't prevent a mistake moved behind ⓘ buttons (Start at login, Dock, Ask before changes, developer tools, agent and tunnel notes), and notes that appeared more than once now appear once.
 
 ## [0.8.3] - 2026-10-08
 

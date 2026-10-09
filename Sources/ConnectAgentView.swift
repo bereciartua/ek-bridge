@@ -264,8 +264,9 @@ struct SnippetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 4) {
                 Text(heading).foregroundStyle(.secondary)
+                if let footnote = agent.footnote { InfoButton(text: footnote) }
                 Spacer()
                 if let url = snippet.installURL {
                     Button {
@@ -316,12 +317,6 @@ struct SnippetView: View {
             }
             if snippet.skipsListenerCheck {
                 warning(AgentSetup.listenerCheckCaveat)
-            }
-            if let footnote = agent.footnote {
-                Label(footnote, systemImage: "info.circle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16)

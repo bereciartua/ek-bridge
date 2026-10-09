@@ -164,10 +164,10 @@ struct BridgeStatusCard: View {
         case .on:
             let count = model.activeClients.count - model.pausedCount
             let text = count == 1
-                ? String(localized: "1 connection can use what you've allowed.")
-                : String(localized: "\(count) connections can use what you've allowed.")
+                ? String(localized: "1 connection can use what you've allowed")
+                : String(localized: "\(count) connections can use what you've allowed")
             return model.pausedCount == 0 ? text
-                : text + " " + String(localized: "\(model.pausedCount) paused.")
+                : text + " · " + String(localized: "\(model.pausedCount) paused")
         case .off:
             return String(localized: "Agents and scripts are refused until you turn it on. Their access is kept.")
         case .failed(let reason):

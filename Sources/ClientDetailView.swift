@@ -453,16 +453,14 @@ struct ApprovalControl: View {
                 .fixedSize()
                 .accessibilityLabel(String(localized: "Ask before changes"))
             } else {
-                Text(String(localized: "Changes: none allowed. Ask me first applies once you allow a change."))
+                Text(String(localized: "Changes: none allowed"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
             }
+            InfoButton(text: writes
+                ? String(localized: "Ask me first shows a panel for every add, change, completion or delete from this connection. Reads never ask.")
+                : String(localized: "Ask me first applies once you allow a change. Reads never ask."))
         }
-        .help(String(localized: "Ask me first shows a prompt for every create, edit, complete or delete from this connection. Reads never ask."))
     }
 }
 

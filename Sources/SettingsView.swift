@@ -61,9 +61,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Card {
                 SettingsRow(title: String(localized: "Start at login"),
-                            caption: AppIdentity.isLiveTest
-                                ? String(localized: "Not available in the test copy.")
-                                : String(localized: "\(AppIdentity.displayName) also remembers whether it was on.")) {
+                            caption: AppIdentity.isLiveTest ? String(localized: "Not available in the test copy.") : nil,
+                            info: String(localized: "\(AppIdentity.displayName) also remembers whether it was on or paused.")) {
                     Toggle(String(localized: "Start at login"),
                            isOn: Binding(get: { model.loginItem == .enabled },
                                          set: { model.setStartAtLogin($0) }))
@@ -89,7 +88,7 @@ struct SettingsView: View {
                 }
                 RowDivider()
                 SettingsRow(title: String(localized: "Show in Dock"),
-                            caption: String(localized: "The menu bar icon is always shown.")) {
+                            info: String(localized: "The menu bar icon is always shown.")) {
                     Picker(String(localized: "Show in Dock"),
                            selection: Binding(get: { model.dockMode }, set: { model.setDockMode($0) })) {
                         ForEach(DockIconMode.allCases) { mode in
@@ -148,7 +147,7 @@ struct SettingsView: View {
                 }
                 RowDivider()
                 SettingsRow(title: String(localized: "Show developer tools"),
-                            caption: String(localized: "For contributors testing \(AppIdentity.displayName) with throwaway data.")) {
+                            info: String(localized: "For contributors testing \(AppIdentity.displayName) with throwaway data.")) {
                     Toggle(String(localized: "Show developer tools"),
                            isOn: Binding(get: { model.showDeveloperTools },
                                          set: { model.setShowDeveloperTools($0) }))
@@ -283,12 +282,17 @@ struct SettingsRow<Control: View>: View {
     let title: String
     var caption: String? = nil
     var monospacedCaption = false
+    /// Explanation behind an ⓘ next to the title (B13).
+    var info: String? = nil
     @ViewBuilder var control: Control
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                HStack(spacing: 4) {
+                    Text(title)
+                    if let info { InfoButton(text: info) }
+                }
                 if let caption {
                     Text(caption)
                         .font(monospacedCaption ? .callout.monospaced() : .callout)
@@ -450,11 +454,9 @@ struct ApprovalDefaults: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(String(localized: "Ask before changes")).font(.headline)
-                Text(String(localized: "Each connection can be changed on its page. Reads never ask."))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                InfoButton(text: String(localized: "Ask me first shows a panel for every add, change, completion or delete. Reads never ask. Each connection can be changed on its page."))
             }
             Card {
                 SettingsRow(title: String(localized: "New AI agent connections")) {
