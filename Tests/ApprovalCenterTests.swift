@@ -250,6 +250,20 @@ struct ApprovalCenterTests {
         precondition(accessAnswers["RL\(ClientGrant.create)"] == [.allowOnce])
         clock = clock.addingTimeInterval(3_601)
         precondition(access("R") != nil, "after an hour it may ask again")
+        // An access request doesn't use up one of the connection's three change slots.
+        precondition(access("U") != nil)
+        for n in 0..<3 { _ = ask("u\(n)", client: "U") }
+        precondition(center.pendingChanges.filter { $0.clientID == "U" }.count == 3)
+        // Always Allow withdraws the connection's other waiting items (its access changes).
+        center.allowAlways(center.pendingAccess.first { $0.clientID == "U" }!.id)
+        precondition(center.pending.allSatisfy { $0.clientID != "U" })
+        precondition((0..<3).allSatisfy { recorder.only("u\($0)") == .withdrawn })
+        // Turning "ask for more access" off withdraws only the access request.
+        precondition(access("V") != nil)
+        _ = ask("v1", client: "V")
+        center.withdrawAccess(clientID: "V")
+        precondition(center.pendingAccess.allSatisfy { $0.clientID != "V" } &&
+                     center.pendingChanges.contains { $0.clientID == "V" })
         // Withdraw, timeout and shutdown reach access requests too.
         center.withdraw(clientID: "R")
         precondition(accessAnswers["RL\(ClientGrant.create)"] == [.allowOnce, .withdrawn])

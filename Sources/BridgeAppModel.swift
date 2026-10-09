@@ -2229,19 +2229,22 @@ final class BridgeAppModel {
         }
     }
 
-    /// Saved at once, outside the staged grant draft: a different kind of
-    /// setting with a different undo story. Bumps the client's revision.
-    /// "Let <Name> ask for more access" (C04).
+    /// "Let <Name> ask for more access" (C04). Turning it off also withdraws
+    /// a request that's waiting in the panel.
     func setAsksForAccess(_ clientID: String, _ on: Bool) {
         guard let client = client(clientID), !client.revoked, client.asksForAccess != on else { return }
         switch services.registry.setAsksForAccess(clientID: clientID, on) {
-        case .success: refresh()
+        case .success:
+            if !on { services.approvals?.withdrawAccess(clientID: clientID) }
+            refresh()
         case .failure(let error):
             showBanner(Banner(kind: .error, title: String(localized: "Couldn't change it."),
                               message: String(localized: "Nothing was changed."), code: error.rawValue))
         }
     }
 
+    /// Saved at once, outside the staged grant draft: a different kind of
+    /// setting with a different undo story. Bumps the client's revision.
     func setApproval(_ clientID: String, _ mode: ApprovalMode) {
         guard let client = client(clientID), !client.revoked, client.approval != mode else { return }
         switch services.registry.setApproval(clientID: clientID, mode) {

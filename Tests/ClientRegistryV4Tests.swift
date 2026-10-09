@@ -91,8 +91,13 @@ struct ClientRegistryV4Tests {
         guard case .missingAccess = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli,
                                                             temporaryGrant: once)
         else { preconditionFailure("stale revision") }
-        // Always Allow adds the bit to the existing grant only.
-        success(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create))
+        // Always Allow adds the bit to the existing grant only, at the revision it asked at.
+        let current = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        guard case .missingAccess(let now) = current else { preconditionFailure("still missing") }
+        failure(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                   expectedRevision: now.revision - 1), .forbidden)
+        success(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                   expectedRevision: now.revision))
         precondition(registry.clients()!.first!.grants.first { $0.targetID == "L1" }!.mask == 3)
         failure(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L9", bit: ClientGrant.create),
                 .invalidGrants)

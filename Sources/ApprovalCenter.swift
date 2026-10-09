@@ -134,7 +134,8 @@ final class ApprovalCenter: ApprovalGate, AccessRequestGate {
             }
             windows[approval.clientID] = nil
         }
-        guard pending.filter({ $0.clientID == approval.clientID }).count < Self.maxPendingPerClient else {
+        guard pending.filter({ $0.clientID == approval.clientID && $0.access == nil }).count
+                < Self.maxPendingPerClient else {
             completion(.tooMany)
             return {}
         }
@@ -176,10 +177,24 @@ final class ApprovalCenter: ApprovalGate, AccessRequestGate {
     /// Allow Once: this request only.
     func allowOnce(_ id: UUID) { resolveAccess(id, .allowOnce) }
 
-    /// Always Allow: saves the action for the connection.
+    /// Always Allow: saves the action for the connection. Saving changes its
+    /// access, so its other waiting items couldn't go through any more: they
+    /// are withdrawn now rather than failing after the user allows them.
     func allowAlways(_ id: UUID) {
         guard let item = pending.first(where: { $0.id == id }), !alwaysAllowBlocked(item.clientID) else { return }
         resolveAccess(id, .allowAlways)
+        windows[item.clientID] = nil
+        for other in pending where other.clientID == item.clientID {
+            resolve(other.id, .withdrawn)
+            resolveAccess(other.id, .withdrawn)
+        }
+    }
+
+    /// "Let it ask for more access" was turned off: its waiting request goes.
+    func withdrawAccess(clientID: String) {
+        for item in pending where item.clientID == clientID && item.access != nil {
+            resolveAccess(item.id, .withdrawn)
+        }
     }
 
     /// Not Now: refused, and not asked again for an hour.

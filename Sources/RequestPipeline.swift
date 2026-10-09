@@ -197,7 +197,8 @@ final class RequestPipeline {
             case .allowOnce, .allowAlways:
                 if decision == .allowAlways {
                     guard case .success = self.registry.addAccess(clientID: missing.clientID, resource: missing.resource,
-                                                                  targetID: missing.targetID, bit: missing.missingBit)
+                                                                  targetID: missing.targetID, bit: missing.missingBit,
+                                                                  expectedRevision: missing.revision)
                     else { refuse(nil, ["error": "scope_changed"]); return }
                 }
                 let temporary = decision == .allowOnce

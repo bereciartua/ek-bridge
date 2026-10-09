@@ -425,11 +425,16 @@ final class ClientRegistry {
 
     /// Always Allow (C04): adds one action to an existing grant. Never
     /// creates a grant, so it can't reach a calendar or list the connection
-    /// had no access to. Bumps the revision like any grant change.
-    func addAccess(clientID: String, resource: ClientResource, targetID: String, bit: Int)
-        -> Result<Void, ClientRegistryError> {
+    /// had no access to. Refuses (as `scope_changed` upstream) when the
+    /// connection changed since it asked (`expectedRevision`), or no longer
+    /// has Read there. Bumps the revision like any grant change.
+    func addAccess(clientID: String, resource: ClientResource, targetID: String, bit: Int,
+                   expectedRevision: Int? = nil) -> Result<Void, ClientRegistryError> {
         guard case .success(let record) = activeRecord(clientID) else { return .failure(.clientMissing) }
-        guard let index = record.grants.firstIndex(where: { $0.resource == resource && $0.targetID == targetID })
+        if let expectedRevision, record.revision != expectedRevision { return .failure(.forbidden) }
+        guard record.paused != true,
+              let index = record.grants.firstIndex(where: { $0.resource == resource && $0.targetID == targetID }),
+              record.grants[index].mask & ClientGrant.read != 0
         else { return .failure(.invalidGrants) }
         var grants = record.grants
         let current = grants[index]

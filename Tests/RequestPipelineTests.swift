@@ -327,6 +327,12 @@ struct RequestPipelineTests {
         success(f.registry.bumpRevision(clientID: f.clientID))
         f.access.answer(.allowOnce)
         precondition(box.error == "scope_changed" && f.executor.calls.isEmpty)
+        // Always Allow after its access changed: nothing saved.
+        f = fixture()
+        box = f.send(createEvent())
+        success(f.registry.bumpRevision(clientID: f.clientID))
+        f.access.answer(.allowAlways)
+        precondition(box.error == "scope_changed" && f.executor.calls.isEmpty && mask(f, "CAL-A") == ClientGrant.read)
         // Paused while waiting: refused as paused on the recheck.
         f = fixture()
         box = f.send(createEvent())
