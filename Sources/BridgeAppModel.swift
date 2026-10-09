@@ -1196,6 +1196,62 @@ final class BridgeAppModel {
         setMask(collection.key, mask, actionName: String(localized: "Change Access"))
     }
 
+    /// Turn On for All / Turn Off for All in an access table header (B06):
+    /// `bit` on every visible row that allows it. On implies Read; turning
+    /// Read off clears the write actions too, after a confirmation when that
+    /// clears more than 5 write cells. One undo step.
+    func applyColumn(bit: Int, on: Bool, rows: [CollectionInfo]) {
+        guard let draft else { return }
+        var changes = [GrantKey: Int]()
+        for row in rows {
+            let allowed = ClientGrantEditing.allowedMask(resource: row.resource, writable: row.writable)
+            guard allowed & bit != 0 else { continue }
+            let old = draft.mask(row.key)
+            let next = on ? ClientGrantEditing.toggling(old, bit: bit, on: true)
+                : bit == ClientGrant.read ? 0 : old & ~bit
+            if next != old { changes[row.key] = next }
+        }
+        guard !changes.isEmpty else { return }
+        let clearedWrites = changes.filter { key, mask in
+            draft.mask(key) & ~ClientGrant.read != 0 && mask & ~ClientGrant.read == 0
+        }
+        let writeCells = clearedWrites.reduce(0) { $0 + (draft.mask($1.key) & ~ClientGrant.read).nonzeroBitCount }
+        guard !on, bit == ClientGrant.read, writeCells > 5 else {
+            setMasks(changes, actionName: String(localized: "Change Access"))
+            return
+        }
+        let resource = rows.first?.resource ?? .calendar
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Turn off Read for all?")
+        alert.informativeText = resource == .calendar
+            ? String(localized: "This also turns off Create, Edit and Delete on \(clearedWrites.count) calendars.")
+            : String(localized: "This also turns off Create, Edit, Delete and Complete on \(clearedWrites.count) lists.")
+        alert.addButton(withTitle: String(localized: "Turn Off"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        present(alert) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.setMasks(changes, actionName: String(localized: "Change Access"))
+        }
+    }
+
+    /// Several rows at once, undone together.
+    private func setMasks(_ changes: [GrantKey: Int], actionName: String) {
+        guard var current = draft else { return }
+        var old = [GrantKey: Int]()
+        for (key, mask) in changes {
+            old[key] = current.mask(key)
+            current.set(key, mask: mask)
+        }
+        draft = current
+        savedToastAt = nil
+        if let undo = window?.undoManager {
+            undo.registerUndo(withTarget: self) { model in
+                MainActor.assumeIsolated { model.setMasks(old, actionName: actionName) }
+            }
+            undo.setActionName(actionName)
+        }
+    }
+
     func removeUnavailable(_ key: GrantKey) {
         setMask(key, 0, actionName: String(localized: "Remove Access"))
     }

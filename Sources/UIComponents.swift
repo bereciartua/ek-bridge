@@ -437,13 +437,38 @@ struct ActionMenuButton: NSViewRepresentable {
 
     let accessibilityLabel: String
     let help: String
+    /// A borderless ⋯ (access table rows) instead of a push button.
+    var borderless = false
+    /// A borderless title with ▾ instead of ⋯ (access table headers).
+    var title: String? = nil
     let items: () -> [Item]
+
+    init(accessibilityLabel: String, help: String, borderless: Bool = false, title: String? = nil,
+         items: @escaping () -> [Item]) {
+        self.accessibilityLabel = accessibilityLabel
+        self.help = help
+        self.borderless = borderless || title != nil
+        self.title = title
+        self.items = items
+    }
 
     func makeNSView(context: Context) -> NSButton {
         let button = NSButton(image: NSImage(systemSymbolName: "ellipsis",
                                              accessibilityDescription: accessibilityLabel)!,
                               target: context.coordinator, action: #selector(Coordinator.show(_:)))
         button.bezelStyle = .push
+        if borderless {
+            button.isBordered = false
+            button.contentTintColor = .secondaryLabelColor
+        }
+        if let title {
+            let font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+            button.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 8, weight: .semibold))
+            button.imagePosition = .imageTrailing
+            button.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: font, .foregroundColor: NSColor.secondaryLabelColor])
+        }
         button.setAccessibilityLabel(accessibilityLabel)
         button.toolTip = help
         button.setContentHuggingPriority(.required, for: .horizontal)

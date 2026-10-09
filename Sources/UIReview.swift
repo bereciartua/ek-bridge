@@ -618,8 +618,9 @@ final class WindowLifecycleReview {
                                .client(UIReview.revokedID)]
         model.navigate(to: routes[number % routes.count])
         model.sheet = number.isMultiple(of: 2) ? .newClient : .rename(UIReview.claudeID)
-        // Generous: the window server is slower with the display asleep.
-        after(0.6) {
+        // Generous: the window server is slower with the display asleep, and the
+        // first launch after a rebuild draws its first sheet slowly.
+        whenSheet(waited: 0) {
             guard let window = self.controller.window, window.isVisible, window.attachedSheet != nil,
                   !window.isReleasedWhenClosed else { return self.report("sheet_missing", number) }
             self.model.sheet = nil
@@ -640,6 +641,12 @@ final class WindowLifecycleReview {
                 }
             }
         }
+    }
+
+    /// Runs `work` once the sheet is attached, or after 3 s.
+    private func whenSheet(waited: Double, _ work: @escaping @MainActor () -> Void) {
+        if controller.window?.attachedSheet != nil && waited >= 0.6 || waited >= 3 { return work() }
+        after(0.1) { self.whenSheet(waited: waited + 0.1, work) }
     }
 
     private func after(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
@@ -822,6 +829,27 @@ final class BehaviorReview {
             self.model.sheet = nil
             self.model.navigate(to: .client(claude))
             return self.model.route == .client(claude)
+        }
+        step("column Turn On for All sets Read on the rows shown and stages them") {
+            guard let draft = self.model.draft, !draft.hasChanges else { return false }
+            let calendars = self.model.collections(.calendar)
+            let unread = calendars.filter { draft.mask($0.key) & ClientGrant.read == 0 }.count
+            self.model.applyColumn(bit: ClientGrant.read, on: true, rows: calendars)
+            guard let after = self.model.draft, after.changedCells == unread,
+                  calendars.allSatisfy({ after.mask($0.key) & ClientGrant.read != 0 }) else { return false }
+            self.window.undoManager?.undo()
+            return self.model.draft?.hasChanges == false
+        }
+        step("column Delete for all skips read-only calendars, write implies Read") {
+            let calendars = self.model.collections(.calendar)
+            self.model.applyColumn(bit: ClientGrant.delete, on: true, rows: calendars)
+            guard let draft = self.model.draft else { return false }
+            let ok = calendars.allSatisfy { row in
+                row.writable ? draft.mask(row.key) & (ClientGrant.delete | ClientGrant.read) == (ClientGrant.delete | ClientGrant.read)
+                    : draft.mask(row.key) & ClientGrant.delete == 0
+            }
+            self.model.revertDraft()
+            return ok
         }
         step("unavailable grant removal is staged") {
             let gone = GrantKey(resource: .calendar, targetID: "cal-signed-out")

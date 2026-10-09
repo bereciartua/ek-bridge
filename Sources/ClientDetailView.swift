@@ -481,14 +481,15 @@ struct AccessTable: View {
                 Text(resource == .calendar ? String(localized: "Calendar") : String(localized: "List"))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(actions, id: \.bit) { action in
-                    Text(action.title).frame(width: Self.cellWidth)
+                    ColumnMenu(model: model, action: action, rows: rows)
+                        .frame(width: Self.cellWidth)
                 }
+                Color.clear.frame(width: AccessRow.moreWidth, height: 1)
             }
             .font(.callout.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .accessibilityHidden(true)
             Divider()
             if rows.isEmpty {
                 Text(emptyText)
@@ -534,6 +535,28 @@ struct AccessTable: View {
     }
 }
 
+/// A header cell: the action's name with ▾, and Turn On / Turn Off for All
+/// on the rows that are visible (Filter and Granted only apply).
+struct ColumnMenu: View {
+    let model: BridgeAppModel
+    let action: (bit: Int, word: String, title: String)
+    let rows: [CollectionInfo]
+
+    var body: some View {
+        // AppKit, like the rows' ⋯: SwiftUI menus here slowed the page enough to delay sheets.
+        ActionMenuButton(accessibilityLabel: String(localized: "\(action.title) for all rows shown"),
+                         help: String(localized: "Turn \(action.title) on or off for every row shown"),
+                         title: action.title) {
+            [.init(title: String(localized: "Turn On for All"),
+                   action: { model.applyColumn(bit: action.bit, on: true, rows: rows) }),
+             .init(title: String(localized: "Turn Off for All"),
+                   action: { model.applyColumn(bit: action.bit, on: false, rows: rows) })]
+        }
+        .fixedSize()
+        .disabled(rows.isEmpty)
+    }
+}
+
 struct AccessRow: View {
     let model: BridgeAppModel
     let collection: CollectionInfo
@@ -576,25 +599,46 @@ struct AccessRow: View {
                 cell(action, mask: mask)
                     .frame(width: AccessTable.cellWidth)
             }
+            // An AppKit menu button: a SwiftUI Menu per row makes long tables slow to draw.
+            ActionMenuButton(accessibilityLabel: String(localized: "Access presets for \(collection.name)"),
+                             help: String(localized: "Read Only, Full Access, No Access"),
+                             borderless: true) { presetItems }
+                .frame(width: Self.moreWidth, height: 20)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(background(changed: changed))
         .contentShape(Rectangle())
-        .contextMenu {
-            Button(String(localized: "Read Only")) { model.apply(.readOnly, to: collection) }
-            Button(String(localized: "Full Access")) { model.apply(.fullAccess, to: collection) }
-            Button(String(localized: "No Access")) { model.apply(.noAccess, to: collection) }
-            Divider()
-            Button(collection.resource == .calendar ? String(localized: "Copy Calendar ID")
-                                                    : String(localized: "Copy List ID")) {
-                Pasteboard.copy(collection.id)
-            }
-        }
+        .contextMenu { presets }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(rowLabel)
         .onAppear { flashIfFocused() }
         .onChange(of: model.accessFocus) { _, _ in flashIfFocused() }
+    }
+
+    static let moreWidth: CGFloat = 24
+
+    /// The row's ⋯ menu; the same items as the right-click menu.
+    private var presetItems: [ActionMenuButton.Item] {
+        [.init(title: String(localized: "Read Only"), action: { model.apply(.readOnly, to: collection) }),
+         .init(title: String(localized: "Full Access"), action: { model.apply(.fullAccess, to: collection) }),
+         .init(title: String(localized: "No Access"), action: { model.apply(.noAccess, to: collection) }),
+         .separator,
+         .init(title: collection.resource == .calendar ? String(localized: "Copy Calendar ID")
+                                                       : String(localized: "Copy List ID"),
+               action: { Pasteboard.copy(collection.id) })]
+    }
+
+    /// The right-click menu.
+    @ViewBuilder private var presets: some View {
+        Button(String(localized: "Read Only")) { model.apply(.readOnly, to: collection) }
+        Button(String(localized: "Full Access")) { model.apply(.fullAccess, to: collection) }
+        Button(String(localized: "No Access")) { model.apply(.noAccess, to: collection) }
+        Divider()
+        Button(collection.resource == .calendar ? String(localized: "Copy Calendar ID")
+                                                : String(localized: "Copy List ID")) {
+            Pasteboard.copy(collection.id)
+        }
     }
 
     @ViewBuilder
