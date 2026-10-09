@@ -192,6 +192,22 @@ struct BridgeServices {
     var installedAgents: () -> Set<AgentKind> = { [] }
     /// Add to <Agent>…: preview, apply, restart (B07).
     var agentSetup: AgentSetupControls = .unavailable
+    /// An Activity row's item as EventKit has it now (C02). Nil when it
+    /// can't be looked up; `ItemSnapshot.deleted` when it's gone.
+    var itemLookup: (ItemRef) -> ItemSnapshot? = { _ in nil }
+    /// Show in Calendar / Reminders. False when nothing opened.
+    var showItem: (ItemRef) -> Bool = { _ in false }
+    /// macOS notifications (C05).
+    var notifications: NotificationControls = .unavailable
+}
+
+/// What Activity can say about a row's item.
+enum ItemDisplay: Equatable {
+    /// A read, or a row from before 0.10: no item.
+    case none
+    /// Calendar or Reminders access isn't Full Access, so it can't be named.
+    case noAccess(ClientResource)
+    case found(ItemSnapshot)
 }
 
 /// One Add to <Agent>… from click to result.
@@ -265,20 +281,37 @@ final class BridgeAppModel {
 
     var activityClientFilter: ActivityClientFilter = .all
     var activityVia: ActivityViaFilter = .all
-    var activityProblemsOnly = false
+    /// All · Changes · Problems.
+    var activityKind = ActivityKind.all
     var activitySearch = ""
     var activitySelection: ActivityEntry.ID?
     /// Incremented by ⌘F; Activity's search field takes focus on each change.
     private(set) var activitySearchFocusRequest = 0
     private(set) var activityLastViewed: Date?
+    /// Looked-up Activity items (C02), in memory only.
+    @ObservationIgnored private var itemCache = [ItemRef: ItemSnapshot]()
+    /// Bumped when the cache is cleared, so rows look their items up again.
+    private(set) var itemLookupGeneration = 0
+    /// Notifications (C05): the kinds turned on in Settings ▸ General, and
+    /// what macOS allows.
+    private(set) var notificationKinds = Set<NotificationKind>()
+    private(set) var notificationPermission = NotificationPermission.notDetermined
+    /// The last 20 posted this session, for the live-test automation. Memory only.
+    private(set) var postedNotifications = [AppNotification]()
+    @ObservationIgnored private var lastRefusedNotice = [String: Date]()
+    /// Refusals up to here were looked at for notifications.
+    @ObservationIgnored private var refusalsSeenThrough = Date()
+    /// Approval panel summaries of changes answered this session, by request
+    /// ID (C03): Activity shows their before → after. Memory only, at most 200.
+    private(set) var recentSummaries = [String: ApprovalSummary]()
+    @ObservationIgnored private var recentSummaryOrder = [String]()
+    static let maxRecentSummaries = 200
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
     private(set) var showDeveloperTools = false
     private(set) var setupHidden = false
     private(set) var setupCompleted = false
     private(set) var setupSkipped = Set<SetupChecklist.Step>()
-    /// Set once by `RenameMigration`; Overview explains the new name until dismissed.
-    private(set) var renameNoticePending = false
     /// Set by `RenameMigration` until the checklist completes or is hidden.
     private var renameAccessRecheck = false
     // Updates (Settings ▸ General, the menu and Overview).
@@ -375,6 +408,8 @@ final class BridgeAppModel {
         static let setupCompleted = "SetupChecklistCompleted"
         static let setupSkipped = "SetupChecklistSkipped"
         static let activityLastViewed = "ActivityLastViewed"
+        /// The update version a notification was posted for (C05).
+        static let notifiedUpdateVersion = "NotifiedUpdateVersion"
         static let dockMode = "DockIconMode"
         static let showDeveloperTools = "ShowDeveloperTools"
         static let lastRoute = "LastPane"
@@ -402,12 +437,16 @@ final class BridgeAppModel {
         setupCompleted = defaults.bool(forKey: Keys.setupCompleted)
         setupSkipped = Set((defaults.array(forKey: Keys.setupSkipped) as? [Int] ?? [])
             .compactMap(SetupChecklist.Step.init(rawValue:)))
-        renameNoticePending = defaults.bool(forKey: RenameMigration.noticeKey)
+        // Overview's rename notice (0.8–0.9) is gone; so is its flag.
+        defaults.removeObject(forKey: RenameMigration.noticeKey)
         renameAccessRecheck = defaults.bool(forKey: RenameMigration.accessRecheckKey)
         let viewed = defaults.double(forKey: Keys.activityLastViewed)
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
+        notificationKinds = Set(NotificationKind.allCases.filter {
+            defaults.object(forKey: $0.defaultsKey) as? Bool ?? $0.isOnByDefault
+        })
         localMCPAllowed = defaults.object(forKey: Keys.localMCPAllowed) as? Bool ?? true
         let port = defaults.integer(forKey: Keys.mcpPort)
         mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
@@ -463,6 +502,15 @@ final class BridgeAppModel {
 
     func start() {
         started = true
+        services.approvals?.answered = { [weak self] requestID, summary, _ in
+            self?.rememberApprovalSummary(requestID, summary)
+        }
+        services.approvals?.expired = { [weak self] item in self?.approvalExpired(item) }
+        refreshNotificationPermission()
+        // Saving unsaved access edits would write over what Always Allow adds.
+        services.approvals?.alwaysAllowBlocked = { [weak self] clientID in
+            self?.draft?.clientID == clientID && self?.draft?.hasChanges == true
+        }
         syncMCPServer()
         if remoteEnabled {
             if let offAt = remoteOffAt, offAt <= Date() {
@@ -522,12 +570,21 @@ final class BridgeAppModel {
 
     private func refresh(full: Bool) {
         now = Date()
+        // Activity's item names are looked up again after Calendar or
+        // Reminders may have changed.
+        if full && !itemCache.isEmpty {
+            itemCache.removeAll()
+            itemLookupGeneration += 1
+        }
         updateAccess()
         if let current = services.registry.clients() {
             policyStoreAvailable = true
             if clients != current { clients = current }
             let entries = ActivityEntry.entries(from: services.registry.activity() ?? [])
-            if entries != activity { activity = entries }
+            if entries != activity {
+                activity = entries
+                notifyNewRefusals()
+            }
             pruneConnectionAgents()
         } else {
             policyStoreAvailable = false
@@ -626,7 +683,7 @@ final class BridgeAppModel {
     /// is written until the user clicks Add there.
     func beginOneClick(_ clientID: String, agent: AgentKind? = nil) {
         let agent = agent ?? self.agent(for: clientID)
-        guard agent.oneClick, client(clientID)?.hasMCPToken == true else { return }
+        guard agent.canOneClick, client(clientID)?.hasMCPToken == true else { return }
         oneClick = OneClickSession(clientID: clientID, agent: agent, phase: .loading)
         sheet = .configPreview
         services.agentSetup.preview(agent, setupContext(clientID)) { [weak self] result in
@@ -772,7 +829,8 @@ final class BridgeAppModel {
                                      mask: client.grants.first { $0.resource == key.resource && $0.targetID == key.targetID }?.mask ?? 0)
             }
         }
-        return NeedsYou.items(pendingApprovals: pendingApprovalCount, problems: shown, unavailable: unavailable,
+        return NeedsYou.items(pendingApprovals: pendingApprovalCount, accessRequests: pendingAccessRequests,
+                              problems: shown, unavailable: unavailable,
                               unseenProblems: unseenProblemCount, lastViewed: activityLastViewed,
                               update: foundUpdate.map { ($0.version, $0.critical) }, updateCardShown: showsUpdateCard)
     }
@@ -780,7 +838,7 @@ final class BridgeAppModel {
     /// Needs you ▸ refused requests: Activity with Problems only.
     func openProblems() {
         openActivity()
-        activityProblemsOnly = true
+        activityKind = .problems
     }
 
     /// The fix for a problem, shared by the menu bar and Overview's Needs you.
@@ -1503,7 +1561,7 @@ final class BridgeAppModel {
 
     func openActivity(selecting id: ActivityEntry.ID? = nil, client: String? = nil,
                       keepingVia: Bool = false) {
-        activityProblemsOnly = false
+        activityKind = .all
         activitySearch = ""
         if !keepingVia { activityVia = .all }
         activityClientFilter = client.map { .client($0) } ?? .all
@@ -1518,6 +1576,56 @@ final class BridgeAppModel {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.route == .activity else { return }
             self.activitySearchFocusRequest += 1
+        }
+    }
+
+    /// The item an Activity row names, looked up live and cached until
+    /// Calendar or Reminders changes (C02).
+    func itemDisplay(_ entry: ActivityEntry) -> ItemDisplay {
+        guard let ref = entry.item else { return .none }
+        let resource: ClientResource = ref.kind == "event" ? .calendar : .reminderList
+        guard (resource == .calendar ? calendarAccess : remindersAccess) == .fullAccess else {
+            return .noAccess(resource)
+        }
+        _ = itemLookupGeneration
+        if let cached = itemCache[ref] { return .found(cached) }
+        guard let snapshot = services.itemLookup(ref) else { return .none }
+        itemCache[ref] = snapshot
+        return .found(snapshot)
+    }
+
+    /// Keeps an answered change's panel summary for this session (C03).
+    func rememberApprovalSummary(_ requestID: String, _ summary: ApprovalSummary) {
+        if recentSummaries[requestID] == nil { recentSummaryOrder.append(requestID) }
+        recentSummaries[requestID] = summary
+        while recentSummaryOrder.count > Self.maxRecentSummaries {
+            recentSummaries[recentSummaryOrder.removeFirst()] = nil
+        }
+    }
+
+    /// The panel's summary for an Activity row answered this session.
+    func recentSummary(_ entry: ActivityEntry) -> ApprovalSummary? {
+        entry.requestID.flatMap { recentSummaries[$0] }
+    }
+
+    /// The item's name now, when it still exists (C06).
+    func itemTitle(_ entry: ActivityEntry) -> String? {
+        if case .found(let item) = itemDisplay(entry), item.exists { return item.title }
+        return nil
+    }
+
+    /// A looked-up title already in the cache, for Activity's search. Never
+    /// looks anything up itself.
+    func cachedItemTitle(_ entry: ActivityEntry) -> String? {
+        entry.item.flatMap { itemCache[$0] }.flatMap { $0.exists ? $0.title : nil }
+    }
+
+    /// Show in Calendar / Show in Reminders.
+    func showItem(_ entry: ActivityEntry) {
+        guard let ref = entry.item, services.showItem(ref) else {
+            showBanner(Banner(kind: .warning, title: String(localized: "Couldn't open the item."),
+                              message: String(localized: "It may have been deleted, or Calendar and Reminders may not be available.")))
+            return
         }
     }
 
@@ -1584,6 +1692,119 @@ final class BridgeAppModel {
     func updateFound(_ update: FoundUpdate?) {
         foundUpdate = update
         refreshUpdater()
+        // Once per version (C05).
+        if let update, services.defaults.string(forKey: Keys.notifiedUpdateVersion) != update.version {
+            services.defaults.set(update.version, forKey: Keys.notifiedUpdateVersion)
+            notify(NotificationRules.update(version: update.version))
+        }
+    }
+
+    // MARK: Notifications (C05)
+
+    func setNotification(_ kind: NotificationKind, _ on: Bool) {
+        services.defaults.set(on, forKey: kind.defaultsKey)
+        if on { notificationKinds.insert(kind) } else { notificationKinds.remove(kind) }
+        // Turning one on is when macOS asks, never at launch.
+        if on && notificationPermission == .notDetermined {
+            services.notifications.requestPermission { [weak self] _ in self?.refreshNotificationPermission() }
+        }
+    }
+
+    func refreshNotificationPermission() {
+        services.notifications.permission { [weak self] permission in
+            guard let self, permission != self.notificationPermission else { return }
+            self.notificationPermission = permission
+        }
+    }
+
+    func openNotificationSettings() { services.notifications.openSettings() }
+
+    /// Whether the window already shows what the notification would open.
+    private func windowShows(_ kind: NotificationKind) -> Bool {
+        guard window?.isKeyWindow == true, windowIsVisible() else { return false }
+        return kind == .update ? route == .overview || route == .settings : route == .activity
+    }
+
+    private func notify(_ note: AppNotification, clientID: String? = nil) {
+        let now = Date()
+        guard NotificationRules.shouldPost(note.kind, enabled: notificationKinds, windowShowsIt: windowShows(note.kind),
+                                           lastPosted: clientID.flatMap { lastRefusedNotice[$0] }, now: now)
+        else { return }
+        if note.kind == .refused, let clientID { lastRefusedNotice[clientID] = now }
+        let post = { [weak self] in
+            guard let self else { return }
+            self.services.notifications.post(note)
+            self.postedNotifications.append(note)
+            if self.postedNotifications.count > 20 { self.postedNotifications.removeFirst() }
+        }
+        switch notificationPermission {
+        case .allowed: post()
+        case .denied: break
+        case .notDetermined:
+            // The first notification of a kind that's on asks macOS first.
+            services.notifications.requestPermission { [weak self] granted in
+                self?.refreshNotificationPermission()
+                if granted { post() }
+            }
+        }
+    }
+
+    /// A change or access request nobody answered.
+    private func approvalExpired(_ item: PendingApproval) {
+        if let ask = item.access {
+            notify(NotificationRules.declinedAccess(askTitle: ask.title, requestID: item.requestID, clientID: item.clientID))
+        } else {
+            let title = item.summary.rows.first {
+                [String(localized: "Event"), String(localized: "Reminder")].contains($0.label) && $0.value != "–"
+            }?.value
+            notify(NotificationRules.declined(panelTitle: item.summary.title, item: title,
+                                              requestID: item.requestID, clientID: item.clientID))
+        }
+    }
+
+    /// Refusals that didn't get an access panel (C05, off by default):
+    /// new `forbidden` rows from a connection, at most one per connection
+    /// every 10 minutes.
+    private func notifyNewRefusals() {
+        let fresh = activity.prefix { $0.at > refusalsSeenThrough }
+        guard let newest = fresh.first?.at else { return }
+        refusalsSeenThrough = newest
+        guard notificationKinds.contains(.refused) else { return }
+        for entry in fresh.reversed() where entry.code == "forbidden" && entry.approval == nil {
+            guard let clientID = entry.clientID, let client = client(clientID), !client.revoked else { continue }
+            let key = entry.isMove && entry.missing == ClientGrant.create
+                ? entry.destinationID.flatMap { id in entry.targetKey.map { GrantKey(resource: $0.resource, targetID: id) } }
+                : entry.targetKey
+            notify(NotificationRules.refused(clientName: client.name, command: entry.command,
+                                             collection: key.flatMap { collection($0)?.name },
+                                             requestID: entry.requestID, clientID: clientID,
+                                             resource: key?.resource.rawValue, targetID: key?.targetID),
+                   clientID: clientID)
+        }
+    }
+
+    /// A click on a notification or one of its buttons.
+    func handleNotification(_ action: String, kind: NotificationKind?, info: [String: String]) {
+        NSApp.activate()
+        switch (kind, action) {
+        case (.update?, _):
+            show(.overview)
+            checkForUpdates()
+        case (.refused?, AppNotification.allow):
+            // Allow…: the connection's Access tab at that calendar or list.
+            if let clientID = info[AppNotification.clientIDKey],
+               let resource = info[AppNotification.resourceKey].flatMap(ClientResource.init(rawValue:)),
+               let target = info[AppNotification.targetIDKey] {
+                openClientAccess(clientID, focus: GrantKey(resource: resource, targetID: target))
+            } else if let clientID = info[AppNotification.clientIDKey] {
+                openClientAccess(clientID, focus: nil)
+            }
+        default:
+            let row = info[AppNotification.requestIDKey].flatMap { request in
+                activity.first { $0.requestID == request }?.id
+            }
+            openActivity(selecting: row)
+        }
     }
 
     /// Hides the Overview card for this version; the menu item stays. A
@@ -1598,10 +1819,6 @@ final class BridgeAppModel {
         return foundUpdate.critical || foundUpdate.version != dismissedUpdateVersion
     }
 
-    func dismissRenameNotice() {
-        renameNoticePending = false
-        services.defaults.set(false, forKey: RenameMigration.noticeKey)
-    }
 
     func hideSetup() {
         setupHidden = true
@@ -2012,6 +2229,20 @@ final class BridgeAppModel {
         }
     }
 
+    /// "Let <Name> ask for more access" (C04). Turning it off also withdraws
+    /// a request that's waiting in the panel.
+    func setAsksForAccess(_ clientID: String, _ on: Bool) {
+        guard let client = client(clientID), !client.revoked, client.asksForAccess != on else { return }
+        switch services.registry.setAsksForAccess(clientID: clientID, on) {
+        case .success:
+            if !on { services.approvals?.withdrawAccess(clientID: clientID) }
+            refresh()
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't change it."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
     /// Saved at once, outside the staged grant draft: a different kind of
     /// setting with a different undo story. Bumps the client's revision.
     func setApproval(_ clientID: String, _ mode: ApprovalMode) {
@@ -2062,7 +2293,10 @@ final class BridgeAppModel {
         }
     }
 
-    var pendingApprovalCount: Int { services.approvals?.pending.count ?? 0 }
+    /// Changes waiting in the approval panel.
+    var pendingApprovalCount: Int { services.approvals?.pendingChanges.count ?? 0 }
+    /// Access requests waiting in the same panel (C04), by their title.
+    var pendingAccessRequests: [String] { services.approvals?.pendingAccess.map(\.summary.title) ?? [] }
 
     // MARK: MCP access per client
 

@@ -46,6 +46,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -62,6 +64,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -79,6 +83,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -86,6 +92,81 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/CollectionLabels.swift" \
     "$project_dir/Tests/CollectionLabelsTests.swift" \
     -o "$project_dir/build/collection-labels-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/NotificationRules.swift" \
+    "$project_dir/Tests/NotificationRulesTests.swift" \
+    -o "$project_dir/build/notification-rules-tests"
+"$project_dir/build/notification-rules-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Tests/AccessRequestsTests.swift" \
+    -o "$project_dir/build/access-requests-tests"
+"$project_dir/build/access-requests-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Tests/ActivityStoreTests.swift" \
+    -o "$project_dir/build/activity-store-tests"
+"$project_dir/build/activity-store-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
+    "$project_dir/Tests/ActivityItemsTests.swift" \
+    -o "$project_dir/build/activity-items-tests"
+"$project_dir/build/activity-items-tests" "$project_dir/Tests/mcp-fixtures"
+# Rollback: a data folder written by this code must still load in 0.8.2.
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Tests/rollback-0.8.2/AppIdentity.swift" \
+    "$project_dir/Tests/rollback-0.8.2/BridgeProtocol.swift" \
+    "$project_dir/Tests/rollback-0.8.2/ClientCredentialFiles.swift" \
+    "$project_dir/Tests/rollback-0.8.2/ClientRegistry.swift" \
+    "$project_dir/Tests/RollbackHarness.swift" \
+    -o "$project_dir/build/rollback-harness"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
+    "$project_dir/Tests/RollbackWriter.swift" \
+    -o "$project_dir/build/rollback-writer"
+rollback_dir=$(mktemp -d "${TMPDIR:-/tmp}/ekb-rollback.XXXXXX")
+written=$("$project_dir/build/rollback-writer" write "$rollback_dir/data")
+loaded=$("$project_dir/build/rollback-harness" "$rollback_dir/data" --write)
+python3 - "$written" "$loaded" <<'PY'
+import json, sys
+written, loaded = json.loads(sys.argv[1]), json.loads(sys.argv[2])
+assert loaded["loaded"] is True, loaded
+assert loaded["clientIDs"] == written["clientIDs"], (loaded, written)
+assert loaded["active"] == 4 and loaded["grants"] == 8, loaded
+assert loaded["ask"] == 1 and loaded["paused"] == 1 and loaded["mcp"] == 3, loaded
+assert loaded["activityRows"] == 0 and loaded["wrote"] is True, loaded
+PY
+"$project_dir/build/rollback-writer" check "$rollback_dir/data" 1201
+rm -rf "$rollback_dir"
+echo "Rollback: 0.8.2 loads and writes a 0.10 data folder; its rows import once passed"
 "$project_dir/build/collection-labels-tests"
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
@@ -211,6 +292,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientBridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/ClientRegistryTests.swift" \
@@ -223,6 +306,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Tests/ClientGrantEditingTests.swift" \
@@ -235,6 +320,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -285,6 +372,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -300,6 +389,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Tests/ClientRegistryV4Tests.swift" \
     -o "$project_dir/build/client-registry-v4-tests"
 "$project_dir/build/client-registry-v4-tests"
@@ -320,7 +411,10 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
     "$project_dir/Tests/RequestPipelineTests.swift" \
     -o "$project_dir/build/request-pipeline-tests"
@@ -339,6 +433,8 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
     "$project_dir/Tests/MCPToolCatalogTests.swift" \
     -o "$project_dir/build/mcp-tool-catalog-tests"
@@ -371,10 +467,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
     "$project_dir/Sources/ApprovalCenter.swift" \
     "$project_dir/Tests/ApprovalCenterTests.swift" \
@@ -405,10 +504,13 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
     "$project_dir/Sources/ApprovalCenter.swift" \
     "$project_dir/Sources/ApprovalSummaries.swift" \
@@ -433,8 +535,11 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
@@ -525,8 +630,11 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/WriteJournal.swift" \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
+    "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \

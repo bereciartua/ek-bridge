@@ -29,17 +29,23 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     #if EVENTKIT_UI_REVIEW
     private let review = UIReview()
     #else
-    private lazy var clientRegistry = ClientRegistry()
+    private lazy var activityStore = ActivityStore(dataFolder: Self.dataFolder, autoCompact: true)
+    private lazy var clientRegistry = ClientRegistry(activity: activityStore)
     private let rateLimiter = RateLimiter()
     private let mcpCounters = MCPTrafficCounters()
     private lazy var approvals = ApprovalCenter(summarize: { [weak self] request in
         ApprovalSummaries.build(request, store: self?.store, collections: self?.model.collections ?? [])
+    }, summarizeAccess: { [weak self] access in
+        let collections = self?.model.collections ?? []
+        return AccessAsk.build(access, summary: ApprovalSummaries.build(access.approvalRequest, store: self?.store,
+                                                                        collections: collections),
+                               collections: collections)
     })
     private lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private lazy var pipeline = RequestPipeline(
         registry: clientRegistry, commands: commands,
         collections: EventKitCollectionSource(store: store),
-        approvals: approvals, limiter: rateLimiter,
+        approvals: approvals, accessRequests: approvals, limiter: rateLimiter,
         bridgeActive: { [weak self] in self?.localBridge?.active == true },
         didRecord: { [weak self] in self?.model.scheduleRefresh() })
     private lazy var mcpService: MCPService = {
@@ -60,6 +66,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
         clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
     private let keepAwake = KeepAwake()
+    private lazy var notificationPoster = NotificationPoster()
     private lazy var updater = SparkleUpdater(gate: UpdateRelaunchGate(
         pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
         maximumWait: ApprovalCenter.timeout + 5))
@@ -93,6 +100,11 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         updater.start()
         #endif
         model = BridgeAppModel(services: liveServices())
+        notificationPoster.onResponse = { [weak self] action, kind, info in
+            self?.model.handleNotification(action, kind: kind, info: info)
+        }
+        // Retention (ActivityRetention) runs at launch, then as rows are added.
+        activityStore.scheduleCompaction()
         updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
         #endif
         #if !EVENTKIT_UI_REVIEW
@@ -135,8 +147,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         #if !EVENTKIT_UI_REVIEW
         // A first run opens the window so the setup checklist is the first thing
-        // seen; so does the first run after the rename.
-        if model.showsSetupChecklist || model.renameNoticePending { windowController.present() }
+        // seen (after the rename too: macOS access has to be allowed again).
+        if model.showsSetupChecklist { windowController.present() }
         if let movedFrom = AppMover.movedFrom() {
             windowController.present()
             model.didMove(from: movedFrom)
@@ -255,7 +267,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 oauth: oauth),
             updater: updater.controls,
             installedAgents: { [weak self] in self?.installedAgents.current() ?? [] },
-            agentSetup: Self.agentSetup)
+            agentSetup: Self.agentSetup,
+            itemLookup: { [weak self] ref in self.map { ItemLookup.snapshot(ref, store: $0.store) } },
+            showItem: { ItemLookup.show($0) },
+            notifications: notificationPoster.controls)
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {
@@ -297,6 +312,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             preview: { agent, context, done in
                 guard agent != .claudeCode || environment["CLAUDE_CONFIG_DIR"]?.hasPrefix("/") == true else {
                     return done(.failure(OneClickFailure(message: "The test copy runs Claude Code only with CLAUDE_CONFIG_DIR set.")))
+                }
+                // Codex reads and writes CODEX_HOME (default ~/.codex): a scratch one only.
+                guard agent != .codex || environment["CODEX_HOME"].map({ $0.hasPrefix(home) }) == true else {
+                    return done(.failure(OneClickFailure(message: "The test copy sets Codex up only with CODEX_HOME inside the scratch home.")))
                 }
                 live.preview(agent, context, done)
             },

@@ -24,13 +24,13 @@ A free, open-source Mac menu bar app that lets Claude, ChatGPT, Cursor and your 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-  <img alt="EK Bridge Overview: EK Bridge is on with three connections and MCP on port 47615; Needs you lists a change waiting for approval, an unavailable calendar and refused requests; Today shows 29 requests, 4 changes and 5 problems with the latest changes." src="docs/images/overview-light.png" width="720">
+  <img alt="EK Bridge Overview: EK Bridge is on with three connections and MCP on port 47615; Needs you lists Cursor asking for access to add events to Home, an unavailable calendar and refused requests; Today shows 29 requests, 4 changes and 6 problems, then the latest changes by name, such as Added “Buy oat milk” and Changed “Design review”." src="docs/images/overview-light.png" width="720">
 </picture>
 </p>
 
 - **Choose what each agent can touch.** Pick the calendars and reminder lists each agent may use, and whether it may read, create, edit, delete or complete. A new agent starts with nothing.
 - **Approve every change.** A panel shows exactly what an agent wants to write. Nothing changes until you click Allow.
-- **See everything, switch it off in one click.** Activity explains every request. Pause or remove an agent, or pause all of EK Bridge from the menu bar.
+- **See everything, switch it off in one click.** Activity names what each agent changed and explains every refusal. Pause or remove an agent, or pause all of EK Bridge from the menu bar.
 
 **Works with** Claude Code, Claude Desktop, Codex and Cursor ([tested live](docs/TESTING.md#live-mcp-matrix)), and any other MCP client, with ready-made setups for VS Code (Copilot), Gemini CLI, Zed, Cline, JetBrains AI Assistant and Devin Desktop. claude.ai and ChatGPT can connect through [Remote Access](#from-cloud-agents-experimental), which is experimental.
 
@@ -91,9 +91,23 @@ By default, before an agent writes anything, a small panel shows every field it 
   <img alt="The Ask before changes panel: Claude Code wants to add a weekly event to Work in Europe/Madrid, with rows for when, repeats, where with a map pin, notes, the link with its host in bold, alerts and show as, Deny and Allow buttons, a 45-second countdown and a checkbox to allow changes for 15 minutes." src="docs/images/approval-panel-light.png" width="400">
 </picture>
 
+### It asks before it refuses
+
+When an agent tries to add, change, complete or delete on a calendar it can read but lacks that one action, EK Bridge asks you in the same panel: *Claude Code can't add reminders to Groceries*. **Allow Once**, **Always Allow** (which saves just that action) or **Not Now**. It never asks about calendars the agent can't see, and at most once an hour for the same thing.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/access-request-dark.png">
+  <img alt="The access request panel: Claude Code can't add reminders to Groceries; it has Read and asked to add “Buy oat milk”, due Thursday at 9:00, as reported by claude-code 2.4.1; Not Now, Allow Once and Always Allow buttons and a 45-second wait." src="docs/images/access-request-light.png" width="400">
+</picture>
+
 ### You can see everything, and stop anything
 
-**Activity** lists every request and explains its result in plain words, including the ones that were refused. **Pause** an agent's connection to refuse its requests while keeping its setup, **Remove** it to cut it off for good, or pause all of EK Bridge from the menu bar.
+**Activity** says what each agent changed, by name (*Moved “Design review”*), and explains every refusal in plain words. EK Bridge stores only the item's ID and looks the name up when you open the row, with **Show in Calendar**. **Pause** an agent's connection to refuse its requests while keeping its setup, **Remove** it to cut it off for good, or pause all of EK Bridge from the menu bar. Optional notifications tell you when a change wasn't made because nobody answered.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/activity-dark.png">
+  <img alt="Activity grouped under Today and Yesterday: time, connection, change (Added reminder, Changed event, Delete reminder), item with its calendar colour (Buy oat milk, Design review) and result (Approved, Allowed, Declined by you). The selected row's details show Design review in Work, the time it moved from and to, Show in Calendar, and that only the item's ID is stored." src="docs/images/activity-light.png" width="720">
+</picture>
 
 ### Under the hood
 
@@ -209,7 +223,9 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 | One HTTPS request to GitHub for `appcast.xml`, the list of the latest version | Once a day while **Settings ▸ General ▸ Check for updates automatically** is on (on in downloaded copies; a copy built from source never checks), and when you choose **Check for Updates…**. GitHub sees your IP address and the app's version; nothing else is sent. |
 | Downloading an update from GitHub | Only after you click **Install Update** in the update window. The app checks the download's EdDSA signature and that it's signed by the same developer before installing it. |
 
-On disk, besides connections and Activity, EK Bridge keeps the names, accounts and colours of the calendars and lists you've given access to (`collection-labels.json`), so it can still name one that becomes unavailable; it never stores item titles or contents.
+On disk, besides connections and Activity, EK Bridge keeps the names, accounts and colours of the calendars and lists you've given access to (`collection-labels.json`), so it can still name one that becomes unavailable. Activity keeps an item's EventKit ID for each change (not its title), and looks the item up when you open the row; EK Bridge never stores item titles or contents.
+
+**Notifications** are shown by macOS. One about a change that wasn't made can include the item's title, which macOS may show on the lock screen depending on your settings; turn each kind on or off in **Settings ▸ General ▸ Notifications**.
 
 What an agent reads through EK Bridge goes to that agent and its AI provider, under their privacy terms, so grant only what each agent needs. Tunnels other than Tailscale Funnel can read Remote Access traffic at their edge.
 
@@ -238,7 +254,8 @@ The short version is above. The complete list, with what EventKit doesn't allow:
 - Reminders support title, due and start dates, notes, URL, priority, several alarms (including location alarms), repeat rules, completing and reopening, moving between lists, and deleting a repeating reminder as a series. One occurrence of a repeating reminder can be completed for the shapes and account types a supervised probe has verified (today an iCloud daily reminder with a due time).
 - Updates change only the fields they send, and every written field is read back: a mismatch removes a new item or puts an edited one back. Inviting people, answering invitations, attachments, travel time and the Reminders app's tags and subtasks aren't possible through EventKit.
 - Cloud agents can use the same tools through Remote Access, a tunnel you run and a per-connection **Allow cloud access** switch, with a separate remote token per connection or OAuth connections you approve on the Mac. Remote Access is off by default, can turn itself off on a timer, and is one click to turn off from the menu bar.
-- One window with Overview, Activity (which says whether each request came via MCP, Remote Access or the command line), each connection and Settings; a menu bar icon that shows whether EK Bridge is on, paused or needs attention, with a globe while Remote Access is on; and a first-run checklist.
+- When an agent lacks one action on a calendar or list it can already read, EK Bridge asks you (Allow Once, Always Allow, Not Now) instead of refusing straight away; writes only, throttled, and switchable per connection.
+- One window with Overview, Activity (what changed, by item name looked up live from its stored EventKit ID; changes and problems kept for 90 days; whether each request came via MCP, Remote Access or the command line), each connection and Settings; a menu bar icon that shows whether EK Bridge is on, paused or needs attention, with a globe while Remote Access is on; optional notifications; and a first-run checklist.
 - The app can launch at login when you turn that on.
 
 The [support matrix](docs/API.md#support-matrix) and [testing record](docs/TESTING.md) distinguish implemented behavior from provider-specific observations and untested cases.

@@ -246,15 +246,22 @@ struct AppPresentationTests {
 
     static func activity() {
         let now = Date()
+        var serial = 0
+        func row(_ at: Date, _ client: String?, _ command: String, _ outcome: String,
+                 _ target: String? = nil) -> ActivityRecord {
+            serial += 1
+            let phase = outcome == "accepted" ? ActivityRecord.start : ActivityRecord.result
+            var record = ActivityRecord(id: "\(client ?? "-")|r\(serial)|\(phase)", requestID: "\(client ?? "-")|r\(serial)",
+                                        phase: phase, at: at, clientID: client, command: command, outcome: outcome)
+            record.targetID = target
+            return record
+        }
         let rows = [
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "accepted", targetID: "w"),
-            ClientActivity(at: now.addingTimeInterval(-60), clientID: "b", command: "create_reminder",
-                           outcome: "forbidden", targetID: "g"),
-            ClientActivity(at: now.addingTimeInterval(-120), clientID: nil, command: "read_events",
-                           outcome: "unauthorized"),
-            ClientActivity(at: now.addingTimeInterval(-86_400 * 3), clientID: "b",
-                           command: "update_event", outcome: "error:conflict"),
+            row(now, "a", "read_events", "success", "w"),
+            row(now, "a", "read_events", "accepted", "w"),
+            row(now.addingTimeInterval(-60), "b", "create_reminder", "forbidden", "g"),
+            row(now.addingTimeInterval(-120), nil, "read_events", "unauthorized"),
+            row(now.addingTimeInterval(-86_400 * 3), "b", "update_event", "error:conflict"),
         ]
         let entries = ActivityEntry.entries(from: rows)
         precondition(entries.count == 4, "accepted rows are hidden")
@@ -267,10 +274,10 @@ struct AppPresentationTests {
         precondition(today.requests == expected && today.last == now)
         // Changes are writes that went through; problems are any problem row.
         let writes = ActivityEntry.entries(from: [
-            ClientActivity(at: now, clientID: "a", command: "update_event", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "create_reminder", outcome: "forbidden", targetID: "l"),
-            ClientActivity(at: now, clientID: "a", command: "read_events", outcome: "success", targetID: "w"),
-            ClientActivity(at: now, clientID: "a", command: "delete_event", outcome: "error:approval_denied", targetID: "w"),
+            row(now, "a", "update_event", "success", "w"),
+            row(now, "a", "create_reminder", "forbidden", "l"),
+            row(now, "a", "read_events", "success", "w"),
+            row(now, "a", "delete_event", "error:approval_denied", "w"),
         ])
         let counts = ActivityStats.today(writes, now: now)
         precondition(counts.requests == 4 && counts.changes == 1 && counts.problems == 1,
@@ -291,8 +298,45 @@ struct AppPresentationTests {
                                     lastViewed: nil, update: nil, updateCardShown: false).isEmpty)
         precondition(ActivityStats.unseenProblems(entries, since: nil) == 3)
         precondition(ActivityStats.unseenProblems(entries, since: now.addingTimeInterval(-90)) == 1)
-        let again = ActivityEntry.entries(from: [ClientActivity(at: now, clientID: "x",
-            command: "read_events", outcome: "success")] + rows)
+        // C02: change labels, the Changes filter, Approved, day headers.
+        precondition(CommandPresentation.pastTense("create_event") == "Added event")
+        precondition(CommandPresentation.pastTense("update_event", moved: true) == "Moved event")
+        precondition(CommandPresentation.pastTense("update_reminder") == "Changed reminder")
+        precondition(CommandPresentation.pastTense("complete_reminder") == "Completed")
+        precondition(CommandPresentation.pastTense("read_events") == nil)
+        precondition(CommandPresentation.changeLabel("delete_reminder", moved: false, succeeded: false) == "Delete reminder")
+        precondition(CommandPresentation.changeLabel("read_events", moved: false, succeeded: true) == "Read events")
+        precondition(CommandPresentation.allChangeLabels.contains("Moved reminder"))
+        var moved = row(now, "a", "update_event", "success", "w")
+        moved.destinationID = "h"
+        moved.approval = "user"
+        let movedEntry = ActivityEntry.entries(from: [moved])[0]
+        precondition(movedEntry.isMove && movedEntry.changeLabel == "Moved event" && movedEntry.resultLabel == "Approved")
+        precondition(writes.filter { $0.matches(.changes) }.count == 3 && writes.filter { $0.matches(.problems) }.count == 1)
+        precondition(writes.filter { $0.matches(.all) }.count == 4)
+        precondition(writes[0].resultLabel == "Allowed")
+        // C06: "Moved “Design review”", or the change and calendar without a name.
+        precondition(movedEntry.headline(item: "Design review", collection: "Work") == "Moved “Design review”")
+        precondition(movedEntry.headline(item: nil, collection: "Work") == "Moved event · Work")
+        precondition(writes[1].headline(item: "Milk", collection: "Groceries") == "Add “Milk”", "not allowed: present tense")
+        precondition(writes[2].headline(item: "x", collection: "Work") == "Read events · Work", "reads have no item verb")
+        precondition(CommandPresentation.verb("complete_reminder", moved: false, succeeded: true) == "Completed")
+        // Day groups: newest first, across a daylight-saving change (US, Nov 1 2026).
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        func at(_ day: Int, _ hour: Int) -> Date {
+            newYork.date(from: DateComponents(year: 2026, month: 11, day: day, hour: hour))!
+        }
+        let dstRows = [row(at(2, 1), "a", "read_events", "success"), row(at(1, 23), "a", "read_events", "success"),
+                       row(at(1, 1), "a", "read_events", "success"), row(at(1, 0), "a", "read_events", "success"),
+                       row(at(31, 12).addingTimeInterval(-31 * 86_400), "a", "read_events", "success")]
+        let days = ActivityDays.group(ActivityEntry.entries(from: dstRows), now: at(2, 9), calendar: newYork)
+        precondition(days.map(\.entries.count) == [1, 3, 1], "\(days.map(\.entries.count))")
+        precondition(days.map(\.title)[0...1] == ["Today", "Yesterday"])
+        precondition(days[2].id == "2026-10-31" && days[2].title.contains("October 31"), days[2].title)
+        let lastYear = ActivityDays.title(at(2, 9).addingTimeInterval(-400 * 86_400), now: at(2, 9), calendar: newYork)
+        precondition(lastYear.contains("2025"), lastYear)
+        let again = ActivityEntry.entries(from: [row(now, "x", "read_events", "success")] + rows)
         precondition(again.last?.id == entries.last?.id, "IDs are stable when rows are added")
     }
 

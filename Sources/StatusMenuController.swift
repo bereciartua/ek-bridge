@@ -35,6 +35,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.needsAttention
             _ = model.statusSubtitle
             _ = model.pendingApprovalCount
+            _ = model.pendingAccessRequests
             _ = model.remoteEnabled
             _ = model.resumeAt
         } onChange: { [weak self] in
@@ -54,7 +55,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .on: String(localized: "on")
         case .paused: String(localized: "paused")
         }
-        let pending = model.pendingApprovalCount
+        let pending = model.pendingApprovalCount + model.pendingAccessRequests.count
         var label = String(localized: "\(AppIdentity.displayName), \(state)")
         if pending > 0 {
             label += ", " + (pending == 1 ? String(localized: "1 change waiting for approval")
@@ -173,7 +174,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                     self?.model.openActivity(selecting: entry.id)
                 }
                 row.attributedTitle = recentTitle(entry)
-                row.setAccessibilityLabel(String(localized: "\(model.clientName(entry.clientID)), \(CommandPresentation.label(entry.command)), \(entry.outcome.label), \(RelativeTime.ago(entry.at, now: model.now))"))
+                row.setAccessibilityLabel(String(localized: "\(model.clientName(entry.clientID)), \(entry.headline(item: model.itemTitle(entry), collection: nil)), \(entry.resultLabel), \(RelativeTime.ago(entry.at, now: model.now))"))
                 menu.addItem(row)
             }
         }
@@ -211,6 +212,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             let approvals = item(title) { [weak self] in self?.model.showApprovals() }
             approvals.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
             items.append(approvals)
+        }
+        // Access requests (C04): the panel comes forward.
+        for request in model.pendingAccessRequests {
+            let title = request + "…"
+            let access = item(title) { [weak self] in self?.model.showApprovals() }
+            access.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
+            items.append(access)
         }
         for problem in model.problems {
             let title = item(problem.title) { [weak self] in self?.model.fix(problem) }
@@ -286,11 +294,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return result
     }
 
-    /// "Update event · Work", then "Claude Code · 2 min" on the right (mockup 09;
-    /// item names come with Activity's item IDs).
+    /// "Moved “Design review”", then "Claude Code · 2 min" on the right
+    /// (mockup 09). The name is looked up when the menu opens, for these
+    /// three rows only (C06); without it, "Changed event · Work".
     private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
-        let target = entry.targetID.flatMap { id in model.collections.first { $0.id == id }?.name }
-        let text = [CommandPresentation.label(entry.command), target].compactMap { $0 }.joined(separator: " · ")
+        let target = entry.targetKey.flatMap { model.collection($0)?.name }
+        let text = entry.headline(item: model.itemTitle(entry), collection: target)
         return iconTitle(outcomeImage(entry.outcome.tone), text,
                          trailing: "\(model.clientName(entry.clientID)) · \(RelativeTime.short(entry.at, now: model.now))")
     }

@@ -20,9 +20,102 @@ struct ClientRegistryV4Tests {
         try roundTrip()
         try remoteAccess()
         try pause()
+        try accessRequests()
         print("Client registry v4: v2/v3 upgrade and one-time backups, tokens, revision bumps, "
               + "MCP-only clients, load validation, agent names, failed-auth coalescing, "
-              + "CLI/MCP rows, round trip, remote access, pause and resume passed")
+              + "CLI/MCP rows, round trip, remote access, pause and resume, missing access, "
+              + "temporary grants, Always Allow passed")
+    }
+
+    /// C04: a write one action short comes back as missing access without a
+    /// row; Allow Once counts for its request and revision only.
+    @MainActor
+    static func accessRequests() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registry = ClientRegistry(directory: directory)
+        let id = value(registry.createClient(name: "Asker", credentials: [.mcpToken])).id
+        success(registry.replaceGrants(clientID: id, grants: [
+            ClientGrant(resource: .reminderList, targetID: "L1", mask: ClientGrant.read),
+            ClientGrant(resource: .calendar, targetID: "C1", mask: ClientGrant.read | ClientGrant.edit),
+            ClientGrant(resource: .calendar, targetID: "C2", mask: ClientGrant.read)]))
+        precondition(registry.clients()!.first!.asksForAccess, "on by default")
+        let rows = { registry.activity()!.count }
+        // A create on a list it can read: missing Create, nothing recorded.
+        let create = request(.createReminder, ["listID": "L1", "title": "t"])
+        let before = rows()
+        guard case .missingAccess(let missing) = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        else { preconditionFailure("missing access expected") }
+        precondition(missing.currentMask == ClientGrant.read && missing.missingBit == ClientGrant.create)
+        precondition(missing.targetID == "L1" && missing.resource == .reminderList && !missing.isDestination)
+        precondition(missing.clientName == "Asker" && missing.revision > 0 && missing.asksForAccess)
+        precondition(rows() == before, "no forbidden row in that branch")
+        // The old entry point still refuses and records it, with the missing bit.
+        failure(registry.authorize(clientID: id, request: create, origin: .cli), .forbidden)
+        precondition(registry.activity()!.first!.outcome == "forbidden" &&
+                     registry.activity()!.first!.missing == ClientGrant.create)
+        // Reads, and collections without any grant, are refused outright.
+        let readNothing = request(.readReminders, ["listID": "L9", "limit": 1])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: readNothing, origin: .cli)
+        else { preconditionFailure("no grant: refused") }
+        let elsewhere = request(.createReminder, ["listID": "L9", "title": "t"])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: elsewhere, origin: .cli)
+        else { preconditionFailure("no grant on L9: refused") }
+        // A move whose destination lacks Create: missing Create on the destination.
+        let move = request(.updateEvent, ["calendarID": "C1", "itemID": "E", "targetCalendarID": "C2"])
+        guard case .missingAccess(let destination) = registry.authorizeOrAsk(clientID: id, request: move, origin: .cli)
+        else { preconditionFailure("destination missing access") }
+        precondition(destination.targetID == "C2" && destination.sourceID == "C1" && destination.isDestination &&
+                     destination.missingBit == ClientGrant.create)
+        // A move missing both Edit here and Create there: refused.
+        let both = request(.updateEvent, ["calendarID": "C2", "itemID": "E", "targetCalendarID": "C1"])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: both, origin: .cli)
+        else { preconditionFailure("two actions missing: refused") }
+        // Allow Once: only for that request, at that revision.
+        let once = TemporaryGrant(requestID: ClientRegistry.requestID(clientID: id, request: create),
+                                  resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                  revision: missing.revision)
+        guard case .authorized(let call) = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli,
+                                                                   temporaryGrant: once)
+        else { preconditionFailure("allowed once") }
+        precondition(call.temporaryGrant == once && registry.stillAuthorized(call))
+        precondition(registry.clients()!.first!.grants.first { $0.targetID == "L1" }!.mask == ClientGrant.read,
+                     "nothing saved")
+        let other = request(.createReminder, ["listID": "L1", "title": "other"])
+        guard case .missingAccess = registry.authorizeOrAsk(clientID: id, request: other, origin: .cli,
+                                                            temporaryGrant: once)
+        else { preconditionFailure("another request isn't allowed by it") }
+        // A revision change ends it, in flight too.
+        success(registry.bumpRevision(clientID: id))
+        precondition(!registry.stillAuthorized(call))
+        guard case .missingAccess = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli,
+                                                            temporaryGrant: once)
+        else { preconditionFailure("stale revision") }
+        // Always Allow adds the bit to the existing grant only, at the revision it asked at.
+        let current = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        guard case .missingAccess(let now) = current else { preconditionFailure("still missing") }
+        failure(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                   expectedRevision: now.revision - 1), .forbidden)
+        success(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                   expectedRevision: now.revision))
+        precondition(registry.clients()!.first!.grants.first { $0.targetID == "L1" }!.mask == 3)
+        failure(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L9", bit: ClientGrant.create),
+                .invalidGrants)
+        failure(registry.addAccess(clientID: id, resource: .calendar, targetID: "C2", bit: ClientGrant.complete),
+                .invalidGrants)
+        guard case .authorized = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        else { preconditionFailure("allowed after Always Allow") }
+        // The switch is kept, without a revision change, and survives a reload.
+        success(registry.setAsksForAccess(clientID: id, false))
+        precondition(!ClientRegistry(directory: directory).clients()!.first!.asksForAccess)
+        guard case .missingAccess(let off) = registry.authorizeOrAsk(clientID: id, request: request(
+            .deleteReminder, ["listID": "L1", "itemID": "R"]), origin: .cli), !off.asksForAccess
+        else { preconditionFailure("reports the switch") }
+        success(registry.setAsksForAccess(clientID: id, true))
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf:
+            directory.appendingPathComponent("client-registry.json"))) as! [String: Any]
+        let record = (saved["clients"] as! [[String: Any]]).first!
+        precondition(record["asksForAccess"] == nil, "on is stored as absent")
     }
 
     /// Pausing refuses every request but keeps every credential, grant and
@@ -224,8 +317,14 @@ struct ClientRegistryV4Tests {
             precondition(registry.activity()?.first?.via == nil && registry.activity()?.first?.agent == nil)
             let backup = directory.appendingPathComponent("client-registry.v\(version).backup.json")
             precondition(ClientRegistry.backupFileName(version: version) == backup.lastPathComponent)
-            precondition(!FileManager.default.fileExists(atPath: backup.path), "reading writes nothing")
-            // The first write keeps the original bytes once, then writes v4.
+            // Loading moved the Activity row to the activity store, and that
+            // first write kept the original bytes once, then wrote v4 with
+            // an empty list.
+            precondition(try! Data(contentsOf: backup) == original)
+            let emptied = try json(file)["activity"] as? [Any]
+            precondition(emptied?.isEmpty == true)
+            precondition(registry.activity()?.count == 1)
+            precondition(registry.activity()?.first?.targetID == (version == 3 ? "legacy-calendar" : nil))
             let token = value(registry.issueMCPToken(clientID: client.id))
             precondition(try! Data(contentsOf: backup) == original)
             precondition(mode(backup) == 0o600)
@@ -594,9 +693,10 @@ struct ClientRegistryV4Tests {
         precondition(registry.recordRejected(clientID: id, request: create, outcome: "error:bridge_off",
                                              origin: .mcp(agent: "Agent\u{1}X  1.0")))
         let rejected = registry.activity()!.first!
-        precondition(rejected == ClientActivity(at: clock, clientID: id, command: "create_event",
-                                                outcome: "error:bridge_off", targetID: "CAL-X",
-                                                via: "mcp", agent: "Agent X 1.0", approval: nil))
+        precondition(rejected.at == clock && rejected.clientID == id && rejected.command == "create_event" &&
+                     rejected.outcome == "error:bridge_off" && rejected.targetID == "CAL-X" &&
+                     rejected.via == "mcp" && rejected.agent == "Agent X 1.0" && rejected.approval == nil &&
+                     rejected.phase == ActivityRecord.event && rejected.requestID == "\(id)|\(create.id)")
         precondition(registry.recordRejected(clientID: id, request: request(.scopeStatus),
                                              outcome: "error:rate_limited", origin: .cli))
         let cliRejected = registry.activity()!.first!
@@ -638,10 +738,13 @@ struct ClientRegistryV4Tests {
         precondition(ClientRegistry(directory: directory).activity()!.count == registry.activity()!.count)
     }
 
-    static func stripped(_ row: ClientActivity) throws -> Data {
+    static func stripped(_ row: ActivityRecord) throws -> Data {
         var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as! [String: Any]
         object["via"] = nil
         object["agent"] = nil
+        // The same request ID twice: the second row's ID gets a suffix.
+        object["id"] = nil
+        object["requestID"] = nil
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 

@@ -24,7 +24,7 @@ import SwiftUI
 //   --ui-bridge-off              start with the bridge off
 //   --ui-mcp listening|off|port-in-use   the fake MCP server's state (default listening)
 //   --ui-remote                  start with Remote Access on, a tunnel address and a cloud client
-//   --ui-renamed                 the first launch after the rename (notice; use with --ui-calendar notDetermined)
+//   --ui-renamed                 the first launch after the rename (access re-check; use with --ui-calendar notDetermined)
 //   --ui-update-found <version>  a scheduled check found that version (menu item, Overview card)
 //   --ui-update-critical         …and it's a security update
 //   --ui-no-updater              a build that can't update itself (built from source)
@@ -70,6 +70,11 @@ final class UIReview {
     private(set) lazy var approvals = ApprovalCenter(summarize: { request in
         ApprovalSummaries.build(request, lookup: Self.fixtureLookup(request),
                                 collections: Self.collections(many: false))
+    }, summarizeAccess: { access in
+        AccessAsk.build(access, summary: ApprovalSummaries.build(access.approvalRequest,
+                                                                 lookup: Self.fixtureLookup(access.approvalRequest),
+                                                                 collections: Self.collections(many: false)),
+                        collections: Self.collections(many: false))
     })
     private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private(set) lazy var oauth = OAuthServer(
@@ -93,7 +98,6 @@ final class UIReview {
         if mcpMode == "off" { defaults.set(false, forKey: "LocalMCPServerAllowed") }
         if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if renamed ?? CommandLine.arguments.contains("--ui-renamed") {
-            defaults.set(true, forKey: RenameMigration.noticeKey)
             defaults.set(true, forKey: RenameMigration.accessRecheckKey)
         }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
@@ -212,7 +216,70 @@ final class UIReview {
                 setAutomaticChecks: { [unowned self] in self.automaticUpdateChecks = $0 },
                 lastCheck: { [unowned self] in self.lastUpdateCheck }),
             installedAgents: { [.claudeCode, .claudeDesktop, .cursor] },
-            agentSetup: fakeAgentSetup())
+            agentSetup: fakeAgentSetup(),
+            itemLookup: { Self.fixtureItem($0) },
+            showItem: { [unowned self] _ in
+                self.itemShows += 1
+                return true
+            },
+            notifications: NotificationControls(
+                post: { [unowned self] in self.posted.append($0) },
+                permission: { [unowned self] done in MainActor.assumeIsolated { done(self.notificationPermission) } },
+                requestPermission: { [unowned self] done in
+                    MainActor.assumeIsolated {
+                        if self.notificationPermission == .notDetermined { self.notificationPermission = .allowed }
+                        done(self.notificationPermission == .allowed)
+                    }
+                },
+                openSettings: {}))
+    }
+
+    /// The fake notification center (C05): what was posted, and what macOS allows.
+    var posted = [AppNotification]()
+    var notificationPermission = NotificationPermission.notDetermined
+
+    /// The panel's summary for the seeded "Design review" change: moved an hour later.
+    static var designSummary: ApprovalSummary {
+        let day = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
+        func at(_ hour: Int) -> Date { day.addingTimeInterval(Double(hour) * 3_600) }
+        return ApprovalSummary(title: "Claude Code wants to change an event", subtitle: "Work · iCloud",
+                               rows: [.init(label: String(localized: "When"), value: ApprovalSummaries.span(at(11), at(12)),
+                                            before: ApprovalSummaries.span(at(10), at(11)))],
+                               isDelete: false)
+    }
+
+    /// Show in Calendar / Reminders calls (the fake opens nothing).
+    var itemShows = 0
+
+    /// What EventKit would say about the seeded Activity items (C02):
+    /// "ev-gone" was deleted.
+    static func fixtureItem(_ ref: ItemRef) -> ItemSnapshot? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        func at(_ days: Int, _ hour: Int) -> Date {
+            calendar.date(byAdding: DateComponents(day: days, hour: hour), to: today)!
+        }
+        func event(_ title: String, _ days: Int, _ hour: Int, _ calendarID: String) -> ItemSnapshot {
+            ItemSnapshot(title: title, when: ApprovalSummaries.span(at(days, hour), at(days, hour + 1)),
+                         collectionID: calendarID)
+        }
+        func due(_ days: Int, _ hour: Int) -> String {
+            String(localized: "Due \(at(days, hour).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
+        }
+        switch ref.id {
+        case "ev-design": return event("Design review", 1, 11, "cal-work")
+        case "ev-weekly": return event("Weekly sync", 2, 9, "cal-work")
+        case "ev-sam": return event("1:1 with Sam", 0, 16, "cal-work")
+        case "ev-gone": return .deleted
+        case "rem-cleaning":
+            return ItemSnapshot(title: "Pick up dry cleaning", when: String(localized: "Completed"),
+                                collectionID: "list-errands")
+        case "rem-library":
+            return ItemSnapshot(title: "Return library books", when: due(1, 18), collectionID: "list-errands")
+        case "rem-oat":
+            return ItemSnapshot(title: "Buy oat milk", when: due(3, 9), collectionID: "list-errands")
+        default: return nil
+        }
     }
 
     /// Add to <Agent>… without touching any real file: Claude Desktop's file
@@ -248,6 +315,23 @@ final class UIReview {
                         done(.success(.command(agent: agent, executable: NSHomeDirectory() + "/.local/bin/claude",
                                                arguments: arguments, key: key, replacing: false)))
                     }
+                case .codex(let key, _, let file, let table):
+                    // As without the codex command: its config.toml, with a model and another server.
+                    let before = Data("""
+                        model = "gpt-5-codex"
+
+                        [mcp_servers.filesystem]
+                        command = "npx"
+                        args = ["-y", "@modelcontextprotocol/server-filesystem", "~/Desktop"]
+
+                        """.utf8)
+                    let appended = try! AgentConfigWriter.appendTOML(current: before, key: key, table: table)
+                    let change = ConfigChange(
+                        fileURL: OneClickAgents.expand(file, home: NSHomeDirectory()), before: before,
+                        after: appended.after, outcome: appended.outcome,
+                        summary: String(localized: "Adds the “\(key)” server at the end"),
+                        diffLines: AgentConfigWriter.diff(before, appended.after))
+                    DispatchQueue.main.async { done(.success(.file(agent: agent, change: change))) }
                 }
             },
             apply: { [unowned self] preview, done in
@@ -349,6 +433,29 @@ final class UIReview {
                                               request: request,
                                               targetID: (parameters["calendarID"] ?? parameters["listID"]) as? String)) { _ in }
         approvalPanel.update()
+    }
+
+    /// Queues an access request (C04) as the pipeline would; Always Allow
+    /// saves the action like the pipeline does.
+    @discardableResult
+    func queueAccess(_ command: BridgeCommand, _ parameters: [String: Any], client: String = UIReview.claudeID,
+                     name: String = "Claude Code", resource: ClientResource, target: String, mask: Int, bit: Int,
+                     source: String? = nil, agent: String? = "claude-code 2.4.1",
+                     answered: @escaping (AccessDecision) -> Void = { _ in }) -> Bool {
+        approvals.resetAccessThrottle()
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: command, parameters: parameters)
+        let missing = MissingAccess(clientID: client, clientName: name, revision: 1, resource: resource,
+                                    targetID: target, currentMask: mask, missingBit: bit, sourceID: source)
+        let shown = approvals.requestAccess(AccessRequest(missing: missing, request: request, agent: agent,
+                                                          requestID: "\(client)|\(request.id)")) { [weak self] decision in
+            if decision == .allowAlways {
+                _ = self?.registry.addAccess(clientID: client, resource: resource, targetID: target, bit: bit)
+                self?.model?.refresh()
+            }
+            answered(decision)
+        } != nil
+        approvalPanel.update()
+        return shown
     }
 
     func cleanup() {
@@ -460,72 +567,110 @@ final class UIReview {
         clients.append(["id": Self.revokedID, "name": "Old shell script", "verifier": "", "revoked": true,
                         "revision": 6, "grants": [],
                         "revokedAt": now.addingTimeInterval(-86_400 * 6).timeIntervalSinceReferenceDate])
-        // Oldest first, as stored. Each request has an "accepted" row and a result.
+        // Oldest first, as stored. A request that was accepted has a start and
+        // a result row; one refused before that has a single row. Changes name
+        // their item by ID; `fixtureItem` plays EventKit for the names (C02).
         // Claude Code and Cursor come in over MCP, the scripts over the command line.
-        let script: [(TimeInterval, String?, String, String, String?)] = [
-            (-86_400 * 2 - 600, Self.revokedID, "read_events", "success", "cal-work"),
-            (-86_400 - 7_200, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-86_400 - 7_000, Self.obsidianID, "update_event", "error:conflict", "cal-work"),
-            (-86_400 - 6_900, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-86_400 - 6_800, Self.obsidianID, "update_event", "success", "cal-work"),
-            (-86_400 - 3_000, nil, "read_events", "unauthorized", nil),
-            (-86_400 - 1_000, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-9_000, Self.briefingID, "authorization_status", "success", nil),
-            (-8_800, Self.briefingID, "read_events", "success", "cal-family"),
-            (-8_700, Self.briefingID, "read_events", "success", "cal-work"),
-            (-8_600, Self.briefingID, "read_events", "success", "cal-home"),
-            (-8_500, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-5_000, Self.claudeID, "scope_status", "success", nil),
-            (-4_900, Self.claudeID, "read_events", "success", "cal-work"),
-            (-4_800, Self.claudeID, "create_event", "error:idempotency_pending_review", "cal-work"),
-            (-4_700, Self.claudeID, "read_events", "success", "cal-work"),
-            (-4_000, Self.claudeID, "read_reminders", "success", "list-errands"),
-            (-3_900, Self.claudeID, "create_reminder", "forbidden", "list-groceries"),
-            (-3_700, Self.briefingID, "read_events", "success", "cal-work"),
-            (-2_400, Self.claudeID, "read_reminders", "success", "list-errands"),
-            (-2_300, Self.claudeID, "complete_reminder", "success", "list-errands"),
-            (-1_800, Self.claudeID, "read_events", "error:too_many_events_narrow_range", "cal-home"),
-            (-1_700, Self.claudeID, "read_events", "success", "cal-home"),
-            (-900, Self.obsidianID, "read_events", "success", "cal-work"),
-            (-600, Self.claudeID, "create_event", "success", "cal-work"),
-            (-420, Self.claudeID, "read_events", "success", "cal-work"),
-            (-300, Self.claudeID, "update_event", "success", "cal-work"),
-            (-1_500, nil, "mcp", "unauthorized", nil),
-            (-1_400, Self.cursorID, "read_events", "error:bridge_off", "cal-home"),
-            (-1_300, Self.claudeID, "delete_reminder", "error:approval_denied", "list-errands"),
-            (-1_250, Self.claudeID, "read_events", "error:rate_limited", "cal-work"),
-            (-1_100, Self.claudeID, "list_collections", "success", nil),
-            (-200, Self.briefingID, "read_reminders", "success", "list-reminders"),
-            (-150, Self.claudeID, "create_reminder", "success", "list-errands"),
-            (-120, Self.claudeID, "read_events", "success", "cal-work"),
-            (-90, Self.obsidianID, "read_events", "error:client_paused", "cal-work"),
-        ]
-        var activity = [[String: Any]]()
-        for (offset, client, command, outcome, target) in script {
-            let at = now.addingTimeInterval(offset).timeIntervalSinceReferenceDate
-            var row: [String: Any] = ["at": at, "command": command, "outcome": outcome]
-            if let client { row["clientID"] = client }
-            if let target { row["targetID"] = target }
-            let mcp = client == nil ? command == "mcp" : (client == Self.claudeID || client == Self.cursorID)
-            if client != Self.revokedID && !(client == nil && command == "read_events") {
-                row["via"] = mcp ? "mcp" : "cli"
-            }
-            if client == Self.claudeID { row["agent"] = "claude-code 2.4.1" }
-            if client == Self.claudeID && command == "create_reminder" && outcome == "success" {
-                row["approval"] = "user"
-            }
-            if outcome == "error:approval_denied" { row["approval"] = "denied" }
-            if (outcome == "success" || outcome.hasPrefix("error:")) &&
-                outcome != "error:bridge_off" && outcome != "error:rate_limited" &&
-                outcome != "error:client_paused" {
-                var accepted = row
-                accepted["approval"] = nil
-                accepted["at"] = at - 0.2
-                accepted["outcome"] = "accepted"
-                activity.append(accepted)
-            }
-            activity.append(row)
+        struct Row {
+            let offset: TimeInterval
+            let client: String?
+            let command: String
+            let outcome: String
+            let target: String?
+            var item: String? = nil
+            var destination: String? = nil
+            var approval: String? = nil
+            var missing: Int? = nil
         }
+        let script: [Row] = [
+            Row(offset: -86_400 * 2 - 600, client: Self.revokedID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 7_200, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 7_000, client: Self.obsidianID, command: "update_event", outcome: "error:conflict",
+                target: "cal-work", item: "ev-sam"),
+            Row(offset: -86_400 - 6_900, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -86_400 - 6_800, client: Self.obsidianID, command: "update_event", outcome: "success",
+                target: "cal-work", item: "ev-sam"),
+            Row(offset: -86_400 - 5_000, client: Self.claudeID, command: "delete_event", outcome: "success",
+                target: "cal-work", item: "ev-gone", approval: "user"),
+            Row(offset: -86_400 - 3_500, client: Self.cursorID, command: "create_event", outcome: "forbidden",
+                target: "cal-home", missing: ClientGrant.create),
+            Row(offset: -86_400 - 3_000, client: nil, command: "read_events", outcome: "unauthorized", target: nil),
+            Row(offset: -86_400 - 1_000, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -9_000, client: Self.briefingID, command: "authorization_status", outcome: "success", target: nil),
+            Row(offset: -8_800, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-family"),
+            Row(offset: -8_700, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -8_600, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-home"),
+            Row(offset: -8_500, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -5_000, client: Self.claudeID, command: "scope_status", outcome: "success", target: nil),
+            Row(offset: -4_900, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -4_800, client: Self.claudeID, command: "create_event", outcome: "error:idempotency_pending_review",
+                target: "cal-work"),
+            Row(offset: -4_700, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -4_000, client: Self.claudeID, command: "read_reminders", outcome: "success", target: "list-errands"),
+            Row(offset: -3_900, client: Self.claudeID, command: "create_reminder", outcome: "forbidden",
+                target: "list-groceries", missing: ClientGrant.create),
+            Row(offset: -3_800, client: Self.claudeID, command: "update_event", outcome: "forbidden",
+                target: "cal-work", item: "ev-design", destination: "cal-home", missing: ClientGrant.create),
+            Row(offset: -3_700, client: Self.briefingID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -2_400, client: Self.claudeID, command: "read_reminders", outcome: "success", target: "list-errands"),
+            Row(offset: -2_300, client: Self.claudeID, command: "complete_reminder", outcome: "success",
+                target: "list-errands", item: "rem-cleaning"),
+            Row(offset: -1_800, client: Self.claudeID, command: "read_events", outcome: "error:too_many_events_narrow_range",
+                target: "cal-home"),
+            Row(offset: -1_700, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-home"),
+            Row(offset: -900, client: Self.obsidianID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -600, client: Self.claudeID, command: "create_event", outcome: "success",
+                target: "cal-work", item: "ev-weekly", approval: "user"),
+            Row(offset: -420, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -300, client: Self.claudeID, command: "update_event", outcome: "success",
+                target: "cal-work", item: "ev-design", approval: "user"),
+            Row(offset: -1_500, client: nil, command: "mcp", outcome: "unauthorized", target: nil),
+            Row(offset: -1_400, client: Self.cursorID, command: "read_events", outcome: "error:bridge_off", target: "cal-home"),
+            Row(offset: -1_300, client: Self.claudeID, command: "delete_reminder", outcome: "error:approval_denied",
+                target: "list-errands", item: "rem-library", approval: "denied"),
+            Row(offset: -1_250, client: Self.claudeID, command: "read_events", outcome: "error:rate_limited", target: "cal-work"),
+            Row(offset: -1_100, client: Self.claudeID, command: "list_collections", outcome: "success", target: nil),
+            Row(offset: -200, client: Self.briefingID, command: "read_reminders", outcome: "success", target: "list-reminders"),
+            Row(offset: -150, client: Self.claudeID, command: "create_reminder", outcome: "success",
+                target: "list-errands", item: "rem-oat", approval: "user"),
+            Row(offset: -120, client: Self.claudeID, command: "read_events", outcome: "success", target: "cal-work"),
+            Row(offset: -90, client: Self.obsidianID, command: "read_events", outcome: "error:client_paused", target: "cal-work"),
+        ]
+        let store = ActivityStore(dataFolder: directory)
+        for (index, row) in script.enumerated().sorted(by: { $0.element.offset < $1.element.offset }) {
+            let at = now.addingTimeInterval(row.offset)
+            let mcp = row.client == nil ? row.command == "mcp" : (row.client == Self.claudeID || row.client == Self.cursorID)
+            let request = "\(row.client ?? "-")|seed-\(index)"
+            let refusedEarly = ["forbidden", "unauthorized", "error:bridge_off", "error:rate_limited",
+                                "error:client_paused"].contains(row.outcome)
+            var record = ActivityRecord(id: "\(request)|\(refusedEarly ? ActivityRecord.event : ActivityRecord.result)",
+                                        requestID: request,
+                                        phase: refusedEarly ? ActivityRecord.event : ActivityRecord.result,
+                                        at: at, clientID: row.client, command: row.command, outcome: row.outcome)
+            record.targetID = row.target
+            record.destinationID = row.destination
+            if row.client != Self.revokedID && !(row.client == nil && row.command == "read_events") {
+                record.via = mcp ? "mcp" : "cli"
+            }
+            if row.client == Self.claudeID { record.agent = "claude-code 2.4.1" }
+            record.approval = row.approval
+            record.missing = row.missing
+            record.item = row.item.map {
+                ItemRef(kind: CommandPresentation.targetsList(row.command) ? "reminder" : "event", id: $0)
+            }
+            if !refusedEarly {
+                var start = ActivityRecord(id: "\(request)|\(ActivityRecord.start)", requestID: request,
+                                           phase: ActivityRecord.start, at: at.addingTimeInterval(-0.2),
+                                           clientID: row.client, command: row.command, outcome: "accepted")
+                start.targetID = record.targetID
+                start.destinationID = record.destinationID
+                start.via = record.via
+                start.agent = record.agent
+                _ = store.append(start)
+            }
+            _ = store.append(record)
+        }
+        var activity = [[String: Any]]()
         if CommandLine.arguments.contains("--ui-max-activity") {
             let commands = ["read_events", "read_reminders", "create_event", "update_reminder", "scope_status"]
             let outcomes = ["success", "success", "success", "forbidden", "error:conflict", "error:scope_changed"]
@@ -626,18 +771,6 @@ final class UIReview {
     private func value(_ flag: String) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
-    }
-
-    /// The first launch after the rename: existing clients and Activity, access
-    /// not yet granted to the new bundle ID, and the notice.
-    func makeRenamedWindow() -> (BridgeAppModel, MainWindowController) {
-        let renamed = UIReview(fresh: false, calendar: .notDetermined, reminders: .notDetermined, renamed: true)
-        extraReviews.append(renamed)
-        let model = BridgeAppModel(services: renamed.services())
-        renamed.model = model
-        let controller = MainWindowController(model: model)
-        extraWindows.append(controller)
-        return (model, controller)
     }
 
     /// A second, empty environment for the setup checklist snapshots.
@@ -1449,7 +1582,136 @@ final class BehaviorReview {
                 ActivityColumns.widths(for: ActivityColumns.tableWidth(windowWidth: CGFloat($0)))
             }
             return widths.allSatisfy { $0.result >= ActivityColumns.widestResultLabel }
-                && widths[0].request >= ActivityColumns.widestRequestLabel
+                && widths[0].change >= ActivityColumns.widestChangeLabel
+        }
+        // C02: the Changes filter, the item card and a deleted item.
+        step("Changes filter hides reads") {
+            self.model.openActivity()
+            self.model.activityKind = .changes
+            let shown = ActivityScope.all.entries(self.model).filter { $0.matches(self.model.activityKind) }
+            let ok = !shown.isEmpty && shown.allSatisfy(\.isWrite) &&
+                shown.contains { $0.code != "success" } && !shown.contains { $0.command == "read_events" }
+            self.model.activityKind = .all
+            return ok
+        }
+        step("selecting a write shows the item card") {
+            guard let write = self.model.activity.first(where: { $0.item?.id == "ev-design" && $0.code == "success" })
+            else { return false }
+            self.model.openActivity(selecting: write.id)
+            guard case .found(let item) = self.model.itemDisplay(write) else { return false }
+            let before = self.review.itemShows
+            self.model.showItem(write)
+            return item.title == "Design review" && item.exists && write.changeLabel == "Changed event" &&
+                write.resultLabel == "Approved" && self.review.itemShows == before + 1
+        }
+        // C04: the access panel, Always Allow and the access table.
+        step("access request panel appears and Always Allow updates the access table") {
+            self.review.approvals.withdrawAll()
+            self.model.navigate(to: .client(UIReview.cursorID))
+            let home = GrantKey(resource: .calendar, targetID: "cal-home")
+            guard self.model.client(UIReview.cursorID)?.grants.first(where: { $0.targetID == "cal-home" })?.mask == 1,
+                  self.review.queueAccess(.createEvent, ["calendarID": "cal-home", "title": "Dentist"],
+                                          client: UIReview.cursorID, name: "Cursor", resource: .calendar,
+                                          target: "cal-home", mask: ClientGrant.read, bit: ClientGrant.create),
+                  let item = self.review.approvals.pendingAccess.first,
+                  self.model.pendingAccessRequests == ["Cursor can't add events to Home"],
+                  self.model.needsYouItems.contains(.accessRequest(title: "Cursor can't add events to Home"))
+            else { return false }
+            // Unsaved access edits hold Always Allow back.
+            self.model.setAction(GrantKey(resource: .calendar, targetID: "cal-family"), bit: ClientGrant.read, on: true)
+            self.review.approvals.allowAlways(item.id)
+            guard self.review.approvals.pendingAccess.count == 1 else { return false }
+            self.model.revertDraft()
+            self.review.approvals.allowAlways(item.id)
+            return self.review.approvals.pendingAccess.isEmpty &&
+                self.model.client(UIReview.cursorID)?.grants.first(where: { $0.targetID == "cal-home" })?.mask == 3 &&
+                self.model.draft?.mask(home) == 3
+        }
+        step("restore Cursor's access") {
+            _ = self.review.registry.replaceGrants(clientID: UIReview.cursorID, grants: [
+                ClientGrant(resource: .calendar, targetID: "cal-home", mask: 1)])
+            self.model.refresh()
+            return self.model.client(UIReview.cursorID)?.grants.first?.mask == 1
+        }
+        step("an answered change keeps its summary for the session") {
+            let request = BridgeRequest(id: "c03", command: .updateEvent, parameters: ["calendarID": "cal-work"])
+            var asked = ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code", agent: nil,
+                                        request: request, targetID: "cal-work")
+            asked.requestID = "\(UIReview.claudeID)|c03"
+            _ = self.review.approvals.request(asked) { _ in }
+            guard let item = self.review.approvals.pending.last else { return false }
+            self.review.approvals.allow(item.id)
+            return self.model.recentSummaries["\(UIReview.claudeID)|c03"] == item.summary
+        }
+        // C05: notifications.
+        step("a change nobody answered posts one notification") {
+            self.review.posted.removeAll()
+            self.model.navigate(to: .overview)
+            let request = BridgeRequest(id: "c05", command: .updateEvent,
+                                        parameters: ["calendarID": "cal-work", "itemID": "fixture-update"])
+            var asked = ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code", agent: nil,
+                                        request: request, targetID: "cal-work")
+            asked.requestID = "\(UIReview.claudeID)|c05"
+            _ = self.review.approvals.request(asked) { _ in }
+            guard let item = self.review.approvals.pending.last else { return false }
+            self.review.approvals.expired(item)
+            self.review.approvals.withdrawAll()
+            let note = self.review.posted.last
+            return self.review.posted.count == 1 && note?.kind == .declined &&
+                note?.title == "A change wasn't made" &&
+                note?.body == "Claude Code wanted to change an event (“Design review”). Nobody answered in 45 s." &&
+                self.review.notificationPermission == .allowed
+        }
+        step("refused is off by default, then posts once per connection") {
+            self.review.posted.removeAll()
+            guard !self.model.notificationKinds.contains(.refused),
+                  self.model.notificationKinds == [.declined, .update] else { return false }
+            let refuse = {
+                let request = BridgeRequest(id: UUID().uuidString, command: .createEvent,
+                                            parameters: ["calendarID": "cal-family", "title": "x"])
+                _ = self.review.registry.authorize(clientID: UIReview.cursorID, request: request, origin: .cli)
+                self.model.refresh()
+            }
+            refuse()
+            guard self.review.posted.isEmpty else { return false }
+            self.model.setNotification(.refused, true)
+            refuse()
+            refuse()
+            let ok = self.review.posted.count == 1 && self.review.posted[0].body == "Cursor can't add events to Family."
+            self.model.setNotification(.refused, false)
+            return ok
+        }
+        step("an update posts once per version") {
+            // Not from Overview, which shows the update itself.
+            self.model.navigate(to: .activity)
+            self.review.posted.removeAll()
+            self.model.updateFound(FoundUpdate(version: "9.9.9", critical: false))
+            self.model.updateFound(nil)
+            self.model.updateFound(FoundUpdate(version: "9.9.9", critical: false))
+            self.model.updateFound(nil)
+            return self.review.posted.map(\.body) == ["EK Bridge 9.9.9 is available."]
+        }
+        step("clicking a declined notification opens its Activity row") {
+            self.model.handleNotification(AppNotification.openActivity, kind: .declined,
+                                          info: [AppNotification.requestIDKey: "nothing"])
+            return self.model.route == .activity
+        }
+        step("Overview's Today and the menu name the item") {
+            guard let design = self.model.activity.first(where: { $0.item?.id == "ev-design" && $0.code == "success" }),
+                  let deleted = self.model.activity.first(where: { $0.item?.id == "ev-gone" }) else { return false }
+            return design.headline(item: self.model.itemTitle(design), collection: "Work") == "Changed “Design review”" &&
+                deleted.headline(item: self.model.itemTitle(deleted), collection: "Work") == "Deleted event · Work"
+        }
+        step("deleted item shows Deleted") {
+            guard let gone = self.model.activity.first(where: { $0.item?.id == "ev-gone" }),
+                  case .found(let item) = self.model.itemDisplay(gone) else { return false }
+            self.model.activitySelection = nil
+            return !item.exists && gone.changeLabel == "Deleted event"
+        }
+        step("a refused move names its destination") {
+            guard let move = self.model.activity.first(where: { $0.isMove && $0.code == "forbidden" }) else { return false }
+            return ActivityInspector.refusedOnDestination(move) && move.changeLabel == "Move event" &&
+                ActivityInspector.missingAction(move) == "Create"
         }
         // A fresh run, end to end (B09): allow both, add Claude Desktop, one-click, first request.
         let (fresh, freshModel, _) = review.makeFreshEnvironment(calendar: .notDetermined, reminders: .notDetermined)
@@ -1592,7 +1854,6 @@ final class SnapshotReview {
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         controller.present()
-        let (renamedModel, renamedController) = review.makeRenamedWindow()
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let suffix = appearance == .aqua ? "light" : "dark"
             let main = controller.window
@@ -1607,13 +1868,17 @@ final class SnapshotReview {
                 return window
             }
             step("overview") {
-                // Needs you: a change waiting for approval and an unavailable calendar.
+                // Needs you (mockup 07): an agent asking for access and an
+                // unavailable calendar. Today names the items (C06).
                 self.glyphWindow.orderOut(nil)
                 main?.appearance = NSAppearance(named: appearance)
                 self.model.sheet = nil
                 self.model.navigate(to: .overview)
-                self.review.queueApproval(.createReminder, ["listID": "list-errands", "title": "Buy oat milk"],
-                                          agent: "claude-code 2.4.1")
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.createEvent, ["calendarID": "cal-home", "title": "Dentist"],
+                                        client: UIReview.cursorID, name: "Cursor", resource: .calendar,
+                                        target: "cal-home", mask: ClientGrant.read, bit: ClientGrant.create,
+                                        agent: "cursor 1.7")
                 return main
             }
             step("overview-quiet") {
@@ -1664,7 +1929,10 @@ final class SnapshotReview {
             }
             step("activity") {
                 self.model.navigate(to: .activity)
-                self.model.activitySelection = self.model.activity.first { $0.code == "forbidden" }?.id
+                let design = self.model.activity.first { $0.item?.id == "ev-design" && $0.code == "success" }
+                // Approved in the panel this session (C03): its before → after.
+                if let request = design?.requestID { self.model.rememberApprovalSummary(request, UIReview.designSummary) }
+                self.model.activitySelection = design?.id
                 return main
             }
             step("activity-minimum") {
@@ -1678,7 +1946,52 @@ final class SnapshotReview {
                 }
                 return main
             }
+            step("activity-problems") {
+                // Rebuilt at the default size (see activity-minimum).
+                main?.setContentSize(MainWindowController.defaultSize)
+                self.model.navigate(to: .overview)
+                DispatchQueue.main.async {
+                    self.model.navigate(to: .activity)
+                    self.model.activityKind = .problems
+                    self.model.activitySelection = self.model.activity.first { $0.isMove && $0.code == "forbidden" }?.id
+                }
+                return main
+            }
+            step("activity-deleted-item") {
+                self.model.activityKind = .all
+                self.model.activitySelection = self.model.activity.first { $0.item?.id == "ev-gone" }?.id
+                return main
+            }
+            step("activity-no-calendar-access") {
+                self.review.calendarStatus = .denied
+                self.model.refresh()
+                self.model.activitySelection = self.model.activity.first {
+                    $0.item?.id == "ev-design" && $0.code == "success"
+                }?.id
+                return main
+            }
+            step("settings-notifications") {
+                self.review.calendarStatus = .fullAccess
+                self.model.refresh()
+                self.model.activitySelection = nil
+                main?.setContentSize(MainWindowController.defaultSize)
+                self.model.settingsTab = .general
+                self.model.navigate(to: .settings)
+                self.model.settingsScrollTarget = "notifications"
+                return main
+            }
+            step("settings-notifications-off") {
+                self.review.notificationPermission = .denied
+                self.model.refreshNotificationPermission()
+                self.model.settingsScrollTarget = "notifications"
+                return main
+            }
             step("settings") {
+                self.review.notificationPermission = .notDetermined
+                self.model.refreshNotificationPermission()
+                self.review.calendarStatus = .fullAccess
+                self.model.refresh()
+                self.model.activitySelection = nil
                 main?.setContentSize(MainWindowController.defaultSize)
                 self.model.setShowDeveloperTools(true)
                 self.model.settingsTab = .general
@@ -1763,7 +2076,24 @@ final class SnapshotReview {
                 self.model.copySetup.insert(UIReview.claudeID)
                 return main
             }
+            // C07: Codex and Gemini CLI offer Add to … next to the copyable setup.
+            step("client-connect-codex") {
+                self.model.copySetup.remove(UIReview.claudeID)
+                self.model.agentChoice[UIReview.claudeID] = .codex
+                return main
+            }
+            step("sheet-config-preview-codex") {
+                self.model.beginOneClick(UIReview.claudeID, agent: .codex)
+                return main
+            }
+            step("sheet-config-preview-gemini") {
+                self.model.closeOneClick()
+                self.model.agentChoice[UIReview.claudeID] = .geminiCLI
+                self.model.beginOneClick(UIReview.claudeID, agent: .geminiCLI)
+                return main
+            }
             step("client-connect-direct-other") {
+                self.model.closeOneClick()
                 self.model.copySetup.remove(UIReview.claudeID)
                 self.model.agentChoice[UIReview.claudeID] = .other
                 return main
@@ -1861,6 +2191,26 @@ final class SnapshotReview {
                                                             "itemID": "x-apple-reminderkit://REMCDReminder/6C1E2B9D-55A0-4F3B-9D8E-0C7A33A14F2A"],
                                           agent: "claude-code 2.4.1")
                 self.review.approvals.selection = 2
+                return self.review.approvalPanel.window
+            }
+            // Ask for access when refused (C04, mockup 06).
+            step("access-request-panel") {
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.createReminder, [
+                    "listID": "list-groceries", "title": "Buy oat milk",
+                    "due": ["kind": "timed", "at": 1_793_887_200, "timeZone": "America/New_York"]],
+                    resource: .reminderList, target: "list-groceries", mask: ClientGrant.read, bit: ClientGrant.create)
+                self.review.approvalPanel.window?.appearance = NSAppearance(named: appearance)
+                return self.review.approvalPanel.window
+            }
+            step("access-request-panel-move") {
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.updateEvent, [
+                    "calendarID": "cal-work", "itemID": "fixture-update", "expectedVersion": "1",
+                    "targetCalendarID": "cal-home"],
+                    client: UIReview.cursorID, name: "Cursor", resource: .calendar, target: "cal-home",
+                    mask: ClientGrant.read, bit: ClientGrant.create, source: "cal-work", agent: "cursor 1.7")
+                self.review.approvalPanel.window?.appearance = NSAppearance(named: appearance)
                 return self.review.approvalPanel.window
             }
             // Remote Access (B10): the page before setup, the guide, then set up.
@@ -2056,18 +2406,7 @@ final class SnapshotReview {
                 scriptController.present()
                 return scriptController.window
             }
-            step("overview-renamed") {
-                scriptController.window?.orderOut(nil)
-                freshController.window?.orderOut(nil)
-                renamedModel.navigate(to: .overview)
-                renamedModel.bridgeDidChange(.on)
-                renamedModel.mcpStatusDidChange(.listening(port: UIReview.port))
-                renamedController.window?.appearance = NSAppearance(named: appearance)
-                renamedController.present()
-                return renamedController.window
-            }
             step("restore") {
-                renamedController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
                 scriptController.window?.orderOut(nil)
                 self.controller.present()
@@ -2152,8 +2491,10 @@ final class SnapshotReview {
     private func target(for name: String) -> NSWindow? {
         if name.hasPrefix("restore") { return nil }
         if name.hasPrefix("menu-glyphs") { return glyphWindow }
-        if name.hasPrefix("approval-panel") { return review.approvalPanel.window }
-        if name.hasPrefix("setup") || name.hasPrefix("overview-renamed") {
+        if name.hasPrefix("approval-panel") || name.hasPrefix("access-request-panel") {
+            return review.approvalPanel.window
+        }
+        if name.hasPrefix("setup") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }
         }
         guard let main = controller.window else { return nil }

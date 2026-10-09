@@ -58,11 +58,21 @@ enum OneClickSetup: Equatable {
     case jsonMerge(file: String, root: String, key: String, entry: SetupJSON)
     /// `claude` with these arguments (an argument array, never a shell string).
     case claudeCode(key: String, arguments: [String])
+    /// Codex (C07): its own `codex mcp add` when the command is found,
+    /// otherwise `table` appended to its config.toml (`file`, in tilde form).
+    case codex(key: String, arguments: [String], file: String, table: String)
 }
 
 extension AgentKind {
-    /// Agents with one-click setup. Others keep Copy (C07 adds more).
+    /// Agents with one-click setup as the main action. Others keep Copy.
     var oneClick: Bool { [.claudeDesktop, .cursor, .claudeCode].contains(self) }
+
+    /// One-click setups not yet checked on a real config (C07): offered as
+    /// Add to <Agent>… next to the copyable setup, which stays the default,
+    /// until that check passes.
+    var oneClickTrial: Bool { [.codex, .geminiCLI].contains(self) }
+
+    var canOneClick: Bool { oneClick || oneClickTrial }
 
     /// The one-click setup for the recommended method, matching its snippet.
     func oneClickSetup(_ c: SetupContext) -> OneClickSetup? {
@@ -84,6 +94,14 @@ extension AgentKind {
             ]).text
             return .claudeCode(key: c.serverKey,
                                arguments: ["mcp", "add-json", "--scope", "user", c.serverKey, json])
+        case .codex:
+            // The same entry as the snippet's `codex mcp add` and its config.toml lines.
+            return .codex(key: c.serverKey,
+                          arguments: ["mcp", "add", c.serverKey, "--", c.launcherPath, "--client", c.clientID],
+                          file: "~/.codex/config.toml", table: SetupTOML.table(c.serverKey, stdio))
+        case .geminiCLI:
+            return .jsonMerge(file: "~/.gemini/settings.json", root: "mcpServers", key: c.serverKey,
+                              entry: .object(stdio + [("timeout", .number(60000))]))
         default:
             return nil
         }
@@ -1104,7 +1122,7 @@ indirect enum SetupJSON: Equatable {
     static func == (lhs: SetupJSON, rhs: SetupJSON) -> Bool { lhs.text == rhs.text }
 }
 
-private enum SetupTOML {
+enum SetupTOML {
     /// TOML basic strings accept JSON's string escapes, so values reuse SetupJSON's encoding.
     static func table(_ serverKey: String, _ pairs: [(String, SetupJSON)]) -> String {
         let bare = serverKey.unicodeScalars.allSatisfy { SetupShell.bareKey.contains($0) }

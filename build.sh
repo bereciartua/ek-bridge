@@ -119,7 +119,7 @@ for arch in $archs; do
         -Xcc "-fmodules-cache-path=$cache_dir" \
         -target "$target" \
         -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
-        -framework SwiftUI -framework Network -framework IOKit \
+        -framework SwiftUI -framework Network -framework IOKit -framework UserNotifications \
         -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
         "$@" \
         -o "$slice/$app_name"

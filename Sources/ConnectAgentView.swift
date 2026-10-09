@@ -139,6 +139,10 @@ struct AgentSetupCard: View {
                 Button(String(localized: "Copy the setup instead")) { model.copySetup.insert(client.id) }
             } else if agent.oneClick {
                 Button(String(localized: "Use Add to \(agent.displayName) instead")) { model.copySetup.remove(client.id) }
+            } else if agent.oneClickTrial && client.hasMCPToken {
+                // C07: offered next to the copyable setup until checked on a real config.
+                Button(String(localized: "Add to \(agent.displayName)…")) { model.beginOneClick(client.id) }
+                    .help(String(localized: "Shows the exact change first, keeps a backup, and never writes the token."))
             }
             Button(model.advancedSetup.contains(client.id) ? String(localized: "Hide advanced options")
                                                           : String(localized: "Advanced options (method, token file)")) {
@@ -619,17 +623,17 @@ struct ConfigPreviewSheet: View {
                   systemImage: "lock")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        case .command(_, let executable, let arguments, let key, let replacing):
-            Text(replacing ? String(localized: "Replace the existing \(key) setup in Claude Code?")
-                           : String(localized: "Add \(AppIdentity.displayName) to Claude Code?"))
+        case .command(let agent, let executable, let arguments, let key, let replacing):
+            Text(replacing ? String(localized: "Replace the existing \(key) setup in \(agent.displayName)?")
+                           : String(localized: "Add \(AppIdentity.displayName) to \(agent.displayName)?"))
                 .font(.headline)
-            Text(replacing ? String(localized: "Claude Code already has a server called \(key). EK Bridge removes it, then runs:")
-                           : String(localized: "EK Bridge runs:"))
+            Text(replacing ? String(localized: "\(agent.displayName) already has a server called \(key). \(AppIdentity.displayName) removes it, then runs:")
+                           : String(localized: "\(AppIdentity.displayName) runs:"))
                 .foregroundStyle(.secondary)
             CodeBox(text: ([(executable as NSString).abbreviatingWithTildeInPath] + arguments.map {
                 $0.rangeOfCharacter(from: CharacterSet(charactersIn: " \"'{}$\\")) == nil ? $0 : ConnectCommand.shellQuoted($0)
             }).joined(separator: " "))
-            Label(String(localized: "The token isn't in the command; Claude Code reads it through \(AppIdentity.displayName)'s launcher."),
+            Label(String(localized: "The token isn't in the command; \(agent.displayName) reads it through \(AppIdentity.displayName)'s launcher."),
                   systemImage: "lock")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

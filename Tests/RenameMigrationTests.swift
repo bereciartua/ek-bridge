@@ -139,7 +139,7 @@ struct RenameMigrationTests {
         check(f.defaults.object(forKey: "SetupChecklistCompleted") == nil, "full: checklist comes back")
         check(f.defaults.object(forKey: "SetupChecklistHidden") == nil, "full: checklist isn't hidden")
         check(f.defaults.object(forKey: "durableSyntheticLastResult") == nil, "full: test results stay behind")
-        check(f.defaults.bool(forKey: RenameMigration.noticeKey), "full: notice pending")
+        check(f.defaults.object(forKey: RenameMigration.noticeKey) == nil, "full: no notice (removed in 0.10)")
         check(f.defaults.bool(forKey: RenameMigration.accessRecheckKey), "full: checklist kept until it completes")
         check(f.legacy.string(forKey: "DockIconMode") == "always", "full: old domain untouched")
 
@@ -156,7 +156,7 @@ struct RenameMigrationTests {
         check(f.migration.run() == .migrated(settings: 1, movedData: false), "settings: outcome")
         check(!FileManager.default.fileExists(atPath: f.old.path), "settings: no link without a folder")
         check(f.defaults.string(forKey: "LastPane") == "settings", "settings: copied")
-        check(f.defaults.bool(forKey: RenameMigration.noticeKey), "settings: notice pending")
+        check(f.defaults.object(forKey: RenameMigration.noticeKey) == nil, "settings: no notice (removed in 0.10)")
     }
 
     static func interruptedLaunch() throws {

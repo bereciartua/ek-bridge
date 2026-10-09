@@ -12,13 +12,14 @@ import Foundation
 //    value the new domain already has. The checklist's done and hidden flags
 //    aren't copied: macOS asks for Calendar and Reminders access again under
 //    the new bundle ID, so the checklist comes back for that.
-// 3. Records that it ran, asks Overview to show the rename notice once, and
-//    keeps the checklist up until it completes again.
+// 3. Records that it ran and keeps the checklist up until it completes again.
 //
 // The old defaults domain is left alone, so the old app still works if it is
 // opened again before it's deleted.
 struct RenameMigration {
     static let doneKey = "RenameMigrationDone"
+    /// Set by 0.8 and 0.9 for Overview's rename notice (removed in 0.10);
+    /// cleared at launch.
     static let noticeKey = "RenameNoticePending"
     /// Keeps the setup checklist from counting as done because of Activity
     /// from before the rename, until it completes under the new bundle ID.
@@ -75,7 +76,6 @@ struct RenameMigration {
             defaults.set(value, forKey: key)
             copied += 1
         }
-        defaults.set(true, forKey: Self.noticeKey)
         defaults.set(true, forKey: Self.accessRecheckKey)
         defaults.set(1, forKey: Self.doneKey)
         return .migrated(settings: copied, movedData: hasOldFolder)

@@ -252,28 +252,142 @@ struct ActivityEntry: Identifiable, Equatable {
     var via: String? = nil
     /// The agent's name as it reported it; display only.
     var agent: String? = nil
-    /// How Ask before changes was answered: "user", "window", "denied", "timeout".
+    /// How Ask before changes or an access request was answered ("user",
+    /// "window", "denied", "timeout", "access_once", …).
     var approval: String? = nil
+    /// The item a write touched, by EventKit ID (looked up live to name it).
+    var item: ItemRef? = nil
+    /// A `forbidden` refusal: the access bit the connection lacked.
+    var missing: Int? = nil
+    /// A move's destination calendar or list.
+    var destinationID: String? = nil
+    /// Joins this row to the request's start row; nil for imported rows.
+    var requestID: String? = nil
 
     var outcome: OutcomePresentation { OutcomePresentation.of(code) }
     var isMCP: Bool { via == "mcp" }
+    /// An edit that also moved the item to another calendar or list.
+    var isMove: Bool {
+        destinationID != nil && (command == BridgeCommand.updateEvent.rawValue ||
+                                 command == BridgeCommand.updateReminder.rawValue)
+    }
+    /// "Moved event", "Add reminder" (didn't happen), "Read events".
+    var changeLabel: String {
+        CommandPresentation.changeLabel(command, moved: isMove, succeeded: code == "success")
+    }
+    /// The Result pill: "Approved" for a change the user allowed in a panel,
+    /// otherwise the outcome's label.
+    var resultLabel: String {
+        if code == "success", let approval, Self.approvedValues.contains(approval) {
+            return String(localized: "Approved")
+        }
+        return outcome.label
+    }
+    static let approvedValues: Set<String> = ["user", "window", "access_once", "access_always"]
+    /// Overview's Today and the menu's Recent changes (C06): "Moved “Design
+    /// review”" with the item's name looked up now, else "Moved event · Work".
+    func headline(item: String?, collection: String?) -> String {
+        if let item, let verb = CommandPresentation.verb(command, moved: isMove, succeeded: code == "success") {
+            return "\(verb) “\(item)”"
+        }
+        return [changeLabel, collection].compactMap { $0 }.joined(separator: " · ")
+    }
+    /// Which filter shows this row.
+    func matches(_ kind: ActivityKind) -> Bool {
+        switch kind {
+        case .all: true
+        case .changes: isWrite
+        case .problems: isProblem
+        }
+    }
     /// A create, update, complete, delete or move, whatever its outcome.
     var isWrite: Bool { BridgeCommand(rawValue: command)?.isWrite == true }
     var isProblem: Bool { outcome.tone.isProblem }
 
-    static func entries(from activity: [ClientActivity]) -> [ActivityEntry] {
-        // `activity` is newest first; IDs stay stable while rows are appended.
-        var seen = [String: Int]()
-        return activity.enumerated().compactMap { index, row in
+    /// `activity` is newest first. Start rows are dropped: each finished
+    /// request also has a result row. IDs are the store's row IDs, so they
+    /// stay stable across launches and compaction.
+    static func entries(from activity: [ActivityRecord]) -> [ActivityEntry] {
+        activity.compactMap { row in
             let code = OutcomePresentation.normalize(row.outcome)
-            guard code != "accepted" else { return nil }
-            let base = "\(row.at.timeIntervalSinceReferenceDate)|\(row.clientID ?? "-")|\(row.command)|\(code)"
-            let ordinal = seen[base, default: 0]
-            seen[base] = ordinal + 1
-            return ActivityEntry(id: "\(base)|\(ordinal)", at: row.at, clientID: row.clientID,
+            guard row.phase != ActivityRecord.start, code != "accepted" else { return nil }
+            return ActivityEntry(id: row.id, at: row.at, clientID: row.clientID,
                                  command: row.command, code: code, targetID: row.targetID,
-                                 via: row.via, agent: row.agent, approval: row.approval)
+                                 via: row.via, agent: row.agent, approval: row.approval,
+                                 item: row.item, missing: row.missing, destinationID: row.destinationID,
+                                 requestID: row.requestID)
         }
+    }
+}
+
+/// Activity's All · Changes · Problems filter. Changes are writes, whatever
+/// their outcome.
+enum ActivityKind: Hashable, CaseIterable {
+    case all, changes, problems
+}
+
+/// An item as Calendar or Reminders has it now, looked up live from an
+/// Activity row's `ItemRef` (P6). Never stored.
+struct ItemSnapshot: Equatable {
+    var title: String
+    /// "Tue, Oct 6, 11:00–12:00", "Due Thu, Oct 8, 9:00", "Completed".
+    var when: String?
+    /// The calendar or list it's in now (after a move, the destination).
+    var collectionID: String?
+    /// False when the item is gone (deleted here or elsewhere).
+    var exists = true
+
+    static let deleted = ItemSnapshot(title: "", when: nil, collectionID: nil, exists: false)
+}
+
+/// One day of Activity rows under a header.
+struct ActivityDay: Identifiable, Equatable {
+    /// "2026-10-08" in the user's calendar.
+    let id: String
+    /// "Today", "Yesterday", "Monday, October 5".
+    let title: String
+    let entries: [ActivityEntry]
+}
+
+enum ActivityDays {
+    /// `entries` newest first; days keep that order. Uses calendar days, so
+    /// a day with a daylight-saving change is still one day.
+    static func group(_ entries: [ActivityEntry], now: Date = Date(),
+                      calendar: Calendar = .current) -> [ActivityDay] {
+        var days = [ActivityDay]()
+        var current: (id: String, date: Date, rows: [ActivityEntry])?
+        for entry in entries {
+            let parts = calendar.dateComponents([.year, .month, .day], from: entry.at)
+            let id = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+            if current?.id == id {
+                current?.rows.append(entry)
+            } else {
+                if let done = current {
+                    days.append(ActivityDay(id: done.id, title: title(done.date, now: now, calendar: calendar),
+                                            entries: done.rows))
+                }
+                current = (id, entry.at, [entry])
+            }
+        }
+        if let done = current {
+            days.append(ActivityDay(id: done.id, title: title(done.date, now: now, calendar: calendar),
+                                    entries: done.rows))
+        }
+        return days
+    }
+
+    static func title(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Today") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(localized: "Yesterday")
+        }
+        var style = Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone)
+            .weekday(.wide).month(.wide).day()
+        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
+            style = style.year()
+        }
+        return date.formatted(style)
     }
 }
 
@@ -576,6 +690,8 @@ enum MCPRunPolicy {
 /// Overview's Needs you (B12): what's waiting for the user, in order.
 enum NeedsYouItem: Equatable {
     case approvals(Int)
+    /// An agent waiting for access (C04): "Cursor can't add events to Home".
+    case accessRequest(title: String)
     case problem(AttentionProblem)
     /// A granted calendar or list EventKit doesn't list; `name` from its label.
     case unavailable(connectionID: String, connectionName: String, key: GrantKey, name: String?, mask: Int)
@@ -594,11 +710,12 @@ enum NeedsYou {
 
     /// Approvals, problems, unavailable calendars, refused requests not yet
     /// seen, then an update (only when Overview has no update card).
-    static func items(pendingApprovals: Int, problems: [AttentionProblem], unavailable: [Unavailable],
-                      unseenProblems: Int, lastViewed: Date?, update: (version: String, critical: Bool)?,
-                      updateCardShown: Bool) -> [NeedsYouItem] {
+    static func items(pendingApprovals: Int, accessRequests: [String] = [], problems: [AttentionProblem],
+                      unavailable: [Unavailable], unseenProblems: Int, lastViewed: Date?,
+                      update: (version: String, critical: Bool)?, updateCardShown: Bool) -> [NeedsYouItem] {
         var items = [NeedsYouItem]()
         if pendingApprovals > 0 { items.append(.approvals(pendingApprovals)) }
+        items += accessRequests.map { .accessRequest(title: $0) }
         items += problems.map { .problem($0) }
         items += unavailable.map {
             .unavailable(connectionID: $0.connectionID, connectionName: $0.connectionName, key: $0.key,

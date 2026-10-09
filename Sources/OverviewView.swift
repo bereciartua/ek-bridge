@@ -7,9 +7,6 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if model.renameNoticePending {
-                    RenameNotice(model: model)
-                }
                 if model.showsUpdateCard {
                     UpdateCard(model: model)
                 }
@@ -56,27 +53,6 @@ struct OverviewView: View {
             .frame(maxWidth: 860, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-}
-
-/// Shown once after the move from EventKit Bridge (`RenameMigration`), until dismissed.
-struct RenameNotice: View {
-    let model: BridgeAppModel
-
-    var body: some View {
-        BannerView(banner: Banner(
-            kind: .info,
-            title: String(localized: "\(LegacyIdentity.displayName) is now \(AppIdentity.displayName)."),
-            message: message),
-            onDismiss: { model.dismissRenameNotice() })
-    }
-
-    private var message: String {
-        var text = String(localized: "Your settings, connections and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its connection's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app, so it can't start again at login.")
-        if model.commandLineTool == .elsewhere {
-            text += " " + String(localized: "Install the command-line tool again from Settings ▸ Advanced.")
-        }
-        return text
     }
 }
 
@@ -244,6 +220,10 @@ struct NeedsYouSection: View {
                                : String(localized: "\(count) changes waiting for approval"),
                     String(localized: "Answer in the approval panel."), String(localized: "Review…"),
                     { model.showApprovals() })
+        case .accessRequest(let title):
+            return ("hand.raised", .accentColor, title,
+                    String(localized: "It's waiting for your answer in the panel."), String(localized: "Allow…"),
+                    { model.showApprovals() })
         case .problem(let problem):
             let fix: String = switch problem {
             case .calendarAccess, .remindersAccess: String(localized: "Open Privacy Settings…")
@@ -356,19 +336,20 @@ struct ChangeRow: View {
 
     var body: some View {
         let collection = entry.targetKey.flatMap(model.collection)
+        // The item's name, looked up now (C06); the calendar or list otherwise.
+        let item = model.itemTitle(entry)
         HStack(spacing: 10) {
             Text(entry.at.formatted(date: .omitted, time: .shortened))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 70, alignment: .leading)
             ColorDot(color: collection?.color, size: 8)
-            (Text(CommandPresentation.label(entry.command))
-             + Text(collection.map { " · \($0.name)" } ?? "")
+            (Text(entry.headline(item: item, collection: collection?.name))
              + Text(" · \(model.clientName(entry.clientID))").foregroundColor(.secondary))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
-            Pill(label: label, tone: entry.outcome.tone)
+            Pill(label: entry.resultLabel, tone: entry.outcome.tone)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -376,11 +357,6 @@ struct ChangeRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// "Approved" for a change the user allowed in the panel.
-    private var label: String {
-        entry.code == "success" && (entry.approval == "user" || entry.approval == "window")
-            ? String(localized: "Approved") : entry.outcome.label
-    }
 }
 
 struct NewClientButton: View {

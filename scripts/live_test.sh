@@ -23,6 +23,9 @@ set -eu
 #                                               tests) to the Trash; nothing else is accepted
 #        sh scripts/live_test.sh cleanup        remove test collections, quit, check none remain
 #        sh scripts/live_test.sh reset          cleanup, then delete its data and settings
+#        sh scripts/live_test.sh rollback       load a copy of its data folder with the frozen
+#                                               0.8.2 registry (Tests/rollback-0.8.2); the copy
+#                                               is made in a temp folder and deleted after
 #
 #   EVENTKIT_SIGN_IDENTITY  build: the codesign identity. Default: the first
 #                           "Developer ID Application" identity in the keychain,
@@ -37,6 +40,8 @@ set -eu
 #   LIVE_TEST_CLAUDE_CONFIG_DIR
 #                           start: CLAUDE_CONFIG_DIR for the claude command, so
 #                           one-click setup never touches the real ~/.claude.json.
+#   LIVE_TEST_CODEX_HOME    start: CODEX_HOME for the codex command and Codex's
+#                           config.toml; must be inside LIVE_TEST_AGENT_HOME.
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 bundle_id=io.github.bereciartua.ekbridge.livetest
 app=${LIVE_TEST_APP:-"$project_dir/build/live-test/EK Bridge Test.app"}
@@ -136,6 +141,9 @@ start() {
     if [ -n "${LIVE_TEST_CLAUDE_CONFIG_DIR:-}" ]; then
         set -- --env "CLAUDE_CONFIG_DIR=$LIVE_TEST_CLAUDE_CONFIG_DIR" "$@"
     fi
+    if [ -n "${LIVE_TEST_CODEX_HOME:-}" ]; then
+        set -- --env "CODEX_HOME=$LIVE_TEST_CODEX_HOME" "$@"
+    fi
     if [ -n "${LIVE_TEST_AGENT_HOME:-}" ]; then
         set -- --env "EKB_AGENT_HOME=$LIVE_TEST_AGENT_HOME" "$@"
     fi
@@ -200,6 +208,27 @@ try FileManager.default.trashItem(at: URL(fileURLWithPath: CommandLine.arguments
         printf 'live_test: moved %s to the Trash\n' "$target"
         ;;
     cleanup) cleanup ;;
+    rollback)
+        # Never the installed app's folder: always a copy of the test copy's.
+        [ -f "$data/client-registry.json" ] || fail "no registry in $data yet"
+        . "$project_dir/scripts/sdk.sh"
+        mkdir -p "$project_dir/build/module-cache"
+        xcrun swiftc -parse-as-library -sdk "$sdk_dir" -module-cache-path "$project_dir/build/module-cache" \
+            "$project_dir/Tests/rollback-0.8.2/AppIdentity.swift" \
+            "$project_dir/Tests/rollback-0.8.2/BridgeProtocol.swift" \
+            "$project_dir/Tests/rollback-0.8.2/ClientCredentialFiles.swift" \
+            "$project_dir/Tests/rollback-0.8.2/ClientRegistry.swift" \
+            "$project_dir/Tests/RollbackHarness.swift" \
+            -o "$project_dir/build/rollback-harness"
+        scratch=$(mktemp -d "${TMPDIR:-/tmp}/ekb-rollback.XXXXXX")
+        ditto "$data" "$scratch/data"
+        chmod 700 "$scratch/data"
+        status=0
+        "$project_dir/build/rollback-harness" "$scratch/data" --write || status=$?
+        rm -rf "$scratch"
+        [ "$status" -eq 0 ] || fail "0.8.2 couldn't load a copy of the test data folder"
+        printf 'live_test: 0.8.2 loads a copy of the test data folder\n'
+        ;;
     reset)
         cleanup
         rm -rf "$data" "/tmp/ek-bridge-live-test-$(id -u)"

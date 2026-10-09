@@ -39,18 +39,6 @@ struct ClientGrant: Codable, Equatable {
         }
         return mask & required != 0
     }
-
-    /// The bit a command needs on its calendar or list, whatever the grant.
-    static func required(_ command: BridgeCommand) -> Int? {
-        switch command {
-        case .readEvents, .getEvent, .readReminders, .getReminder: read
-        case .createEvent, .createReminder: create
-        case .updateEvent, .updateReminder: edit
-        case .deleteEvent, .deleteReminder: delete
-        case .completeReminder: complete
-        default: nil
-        }
-    }
 }
 
 /// Whether writes from a client wait for the user's Allow (Ask before changes).
@@ -75,8 +63,6 @@ struct ClientView: Equatable {
     /// keeps its credentials, access and settings until it's resumed.
     var paused = false
     var pausedAt: Date? = nil
-    /// "Let it ask for more access" (P7). On unless turned off.
-    var asksForAccess = true
 }
 
 /// How a request reached the bridge. The agent name is what the agent reported
@@ -106,12 +92,8 @@ enum RequestOrigin: Equatable {
     }
 }
 
-// Activity rows as versions up to 0.9 kept them inside the registry. Since
-// 0.10 Activity lives in `activity/activity.jsonl` (`ActivityStore`); rows
-// found here (written by an older version after a rollback) are imported
-// once and the registry is saved with an empty list, so older versions keep
-// loading it. They hold time, client ID, command, outcome and the target
-// calendar or list ID, never titles, parameters or item content.
+// Activity stores time, client ID, command, outcome and the target calendar or
+// list ID. It never stores titles, parameters or item content.
 struct ClientActivity: Codable, Equatable {
     let at: Date
     let clientID: String?
@@ -125,7 +107,6 @@ struct ClientActivity: Codable, Equatable {
     /// "user", "window", "denied" or "timeout" when Ask before changes applied.
     var approval: String? = nil
 
-    /// The values 0.8.2 accepts. Never write any other value here.
     static let approvalDetails: Set<String> = ["user", "window", "denied", "timeout"]
 }
 
@@ -137,25 +118,11 @@ struct AuthorizedClientCall {
     let targetID: String?
     let grant: ClientGrant?
     var origin = RequestOrigin.cli
-    /// "<clientID>|<request ID>": joins the Activity start and result rows.
-    var requestID: String? = nil
     /// A move's destination, where the client holds Create (plan 03 §13).
     var moveTargetID: String? = nil
     var approval = ApprovalMode.allow
     /// How Ask before changes was answered, for the result row.
     var approvalDetail: String? = nil
-    /// Allow Once (C04): honoured for this request only, at this revision.
-    var temporaryGrant: TemporaryGrant? = nil
-}
-
-/// `authorize` with the missing-access case kept apart (C04).
-enum AuthorizeOutcome {
-    case authorized(AuthorizedClientCall)
-    /// Refused only for one action on a calendar or list the connection
-    /// has some access to. Nothing is recorded yet: the pipeline records the
-    /// refusal if the request ends up refused.
-    case missingAccess(MissingAccess)
-    case refused(ClientRegistryError)
 }
 
 enum ClientRegistryError: String, Error {
@@ -206,9 +173,6 @@ final class ClientRegistry {
         // Pause. Absent decodes as not paused; older builds ignore both.
         var paused: Bool?
         var pausedAt: Date?
-        // "Let it ask for more access" (0.10). Nil = on; older builds ignore
-        // it and drop it on save, which reads as on again.
-        var asksForAccess: Bool?
     }
     private struct State: Codable {
         var version = ClientRegistry.currentVersion
@@ -234,22 +198,18 @@ final class ClientRegistry {
     private let directory: URL
     private let file: URL
     private let now: () -> Date
-    private let activityRecorder: ActivityRecorder
     private var state: State?
     private var failed = false
     // Raw bytes and version of an older file, kept until the one-time backup is written.
     private var pendingBackup: (data: Data, version: Int)?
     private var lastFailedAuthRecord = [String: Date]()
 
-    /// `activity` defaults to an `ActivityStore` in the same data folder.
-    init(directory override: URL? = nil, now: @escaping () -> Date = Date.init,
-         activity: ActivityRecorder? = nil) {
+    init(directory override: URL? = nil, now: @escaping () -> Date = Date.init) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
         directory = override ?? AppIdentity.dataFolder(inSupport: support)
         file = directory.appendingPathComponent("client-registry.json")
         self.now = now
-        activityRecorder = activity ?? ActivityStore(dataFolder: directory, now: now)
     }
 
     func clients() -> [ClientView]? {
@@ -261,15 +221,13 @@ final class ClientRegistry {
                        mcpIssuedAt: $0.mcpIssuedAt, approval: $0.approval ?? .allow,
                        cloudAccess: $0.remoteEnabled ?? false, hasRemoteToken: $0.remoteVerifier != nil,
                        remoteIssuedAt: $0.remoteIssuedAt, paused: $0.paused == true,
-                       pausedAt: $0.paused == true ? $0.pausedAt : nil,
-                       asksForAccess: $0.asksForAccess ?? true)
+                       pausedAt: $0.paused == true ? $0.pausedAt : nil)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    /// Every kept Activity row, newest first.
-    func activity() -> [ActivityRecord]? {
+    func activity() -> [ClientActivity]? {
         guard load() else { return nil }
-        return Array(activityRecorder.records().reversed())
+        return Array(state!.activity.reversed())
     }
 
     func createClient(name: String, credentials: Set<CredentialKind> = [.signingKey],
@@ -414,35 +372,6 @@ final class ClientRegistry {
             record.pausedAt = paused ? now() : nil
             record.revision += 1
         }
-    }
-
-    /// "Let it ask for more access". Not part of authorization: no revision bump.
-    func setAsksForAccess(clientID: String, _ on: Bool) -> Result<Void, ClientRegistryError> {
-        updateActive(clientID) { record in
-            record.asksForAccess = on ? nil : false
-        }
-    }
-
-    /// Always Allow (C04): adds one action to an existing grant. Never
-    /// creates a grant, so it can't reach a calendar or list the connection
-    /// had no access to. Refuses (as `scope_changed` upstream) when the
-    /// connection changed since it asked (`expectedRevision`), or no longer
-    /// has Read there. Bumps the revision like any grant change.
-    func addAccess(clientID: String, resource: ClientResource, targetID: String, bit: Int,
-                   expectedRevision: Int? = nil) -> Result<Void, ClientRegistryError> {
-        guard case .success(let record) = activeRecord(clientID) else { return .failure(.clientMissing) }
-        if let expectedRevision, record.revision != expectedRevision { return .failure(.forbidden) }
-        guard record.paused != true,
-              let index = record.grants.firstIndex(where: { $0.resource == resource && $0.targetID == targetID }),
-              record.grants[index].mask & ClientGrant.read != 0
-        else { return .failure(.invalidGrants) }
-        var grants = record.grants
-        let current = grants[index]
-        let added = ClientGrant(resource: resource, targetID: targetID, mask: current.mask | bit)
-        guard added.isValid else { return .failure(.invalidGrants) }
-        guard added != current else { return .success(()) }
-        grants[index] = added
-        return replaceGrants(clientID: clientID, grants: grants)
     }
 
     /// Whether requests from this client are refused as `client_paused`.
@@ -611,92 +540,44 @@ final class ClientRegistry {
     }
 
     /// Shared by every transport after authentication: the grant check, plus
-    /// an "accepted" Activity row. A missing action is refused and recorded
-    /// as `forbidden` here; the pipeline uses `authorizeOrAsk` to ask first.
+    /// an "accepted" Activity row.
     func authorize(clientID: String, request: BridgeRequest, origin: RequestOrigin)
         -> Result<AuthorizedClientCall, ClientRegistryError> {
-        switch authorizeOrAsk(clientID: clientID, request: request, origin: origin) {
-        case .authorized(let call): return .success(call)
-        case .refused(let error): return .failure(error)
-        case .missingAccess(let missing):
-            _ = recordRefusal(missing, request: request, origin: origin)
-            return .failure(.forbidden)
-        }
-    }
-
-    /// The grant check (C04): like `authorize`, but a write that lacks one
-    /// action on a calendar or list the connection has a grant on comes back
-    /// as `.missingAccess` without an Activity row. `temporaryGrant` (Allow
-    /// Once) counts only for this request at its revision.
-    func authorizeOrAsk(clientID: String, request: BridgeRequest, origin: RequestOrigin,
-                        temporaryGrant: TemporaryGrant? = nil) -> AuthorizeOutcome {
         checkThread()
-        guard load() else { return .refused(.unavailable) }
-        let requestID = Self.requestID(clientID: clientID, request: request)
+        guard load() else { return .failure(.unavailable) }
         guard let candidate = state!.clients.first(where: { $0.id == clientID && !$0.revoked }) else {
             _ = record(clientID: nil, command: request.command.rawValue, outcome: "unauthorized",
-                       origin: origin, requestID: Self.requestID(clientID: nil, request: request))
-            return .refused(.unauthorized)
+                       origin: origin)
+            return .failure(.unauthorized)
         }
         let targetID = Self.targetID(request)
         // The pipeline refuses paused clients before this; kept here so no
         // caller of `authorize` can skip it.
         if candidate.paused == true {
             _ = record(clientID: clientID, command: request.command.rawValue,
-                       outcome: "error:client_paused", targetID: targetID, origin: origin,
-                       requestID: requestID)
-            return .refused(.paused)
+                       outcome: "error:client_paused", targetID: targetID, origin: origin)
+            return .failure(.paused)
         }
         if !request.command.isClientLevel && targetID == nil {
             _ = record(clientID: clientID, command: request.command.rawValue, outcome: "forbidden",
-                       origin: origin, requestID: requestID)
-            return .refused(.forbidden)
+                       origin: origin)
+            return .failure(.forbidden)
         }
-        let temporary = temporaryGrant.flatMap { $0.requestID == requestID ? $0 : nil }
-        let grants = temporary?.applied(to: candidate.grants, requestID: requestID, revision: candidate.revision)
-            ?? candidate.grants
-        let grant = grants.first {
+        let grant = candidate.grants.first {
             $0.targetID == targetID && $0.allows(request.command)
         }
-        let moveTargetID = Self.moveTargetID(request)
-        let resource: ClientResource = switch request.command {
-        case .readReminders, .getReminder, .createReminder, .updateReminder, .completeReminder,
-             .deleteReminder: .reminderList
-        default: .calendar
-        }
-        let required = ClientGrant.required(request.command)
-        let destinationOK = moveTargetID.map { destination in
-            grants.contains { $0.resource == resource && $0.targetID == destination && $0.mask & ClientGrant.create != 0 }
-        } ?? true
-        if let targetID, grant == nil {
-            // Some access here, one action short, and nothing else missing:
-            // the user may be asked (writes only; the pipeline decides).
-            if request.command.isWrite, destinationOK, let required,
-               let existing = grants.first(where: { $0.resource == resource && $0.targetID == targetID }) {
-                return .missingAccess(MissingAccess(
-                    clientID: clientID, clientName: candidate.name, revision: candidate.revision,
-                    resource: resource, targetID: targetID, currentMask: existing.mask, missingBit: required,
-                    destinationID: moveTargetID, asksForAccess: candidate.asksForAccess ?? true))
-            }
+        if targetID != nil && grant == nil {
             _ = record(clientID: clientID, command: request.command.rawValue,
-                       outcome: "forbidden", targetID: targetID, origin: origin, requestID: requestID,
-                       destinationID: moveTargetID, missing: required)
-            return .refused(.forbidden)
+                       outcome: "forbidden", targetID: targetID, origin: origin)
+            return .failure(.forbidden)
         }
         // Moving needs Edit here and Create on the destination.
-        if let moveTargetID, let grant, !destinationOK {
-            if let existing = grants.first(where: { $0.resource == grant.resource && $0.targetID == moveTargetID }),
-               let targetID {
-                return .missingAccess(MissingAccess(
-                    clientID: clientID, clientName: candidate.name, revision: candidate.revision,
-                    resource: grant.resource, targetID: moveTargetID, currentMask: existing.mask,
-                    missingBit: ClientGrant.create, sourceID: targetID,
-                    asksForAccess: candidate.asksForAccess ?? true))
-            }
+        let moveTargetID = Self.moveTargetID(request)
+        if let moveTargetID, let grant,
+           !candidate.grants.contains(where: { Self.allowsMove(into: $0, moveTargetID, from: grant) }) {
             _ = record(clientID: clientID, command: request.command.rawValue,
-                       outcome: "forbidden", targetID: targetID, origin: origin, requestID: requestID,
-                       destinationID: moveTargetID, missing: ClientGrant.create)
-            return .refused(.forbidden)
+                       outcome: "forbidden", targetID: targetID, origin: origin)
+            return .failure(.forbidden)
         }
         var call = AuthorizedClientCall(clientID: clientID, clientName: candidate.name,
                                         revision: candidate.revision,
@@ -704,36 +585,11 @@ final class ClientRegistry {
                                         targetID: targetID, grant: grant, origin: origin,
                                         approval: candidate.approval ?? .allow)
         call.moveTargetID = moveTargetID
-        call.requestID = requestID
-        call.temporaryGrant = temporary
         guard record(clientID: clientID, command: request.command.rawValue,
-                     outcome: "accepted", targetID: targetID, origin: origin,
-                     requestID: requestID, phase: ActivityRecord.start, destinationID: moveTargetID) else {
-            return .refused(.unavailable)
+                     outcome: "accepted", targetID: targetID, origin: origin) else {
+            return .failure(.unavailable)
         }
-        return .authorized(call)
-    }
-
-    /// The Activity row for a refusal the registry left to the pipeline: a
-    /// `forbidden` row with the missing action and, after an access request,
-    /// how it was answered ("access_denied", "access_timeout").
-    @discardableResult
-    func recordRefusal(_ missing: MissingAccess, request: BridgeRequest, origin: RequestOrigin,
-                       approval: String? = nil, outcome: String = "forbidden") -> Bool {
-        checkThread()
-        let source = missing.sourceID ?? missing.targetID
-        return record(clientID: missing.clientID, command: request.command.rawValue, outcome: outcome,
-                      targetID: source, origin: origin, approval: approval,
-                      requestID: Self.requestID(clientID: missing.clientID, request: request),
-                      destinationID: missing.isDestination ? missing.targetID : missing.destinationID,
-                      missing: outcome == "forbidden" ? missing.missingBit : nil)
-    }
-
-    /// "<clientID or ->|<request ID>". Request IDs are unique per client (CLI
-    /// IDs are replay-checked, MCP ones are generated), so this joins a
-    /// request's start and result rows.
-    static func requestID(clientID: String?, request: BridgeRequest) -> String {
-        "\(clientID ?? "-")|\(request.id)"
+        return .success(call)
     }
 
     func stillAuthorized(_ call: AuthorizedClientCall) -> Bool {
@@ -742,13 +598,10 @@ final class ClientRegistry {
               !current.revoked, current.paused != true,
               current.revision == call.revision else { return false }
         guard let targetID = call.targetID else { return true }
-        // Allow Once counts for this call only, at the same revision.
-        let grants = call.temporaryGrant?.applied(to: current.grants, requestID: call.requestID,
-                                                  revision: current.revision) ?? current.grants
-        guard let grant = grants.first(where: { $0.targetID == targetID && $0.allows(call.command) })
+        guard let grant = current.grants.first(where: { $0.targetID == targetID && $0.allows(call.command) })
         else { return false }
         guard let moveTargetID = call.moveTargetID else { return true }
-        return grants.contains { Self.allowsMove(into: $0, moveTargetID, from: grant) }
+        return current.grants.contains { Self.allowsMove(into: $0, moveTargetID, from: grant) }
     }
 
     /// The destination of a move (`targetCalendarID`, `targetListID`) when it
@@ -769,14 +622,11 @@ final class ClientRegistry {
         grant.targetID == destination && grant.resource == source.resource && grant.mask & ClientGrant.create != 0
     }
 
-    /// `item` is the EventKit item a write touched (`ActivityItems`).
     @discardableResult
-    func recordResult(_ call: AuthorizedClientCall, outcome: String, item: ItemRef? = nil) -> Bool {
+    func recordResult(_ call: AuthorizedClientCall, outcome: String) -> Bool {
         checkThread()
         return record(clientID: call.clientID, command: call.command.rawValue, outcome: outcome,
-                      targetID: call.targetID, origin: call.origin, approval: call.approvalDetail,
-                      requestID: call.requestID, phase: ActivityRecord.result,
-                      destinationID: call.moveTargetID, item: call.command.isWrite ? item : nil)
+                      targetID: call.targetID, origin: call.origin, approval: call.approvalDetail)
     }
 
     /// For requests refused before authorization (bridge off, rate limited),
@@ -786,9 +636,7 @@ final class ClientRegistry {
                         origin: RequestOrigin) -> Bool {
         checkThread()
         return record(clientID: clientID, command: request.command.rawValue, outcome: outcome,
-                      targetID: Self.targetID(request), origin: origin,
-                      requestID: Self.requestID(clientID: clientID, request: request),
-                      destinationID: Self.moveTargetID(request))
+                      targetID: Self.targetID(request), origin: origin)
     }
 
     /// Failed authentications are coalesced, per transport, so a misconfigured
@@ -820,57 +668,20 @@ final class ClientRegistry {
         }
     }
 
-    /// One Activity row, appended to the activity store (never the registry).
     private func record(clientID: String?, command: String, outcome: String,
                         targetID: String? = nil, origin: RequestOrigin,
-                        approval: String? = nil, requestID: String? = nil,
-                        phase: String = ActivityRecord.event, destinationID: String? = nil,
-                        item: ItemRef? = nil, missing: Int? = nil) -> Bool {
+                        approval: String? = nil) -> Bool {
         guard load() else { return false }
-        let valid = { (id: String?) in id.flatMap { Self.validTargetID($0) ? $0 : nil } }
-        let request = requestID.flatMap { $0.utf8.count <= 600 && Self.validTargetID($0) ? $0 : nil }
-        var row = ActivityRecord(
-            id: "\(request ?? "-|\(UUID().uuidString.lowercased())")|\(phase)",
-            requestID: request, phase: phase, at: now(), clientID: clientID, command: command,
-            outcome: outcome)
-        row.targetID = valid(targetID)
-        row.destinationID = valid(destinationID)
-        row.via = origin.via
-        row.agent = origin.agent.flatMap(Self.sanitizedAgent)
-        row.approval = approval.flatMap { ActivityRecord.approvalValues.contains($0) ? $0 : nil }
-        row.item = item.flatMap { $0.isValid ? $0 : nil }
-        row.missing = missing
-        return activityRecorder.append(row)
-    }
-
-    /// Moves Activity rows found in the registry (an older version wrote
-    /// them, or this is the first launch of 0.10) into the activity store,
-    /// then saves the registry with an empty list. Rows already imported are
-    /// skipped, so an interrupted import is finished on the next launch.
-    private func importLegacyActivity() {
-        guard let legacy = state?.activity, !legacy.isEmpty else { return }
-        var seen = [String: Int]()
-        for row in legacy {
-            let base = "legacy|\(row.at.timeIntervalSinceReferenceDate)|\(row.clientID ?? "-")|" +
-                "\(row.command)|\(row.outcome)"
-            let ordinal = seen[base, default: 0]
-            seen[base] = ordinal + 1
-            let id = "\(base)|\(ordinal)"
-            guard !activityRecorder.contains(id: id) else { continue }
-            var record = ActivityRecord(id: id, phase: row.outcome == "accepted" ? ActivityRecord.start
-                                            : ActivityRecord.result,
-                                        at: row.at, clientID: row.clientID, command: row.command,
-                                        outcome: row.outcome)
-            record.targetID = row.targetID
-            record.via = row.via
-            record.agent = row.agent
-            record.approval = row.approval
-            // Keep the rows in the registry until every one is in the store.
-            guard activityRecorder.append(record) else { return }
-        }
         var next = state!
-        next.activity = []
-        _ = persist(next)
+        next.activity.append(ClientActivity(
+            at: now(), clientID: clientID, command: command, outcome: outcome,
+            targetID: targetID.flatMap { Self.validTargetID($0) ? $0 : nil },
+            via: origin.via, agent: origin.agent.flatMap(Self.sanitizedAgent),
+            approval: approval.flatMap { ClientActivity.approvalDetails.contains($0) ? $0 : nil }))
+        if next.activity.count > Self.maxActivity {
+            next.activity.removeFirst(next.activity.count - Self.maxActivity)
+        }
+        return persist(next)
     }
 
     static func validName(_ name: String) -> Bool {
@@ -1010,8 +821,7 @@ final class ClientRegistry {
         var upgraded = decoded
         upgraded.version = Self.currentVersion
         state = upgraded
-        importLegacyActivity()
-        return !failed
+        return true
     }
 
     private static func validRecord(_ record: Record) -> Bool {

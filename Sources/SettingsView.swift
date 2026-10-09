@@ -23,6 +23,8 @@ struct SettingsView: View {
                     case .general:
                         general
                         ApprovalDefaults(model: model)
+                        NotificationSettings(model: model)
+                            .id("notifications")
                     case .advanced:
                         MCPServerSettings(model: model)
                             .id("mcp")
@@ -449,6 +451,44 @@ struct MCPServerSettings: View {
 }
 
 /// Settings ▸ General ▸ Ask before changes: the presets for new connections.
+/// Settings ▸ General ▸ Notifications (C05, P9): opt-in by kind.
+struct NotificationSettings: View {
+    let model: BridgeAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(String(localized: "Notifications")).font(.headline)
+                InfoButton(text: String(localized: "Shown by macOS. A notification about a change that wasn't made can include the item's title, which macOS may show on the lock screen, depending on your notification settings. \(AppIdentity.displayName) never stores it."))
+            }
+            Card {
+                row(.declined, String(localized: "A change wasn't made because nobody answered"))
+                RowDivider()
+                row(.refused, String(localized: "An agent was refused"),
+                    caption: String(localized: "When it couldn't ask for the access. At most one a connection every 10 minutes."))
+                RowDivider()
+                row(.update, String(localized: "An update is available"))
+                if model.notificationPermission == .denied {
+                    RowDivider()
+                    SettingsNotice(text: String(localized: "Notifications are off for \(AppIdentity.displayName) in System Settings."),
+                                   button: String(localized: "Open Notification Settings"),
+                                   action: model.openNotificationSettings)
+                }
+            }
+        }
+        .onAppear { model.refreshNotificationPermission() }
+    }
+
+    private func row(_ kind: NotificationKind, _ title: String, caption: String? = nil) -> some View {
+        SettingsRow(title: title, caption: caption) {
+            Toggle(title, isOn: Binding(get: { model.notificationKinds.contains(kind) },
+                                        set: { model.setNotification(kind, $0) }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+    }
+}
+
 struct ApprovalDefaults: View {
     let model: BridgeAppModel
 

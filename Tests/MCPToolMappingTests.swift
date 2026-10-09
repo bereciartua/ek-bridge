@@ -277,6 +277,9 @@ struct MCPToolMappingTests {
             ["code": "recurrence_scope_required", "tool": "update_reminder"],
             ["code": "recurrence_anchor_mismatch", "tool": "create_event"],
             ["code": "alarms_unsupported", "tool": "update_reminder"],
+            // C04: the user was asked for the access and didn't allow it.
+            ["code": "forbidden", "tool": "create_reminder", "detail": "access_denied"],
+            ["code": "forbidden", "tool": "update_event", "detail": "access_timeout"],
         ]
         let codes = ["unauthorized", "bridge_off", "client_paused", "target_not_writable", "conflict", "occurrence_conflict",
                      "too_many_events_narrow_range", "nonexistent_local_time", "ambiguous_local_time",

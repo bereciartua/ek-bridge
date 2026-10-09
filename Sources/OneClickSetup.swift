@@ -8,7 +8,8 @@ import AppKit
 /// What the preview sheet shows before Add.
 enum OneClickPreview: Equatable {
     case file(agent: AgentKind, change: ConfigChange)
-    /// `claude` with these arguments; `replacing` when Claude Code already has the server.
+    /// The agent's own command (`claude`, `codex`) with these arguments;
+    /// `replacing` when it already has the server.
     case command(agent: AgentKind, executable: String, arguments: [String], key: String, replacing: Bool)
 
     var agent: AgentKind {
@@ -126,7 +127,36 @@ enum OneClickAgents {
             let existing = ProcessRunner.run(claude, ["mcp", "get", key], timeout: 20, environment: environment(claude))
             return .success(.command(agent: agent, executable: claude, arguments: arguments, key: key,
                                      replacing: existing?.exitCode == 0))
+        case .codex(let key, let arguments, let file, let table):
+            // Codex's own command when it's installed; its config file otherwise.
+            if let codex = locator.locate("codex", home: home) {
+                let existing = ProcessRunner.run(codex, ["mcp", "get", key], timeout: 20, environment: environment(codex))
+                return .success(.command(agent: agent, executable: codex, arguments: arguments, key: key,
+                                         replacing: existing?.exitCode == 0))
+            }
+            do {
+                let change = try AgentConfigWriter.previewTOML(fileURL: codexConfig(file, home: home), key: key,
+                                                               table: table)
+                return .success(.file(agent: agent, change: change))
+            } catch let error as ConfigWriteError {
+                return .failure(OneClickFailure(message: error.message))
+            } catch {
+                return .failure(OneClickFailure(message: error.localizedDescription))
+            }
         }
+    }
+
+    /// Codex keeps its config in CODEX_HOME when that's set.
+    nonisolated static func codexConfig(_ file: String, home: String) -> URL {
+        if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], codexHome.hasPrefix("/") {
+            return URL(fileURLWithPath: codexHome).appendingPathComponent("config.toml")
+        }
+        return expand(file, home: home)
+    }
+
+    /// How each agent's command removes a server before it's added again.
+    nonisolated static func removeArguments(_ agent: AgentKind, key: String) -> [String] {
+        agent == .codex ? ["mcp", "remove", key] : ["mcp", "remove", "--scope", "user", key]
     }
 
     nonisolated static func apply(_ preview: OneClickPreview) -> Result<OneClickResult, OneClickFailure> {
@@ -141,24 +171,25 @@ enum OneClickAgents {
             } catch {
                 return .failure(OneClickFailure(message: error.localizedDescription))
             }
-        case .command(let agent, let claude, let arguments, let key, let replacing):
+        case .command(let agent, let tool, let arguments, let key, let replacing):
             var log = ""
+            let name = agent.displayName
             if replacing {
-                let removed = ProcessRunner.run(claude, ["mcp", "remove", "--scope", "user", key], timeout: 20,
-                                                environment: environment(claude))
+                let removed = ProcessRunner.run(tool, removeArguments(agent, key: key), timeout: 20,
+                                                environment: environment(tool))
                 log += removed?.output ?? ""
             }
-            guard let added = ProcessRunner.run(claude, arguments, timeout: 20, environment: environment(claude)) else {
-                return .failure(OneClickFailure(message: String(localized: "Claude Code couldn't be started.")))
+            guard let added = ProcessRunner.run(tool, arguments, timeout: 20, environment: environment(tool)) else {
+                return .failure(OneClickFailure(message: String(localized: "\(name) couldn't be started.")))
             }
             log += added.output
             let tail = lastLines(log, 20)
             if added.timedOut {
-                return .failure(OneClickFailure(message: String(localized: "Claude Code didn't finish within 20 seconds."),
+                return .failure(OneClickFailure(message: String(localized: "\(name) didn't finish within 20 seconds."),
                                                 output: tail))
             }
             guard added.exitCode == 0 else {
-                return .failure(OneClickFailure(message: String(localized: "Claude Code reported an error (exit code \(added.exitCode))."),
+                return .failure(OneClickFailure(message: String(localized: "\(name) reported an error (exit code \(added.exitCode))."),
                                                 output: tail))
             }
             return .success(OneClickResult(agent: agent, output: tail))

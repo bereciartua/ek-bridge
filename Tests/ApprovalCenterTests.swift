@@ -34,6 +34,8 @@ struct ApprovalCenterTests {
             schedule: { delay, action in scheduled.append((delay, action)) })
         center.queueChanged = { queueChanges += 1 }
         let recorder = Recorder()
+        var answered = [(String, ApprovalSummary, ApprovalDecision)]()
+        center.answered = { answered.append(($0, $1, $2)) }
 
         func ask(_ name: String, client: String, revision: Int = 1) -> () -> Void {
             let request = BridgeRequest(id: UUID().uuidString, command: .createReminder,
@@ -186,6 +188,92 @@ struct ApprovalCenterTests {
         precondition(recorder.decisions.values.map(\.count).reduce(0, +) == resolvedBefore)
         precondition(recorder.decisions.values.allSatisfy { $0.count == 1 }, "every request resolved exactly once")
 
-        print("Approval center: FIFO and selection, 45 s timeout, 3 per client, 15-minute window, withdraw, shutdown, exactly-once passed")
+        // C03: the panel's summary goes along with the answer, by request ID,
+        // for allowed, denied and timed-out changes only.
+        precondition(answered.isEmpty, "requests without a request ID report nothing")
+        func askWithID(_ name: String) -> () -> Void {
+            let request = BridgeRequest(id: name, command: .updateEvent, parameters: ["calendarID": "CAL"])
+            var approval = ApprovalRequest(clientID: "Z", clientName: "Client Z", agent: nil, request: request,
+                                           targetID: "CAL", revision: 1)
+            approval.requestID = "Z|\(name)"
+            return center.request(approval, completion: recorder.completion(name))
+        }
+        _ = askWithID("z1")
+        center.allow(center.pending.last!.id)
+        _ = askWithID("z2")
+        center.deny(center.pending.last!.id)
+        let withdrawZ3 = askWithID("z3")
+        withdrawZ3()
+        _ = askWithID("z4")
+        scheduled.last!.action()
+        precondition(answered.map(\.0) == ["Z|z1", "Z|z2", "Z|z4"], "\(answered.map(\.0))")
+        precondition(answered.map(\.2) == [.allowed, .denied, .timedOut])
+        precondition(answered[0].1.title == "Client Z wants to update_event")
+        precondition(recorder.only("z1") == .allowed && recorder.only("z3") == .withdrawn)
+
+        // C04: access requests share the queue; one per connection, three in all,
+        // one panel per connection, collection and action an hour.
+        center.shutDown()
+        precondition(center.pending.isEmpty)
+        var accessAnswers = [String: [AccessDecision]]()
+        func access(_ client: String, _ target: String = "L", bit: Int = ClientGrant.create) -> (() -> Void)? {
+            let missing = MissingAccess(clientID: client, clientName: "Client \(client)", revision: 1,
+                                        resource: .reminderList, targetID: target, currentMask: ClientGrant.read,
+                                        missingBit: bit)
+            let request = BridgeRequest(id: UUID().uuidString, command: .createReminder, parameters: ["listID": target])
+            let key = "\(client)\(target)\(bit)"
+            return center.requestAccess(AccessRequest(missing: missing, request: request, agent: nil,
+                                                      requestID: "\(client)|\(request.id)")) {
+                accessAnswers[key, default: []].append($0)
+            }
+        }
+        precondition(access("P") != nil)
+        precondition(center.pendingAccess.count == 1 && center.pendingChanges.isEmpty)
+        precondition(center.current?.access?.title == "Client P can't create_reminder")
+        precondition(access("P", "M") == nil, "one waiting per connection")
+        precondition(access("Q") != nil && access("R") != nil)
+        precondition(access("S") == nil, "three in all")
+        // Always Allow waits while the connection has unsaved access edits.
+        center.alwaysAllowBlocked = { $0 == "P" }
+        let first = center.pendingAccess[0].id
+        center.allowAlways(first)
+        precondition(center.pendingAccess.count == 3, "blocked")
+        center.alwaysAllowBlocked = { _ in false }
+        center.allowAlways(first)
+        precondition(accessAnswers["PL\(ClientGrant.create)"] == [.allowAlways])
+        // The same request again within the hour: no panel.
+        precondition(access("P") == nil, "throttled")
+        precondition(access("P", bit: ClientGrant.delete) != nil, "another action asks")
+        center.notNow(center.pendingAccess.first { $0.clientID == "Q" }!.id)
+        center.allowOnce(center.pendingAccess.first { $0.clientID == "R" }!.id)
+        precondition(accessAnswers["QL\(ClientGrant.create)"] == [.notNow])
+        precondition(accessAnswers["RL\(ClientGrant.create)"] == [.allowOnce])
+        clock = clock.addingTimeInterval(3_601)
+        precondition(access("R") != nil, "after an hour it may ask again")
+        // An access request doesn't use up one of the connection's three change slots.
+        precondition(access("U") != nil)
+        for n in 0..<3 { _ = ask("u\(n)", client: "U") }
+        precondition(center.pendingChanges.filter { $0.clientID == "U" }.count == 3)
+        // Always Allow withdraws the connection's other waiting items (its access changes).
+        center.allowAlways(center.pendingAccess.first { $0.clientID == "U" }!.id)
+        precondition(center.pending.allSatisfy { $0.clientID != "U" })
+        precondition((0..<3).allSatisfy { recorder.only("u\($0)") == .withdrawn })
+        // Turning "ask for more access" off withdraws only the access request.
+        precondition(access("V") != nil)
+        _ = ask("v1", client: "V")
+        center.withdrawAccess(clientID: "V")
+        precondition(center.pendingAccess.allSatisfy { $0.clientID != "V" } &&
+                     center.pendingChanges.contains { $0.clientID == "V" })
+        // Withdraw, timeout and shutdown reach access requests too.
+        center.withdraw(clientID: "R")
+        precondition(accessAnswers["RL\(ClientGrant.create)"] == [.allowOnce, .withdrawn])
+        scheduled.removeAll()
+        precondition(access("T") != nil)
+        scheduled.last!.action()
+        precondition(accessAnswers["TL\(ClientGrant.create)"] == [.timedOut])
+        center.shutDown()
+        precondition(accessAnswers["PL\(ClientGrant.delete)"] == [.unavailable] && center.pending.isEmpty)
+
+        print("Approval center: FIFO and selection, 45 s timeout, 3 per client, 15-minute window, withdraw, shutdown, exactly-once, summaries with answers, access requests passed")
     }
 }

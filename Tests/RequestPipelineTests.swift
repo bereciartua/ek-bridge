@@ -16,13 +16,15 @@ struct RequestPipelineTests {
         private var held = [(stillAuthorized: () -> Bool, completion: ([String: Any]) -> Void)]()
 
         var heldCount: Int { held.count }
+        /// What an immediate call returns, when set.
+        var result: [String: Any]?
 
         func runAuthorized(_ request: BridgeRequest, clientID: String, selected: BridgeScope,
                            stillAuthorized: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
                            completion: @escaping ([String: Any]) -> Void) {
             calls.append((request.command, clientID, selected))
             switch mode {
-            case .immediate: completion(["ok": true, "command": request.command.rawValue])
+            case .immediate: completion(result ?? ["ok": true, "command": request.command.rawValue])
             case .hold: held.append((stillAuthorized, completion))
             }
         }
@@ -94,6 +96,44 @@ struct RequestPipelineTests {
         }
     }
 
+    /// Ask for access (C04): answers with `mode`, or holds until `answer`;
+    /// `refuse` plays the throttle.
+    @MainActor
+    final class AccessGate: AccessRequestGate {
+        enum Mode { case allowOnce, allowAlways, notNow, timeout, withdraw, hold, refuse }
+        var mode = Mode.hold
+        private(set) var asked = [AccessRequest]()
+        private var waiting: ((AccessDecision) -> Void)?
+
+        func requestAccess(_ access: AccessRequest,
+                           completion: @escaping (AccessDecision) -> Void) -> (() -> Void)? {
+            if mode == .refuse { return nil }
+            asked.append(access)
+            waiting = completion
+            if mode != .hold {
+                // Answers arrive later, as from the panel.
+                DispatchQueue.main.async { MainActor.assumeIsolated { self.answer(self.decision) } }
+            }
+            return { [weak self] in self?.answer(.withdrawn) }
+        }
+
+        private var decision: AccessDecision {
+            switch mode {
+            case .allowOnce: .allowOnce
+            case .allowAlways: .allowAlways
+            case .notNow: .notNow
+            case .timeout: .timedOut
+            case .withdraw, .hold, .refuse: .withdrawn
+            }
+        }
+
+        func answer(_ decision: AccessDecision) {
+            let completion = waiting
+            waiting = nil
+            completion?(decision)
+        }
+    }
+
     @MainActor
     final class Fixture {
         let directory = FileManager.default.temporaryDirectory
@@ -102,6 +142,7 @@ struct RequestPipelineTests {
         let executor = Executor()
         let collections = Collections()
         let gate = Gate()
+        let access = AccessGate()
         var bridgeOn = true
         var limiterClock: TimeInterval = 2_000_000_000
         var records = 0
@@ -126,7 +167,7 @@ struct RequestPipelineTests {
                             mask: ClientGrant.read | ClientGrant.create | ClientGrant.complete),
             ]))
             pipeline = RequestPipeline(registry: registry, commands: executor, collections: collections,
-                                       approvals: gate, limiter: limiter,
+                                       approvals: gate, accessRequests: access, limiter: limiter,
                                        bridgeActive: { [unowned self] in self.bridgeOn },
                                        didRecord: { [unowned self] in self.records += 1 })
             limiterNow = { [unowned self] in self.limiterClock }
@@ -146,7 +187,7 @@ struct RequestPipelineTests {
             return box
         }
 
-        var lastRow: ClientActivity { registry.activity()!.first! }
+        var lastRow: ActivityRecord { registry.activity()!.first! }
     }
 
     @MainActor
@@ -184,9 +225,174 @@ struct RequestPipelineTests {
         inFlight()
         inlineCommands()
         originsMatch()
+        activityFields()
+        accessRequests()
         print("Request pipeline: bridge_off, client_paused, rate limits, authorize before validation, approvals "
               + "(user/window/denied/timeout/withdrawn/tooMany), changes and cancellation while waiting, "
-              + "8 in flight, list_collections, counts, scope_status, CLI = MCP rows passed")
+              + "8 in flight, list_collections, counts, scope_status, CLI = MCP rows, request IDs, "
+              + "item refs, missing access and move destinations, access requests (once, always, not now, "
+              + "timeout, withdrawn, throttled, ineligible) passed")
+    }
+
+    /// Spins the main queue until `done` or 2 s.
+    @MainActor
+    static func wait(_ done: () -> Bool) {
+        let deadline = Date().addingTimeInterval(2)
+        while !done() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+
+    /// C04: a write one action short on a list it can read asks; every answer.
+    @MainActor
+    static func accessRequests() {
+        func fixture(approval: ApprovalMode = .ask) -> Fixture {
+            let f = Fixture(approval: approval, grants: [
+                ClientGrant(resource: .calendar, targetID: "CAL-A", mask: ClientGrant.read),
+                ClientGrant(resource: .calendar, targetID: "CAL-RO", mask: ClientGrant.read)])
+            f.collections.remindersAccess = "full"
+            return f
+        }
+        func mask(_ f: Fixture, _ id: String) -> Int {
+            f.registry.clients()!.first!.grants.first { $0.targetID == id }?.mask ?? 0
+        }
+        // Allow Once: dispatched, nothing saved, Ask before changes not asked again.
+        var f = fixture()
+        f.access.mode = .allowOnce
+        var box = f.send(createEvent())
+        wait { box.reply != nil }
+        precondition(box.error == nil, "\(String(describing: box.reply))")
+        precondition(f.access.asked.count == 1 && f.gate.asked.isEmpty, "the access answer is the approval")
+        precondition(f.executor.calls.count == 1 && mask(f, "CAL-A") == ClientGrant.read)
+        precondition(f.lastRow.approval == "access_once" && f.lastRow.outcome == "success")
+        let asked = f.access.asked[0]
+        precondition(asked.missing.missingBit == ClientGrant.create && asked.missing.targetID == "CAL-A")
+        precondition(asked.agent == "Claude Code 2.4.1" && asked.requestID == f.lastRow.requestID)
+        // Always Allow: saved, then dispatched.
+        f = fixture()
+        f.access.mode = .allowAlways
+        box = f.send(createEvent())
+        wait { box.reply != nil }
+        precondition(box.error == nil && f.executor.calls.count == 1 && f.gate.asked.isEmpty)
+        precondition(mask(f, "CAL-A") == ClientGrant.read | ClientGrant.create)
+        precondition(f.lastRow.approval == "access_always")
+        // Not Now and no answer: forbidden, with the answer and the missing bit.
+        for (mode, approval) in [(AccessGate.Mode.notNow, "access_denied"), (.timeout, "access_timeout")] {
+            f = fixture()
+            f.access.mode = mode
+            box = f.send(createEvent())
+            wait { box.reply != nil }
+            precondition(box.error == "forbidden" && box.reply?["detail"] as? String == approval)
+            precondition(f.executor.calls.isEmpty && mask(f, "CAL-A") == ClientGrant.read)
+            precondition(f.lastRow.outcome == "forbidden" && f.lastRow.approval == approval &&
+                         f.lastRow.missing == ClientGrant.create && f.lastRow.phase == ActivityRecord.event)
+            precondition(!f.registry.activity()!.contains { $0.outcome == "accepted" })
+        }
+        // Withdrawn (pause, EK Bridge paused): scope_changed.
+        f = fixture()
+        box = f.send(createEvent())
+        precondition(box.reply == nil && f.access.asked.count == 1, "waits for the answer")
+        f.access.answer(.withdrawn)
+        precondition(box.error == "scope_changed" && f.lastRow.outcome == "error:scope_changed")
+        // The caller went away: cancelled, and the panel is withdrawn.
+        f = fixture()
+        box = f.send(createEvent())
+        box.ticket!.cancel()
+        precondition(box.error == "cancelled" && f.executor.calls.isEmpty)
+        // The throttle (or a full queue): refused as before.
+        f = fixture()
+        f.access.mode = .refuse
+        box = f.send(createEvent())
+        precondition(box.error == "forbidden" && box.reply?["detail"] == nil && f.lastRow.approval == nil &&
+                     f.lastRow.missing == ClientGrant.create)
+        // Ineligible: a read-only calendar, the switch off, no Read.
+        f = fixture()
+        box = f.send(createEvent("CAL-RO"))
+        precondition(box.error == "forbidden" && f.access.asked.isEmpty)
+        f = fixture()
+        success(f.registry.setAsksForAccess(clientID: f.clientID, false))
+        box = f.send(createEvent())
+        precondition(box.error == "forbidden" && f.access.asked.isEmpty)
+        f = fixture()
+        success(f.registry.replaceGrants(clientID: f.clientID, grants: [
+            ClientGrant(resource: .calendar, targetID: "CAL-A", mask: ClientGrant.create)]))
+        box = f.send(BridgeRequest(id: UUID().uuidString, command: .deleteEvent,
+                                   parameters: ["calendarID": "CAL-A", "itemID": "EV1"]))
+        precondition(box.error == "forbidden" && f.access.asked.isEmpty, "no Read: never asks")
+        // Reads never ask.
+        f = fixture()
+        box = f.send(readEvents("CAL-OTHER"))
+        precondition(box.error == "forbidden" && f.access.asked.isEmpty)
+        // Its access changed while the panel was up: Allow Once can't apply.
+        f = fixture()
+        box = f.send(createEvent())
+        success(f.registry.bumpRevision(clientID: f.clientID))
+        f.access.answer(.allowOnce)
+        precondition(box.error == "scope_changed" && f.executor.calls.isEmpty)
+        // Always Allow after its access changed: nothing saved.
+        f = fixture()
+        box = f.send(createEvent())
+        success(f.registry.bumpRevision(clientID: f.clientID))
+        f.access.answer(.allowAlways)
+        precondition(box.error == "scope_changed" && f.executor.calls.isEmpty && mask(f, "CAL-A") == ClientGrant.read)
+        // Paused while waiting: refused as paused on the recheck.
+        f = fixture()
+        box = f.send(createEvent())
+        success(f.registry.setPaused(clientID: f.clientID, true))
+        f.access.answer(.allowOnce)
+        precondition(box.error == "client_paused" && f.executor.calls.isEmpty)
+    }
+
+    /// C01: rows carry the request ID, writes their item, refusals the
+    /// missing bit, and moves their destination.
+    @MainActor
+    static func activityFields() {
+        let f = Fixture(grants: [
+            ClientGrant(resource: .calendar, targetID: "CAL-A",
+                        mask: ClientGrant.read | ClientGrant.create | ClientGrant.edit),
+            ClientGrant(resource: .calendar, targetID: "CAL-RO", mask: ClientGrant.read),
+        ])
+        // No access panels here (accessRequests() covers them): refused straight away.
+        f.access.mode = .refuse
+        f.executor.result = ["item": ["id": "EV-NEW", "version": "1"]]
+        let create = createEvent()
+        precondition(f.send(create).reply?["item"] != nil)
+        let rows = f.registry.activity()!
+        precondition(rows[0].phase == ActivityRecord.result && rows[1].phase == ActivityRecord.start)
+        precondition(rows[0].requestID == "\(f.clientID)|\(create.id)" && rows[0].requestID == rows[1].requestID)
+        precondition(rows[0].item == ItemRef(kind: "event", id: "EV-NEW"), "\(rows[0])")
+        precondition(rows[1].item == nil, "the start row has no item")
+        // Reads never store an item.
+        f.executor.result = ["items": [["id": "EV-NEW"]]]
+        f.send(readEvents())
+        precondition(f.lastRow.item == nil && f.lastRow.outcome == "success")
+        // Forbidden: no grant for the action on that calendar → the missing bit.
+        f.send(createEvent("CAL-RO"))
+        precondition(f.lastRow.outcome == "forbidden" && f.lastRow.missing == ClientGrant.create &&
+                     f.lastRow.phase == ActivityRecord.event && f.lastRow.destinationID == nil)
+        f.send(BridgeRequest(id: UUID().uuidString, command: .deleteEvent,
+                             parameters: ["calendarID": "CAL-A", "itemID": "EV1"]))
+        precondition(f.lastRow.missing == ClientGrant.delete && f.lastRow.targetID == "CAL-A")
+        // A move refused on its destination: Create there, and which one.
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1", "targetCalendarID": "CAL-RO"]))
+        precondition(f.lastRow.outcome == "forbidden" && f.lastRow.missing == ClientGrant.create &&
+                     f.lastRow.destinationID == "CAL-RO" && f.lastRow.targetID == "CAL-A", "\(f.lastRow)")
+        // A refused update still names its item when the request did.
+        f.executor.result = ["error": "conflict"]
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+            "expectedVersion": "1791200000.123456", "title": "x", "idempotencyKey": WriteIdempotencyKey.make()]))
+        precondition(f.lastRow.outcome == "error:conflict" &&
+                     f.lastRow.item?.id == "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D", "\(f.lastRow)")
+        // A move that went through records its destination on both rows.
+        f.executor.result = ["item": ["id": "EV1"]]
+        let grants = f.registry.clients()!.first!.grants
+        success(f.registry.replaceGrants(clientID: f.clientID, grants: grants.map {
+            $0.targetID == "CAL-RO" ? ClientGrant(resource: .calendar, targetID: "CAL-RO", mask: 3) : $0 }))
+        f.send(BridgeRequest(id: UUID().uuidString, command: .updateEvent, parameters: [
+            "calendarID": "CAL-A", "itemID": "EV1", "expectedVersion": "1791200000.123456",
+            "targetCalendarID": "CAL-RO", "idempotencyKey": WriteIdempotencyKey.make()]))
+        precondition(f.registry.activity()!.prefix(2).allSatisfy { $0.destinationID == "CAL-RO" })
+        precondition(f.lastRow.outcome == "success" && f.lastRow.item?.id == "EV1")
     }
 
     @MainActor
@@ -365,6 +571,8 @@ struct RequestPipelineTests {
             precondition(asked.clientID == g.clientID && asked.clientName == "Agent")
             precondition(asked.agent == "Claude Code 2.4.1" && asked.targetID == "CAL-A")
             precondition(asked.request.command == .createEvent && asked.revision > 0)
+            precondition(asked.requestID == "\(g.clientID)|\(asked.request.id)" &&
+                         asked.requestID == g.lastRow.requestID, "C03: the answer joins the row")
             precondition(box.error == error, "\(mode): \(String(describing: box.reply))")
             precondition(g.executor.calls.count == (error == nil ? 1 : 0), "\(mode)")
             precondition(g.lastRow.approval == detail, "\(mode)")
@@ -539,7 +747,7 @@ struct RequestPipelineTests {
     /// from via/agent.
     @MainActor
     static func originsMatch() {
-        var rows = [[ClientActivity]]()
+        var rows = [[ActivityRecord]]()
         for origin in [RequestOrigin.cli, .mcp(agent: "Claude Code 2.4.1")] {
             let f = Fixture(approval: .ask)
             f.gate.mode = .allow

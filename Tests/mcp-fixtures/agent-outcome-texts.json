@@ -363,6 +363,18 @@
     "tool" : "update_reminder"
   },
   {
+    "code" : "forbidden",
+    "detail" : "access_denied",
+    "text" : "Not allowed: the user didn't allow this agent to add reminders in that list. Don't retry unless the user asks you to. (code: forbidden)",
+    "tool" : "create_reminder"
+  },
+  {
+    "code" : "forbidden",
+    "detail" : "access_timeout",
+    "text" : "Not allowed: the user didn't allow this agent to edit events in that calendar. Don't retry unless the user asks you to. (code: forbidden)",
+    "tool" : "update_event"
+  },
+  {
     "code" : "unauthorized",
     "text" : "Access removed: this agent's access was removed in EK Bridge. Tell the user; don't retry. (code: unauthorized)",
     "tool" : "complete_reminder"

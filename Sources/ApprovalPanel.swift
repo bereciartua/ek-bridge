@@ -164,10 +164,14 @@ struct ApprovalPanelView: View {
                             }
                         }
                     }
-                    details(item)
-                    Toggle(String(localized: "Allow changes from \(item.clientName) for 15 minutes"),
-                           isOn: $allowWindow)
-                        .toggleStyle(.checkbox)
+                    if let ask = item.access {
+                        accessDetails(ask, agent: item.agent)
+                    } else {
+                        details(item)
+                        Toggle(String(localized: "Allow changes from \(item.clientName) for 15 minutes"),
+                               isOn: $allowWindow)
+                            .toggleStyle(.checkbox)
+                    }
                 }
                 .padding(16)
                 Divider()
@@ -189,6 +193,31 @@ struct ApprovalPanelView: View {
         } else {
             Color.clear.frame(width: 400, height: 1)
         }
+    }
+
+    /// An access request (C04): what the connection has and what it asked to do.
+    private func accessDetails(_ ask: AccessAsk, agent: String?) -> some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
+            GridRow {
+                Text(String(localized: "It has")).foregroundStyle(.secondary)
+                Text(ask.has)
+            }
+            GridRow {
+                Text(String(localized: "It asked to")).foregroundStyle(.secondary)
+                Text(ask.asked)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let agent {
+                GridRow {
+                    Text(String(localized: "Agent")).foregroundStyle(.secondary)
+                    Text(String(localized: "\(agent) (as reported)")).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func details(_ item: PendingApproval) -> some View {
@@ -265,12 +294,28 @@ struct ApprovalPanelView: View {
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let left = max(0, Int(item.expiresAt.timeIntervalSince(context.date).rounded(.up)))
-                Text(String(localized: "Expires in \(left) s"))
+                Text(item.access == nil ? String(localized: "Expires in \(left) s") : String(localized: "Waits \(left) s"))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            if item.summary.isBlindDelete {
+            if let ask = item.access {
+                // Not Now on Escape; Always Allow is the default, as in the
+                // mockup, and like every button here it's armed after a moment.
+                Button(String(localized: "Not Now")) { center.notNow(item.id) }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(armedID != item.id)
+                Button(String(localized: "Allow Once")) { center.allowOnce(item.id) }
+                    .disabled(armedID != item.id)
+                    .help(String(localized: "Lets this request through. Nothing is saved."))
+                let blocked = center.alwaysAllowBlocked(item.clientID)
+                Button(String(localized: "Always Allow")) { center.allowAlways(item.id) }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(armedID != item.id || blocked)
+                    .help(blocked ? String(localized: "Save or revert your access edits first.")
+                                  : String(localized: "Saves \(ask.action) on \(ask.collection) for \(item.clientName)."))
+            } else if item.summary.isBlindDelete {
                 // Nothing to review, so Return denies, Escape still denies,
                 // and deleting takes a click.
                 Button(String(localized: "Delete Anyway"), role: .destructive) {
