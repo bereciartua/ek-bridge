@@ -932,6 +932,11 @@ final class BehaviorReview {
                 created.grants.allSatisfy { $0.mask == ClientGrant.read } && created.approval == .ask &&
                 self.model.agent(for: created.id) == .claudeCode && self.model.route == .client(created.id)
         }
+        step("a new connection opens on Connect") {
+            guard case .client(let id) = self.model.route, let client = self.model.client(id) else { return false }
+            return self.model.tab(client) == .connect &&
+                self.model.connectionStatusLine(client).text.hasPrefix("Waiting for Claude Code")
+        }
         step("the next one is numbered") {
             self.model.suggestedName("Claude Code") == "Claude Code 2"
         }
@@ -1026,6 +1031,34 @@ final class BehaviorReview {
         step("restarted") {
             self.model.setAgent(.claudeCode, for: claude)
             return self.model.restarting == nil
+        }
+        step("a connection with a successful request opens on Access") {
+            self.model.navigate(to: .client(claude))
+            guard let client = self.model.client(claude) else { return false }
+            return self.model.tab(client) == .access
+        }
+        step("edits survive switching tabs; the save bar shows on Connect") {
+            self.model.setAction(self.family, bit: ClientGrant.delete, on: true)
+            self.model.clientTab[claude] = .connect
+            return self.model.hasUnsavedChanges && ((self.model.draft?.mask(self.family) ?? 0) & ClientGrant.delete) != 0
+        }
+        step("⌘⌥→ switches tab") {
+            let arrow = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                               modifierFlags: [.command, .option, .function, .numericPad],
+                                               timestamp: 0, windowNumber: self.window.windowNumber, context: nil,
+                                               characters: arrow, charactersIgnoringModifiers: arrow,
+                                               isARepeat: false, keyCode: 124) else { return false }
+            self.window.makeKey()
+            return NSApp.mainMenu?.performKeyEquivalent(with: event) == true &&
+                self.model.clientTab[claude] == .activity
+        }
+        step("the Activity tab shows only this connection's rows") {
+            let rows = ActivityScope.client(claude).entries(self.model)
+            self.model.revertDraft()
+            self.model.clientTab[claude] = nil
+            return !rows.isEmpty && rows.allSatisfy { $0.clientID == claude } &&
+                rows.count < self.model.activity.count
         }
         step("switch Connect tabs") {
             self.model.navigate(to: .client(claude))
@@ -1571,6 +1604,7 @@ final class SnapshotReview {
             }
             step("client-connect-agent-claude-code") {
                 self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientTab[UIReview.claudeID] = .connect
                 self.model.connectTab[UIReview.claudeID] = .agent
                 self.model.agentChoice[UIReview.claudeID] = .claudeCode
                 return main
@@ -1602,19 +1636,16 @@ final class SnapshotReview {
                 self.model.agentChoice[UIReview.claudeID] = .other
                 return main
             }
-            step("client-connect-no-token") {
+            step("client-connect-cli") {
                 self.model.agentChoice[UIReview.claudeID] = .claudeCode
                 self.model.navigate(to: .client(UIReview.briefingID))
-                self.model.connectTab[UIReview.briefingID] = .agent
-                return main
-            }
-            step("client-connect-cli") {
-                self.model.connectTab[UIReview.briefingID] = .cli
+                self.model.clientTab[UIReview.briefingID] = .connect
                 return main
             }
             step("client-connect-server-off") {
                 // EK Bridge paused: the Connect tab offers to turn it on.
                 self.model.navigate(to: .client(UIReview.cursorID))
+                self.model.clientTab[UIReview.cursorID] = .connect
                 self.model.setBridgeEnabled(false)
                 return main
             }
@@ -1815,6 +1846,17 @@ final class SnapshotReview {
             step("restore-moved") {
                 self.model.dismissBanner()
                 return nil
+            }
+            step("client-tab-activity") {
+                self.model.sheet = nil
+                self.model.navigate(to: .client(UIReview.claudeID))
+                self.model.clientTab[UIReview.claudeID] = .activity
+                return main
+            }
+            step("client-connect-cloud-off") {
+                // Cloud access on, Remote Access off: one line under Connect (A08).
+                self.model.clientTab[UIReview.claudeID] = .connect
+                return main
             }
             step("client-access") {
                 // The README's Access picture: Claude Code's calendars, scrolled to the table.

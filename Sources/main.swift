@@ -371,6 +371,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     @objc func showOverviewPane(_ sender: Any?) { model.show(.overview) }
     @objc func showActivityPane(_ sender: Any?) { model.show(.activity) }
     @objc func findInActivity(_ sender: Any?) { model.focusActivitySearch() }
+    @objc func previousTab(_ sender: Any?) { model.stepClientTab(-1) }
+    @objc func nextTab(_ sender: Any?) { model.stepClientTab(1) }
     @objc func saveAccess(_ sender: Any?) { model.saveDraft() }
     @objc func revertAccess(_ sender: Any?) { model.revertDraft() }
     @objc func showSetupChecklist(_ sender: Any?) { model.showSetupAgain() }
@@ -393,6 +395,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         case #selector(showSetupChecklist(_:)): model.canShowSetupAgain
         case #selector(checkForUpdates(_:)): model.updaterAvailable
         case #selector(findInActivity(_:)): model.windowIsVisible()
+        case #selector(previousTab(_:)), #selector(nextTab(_:)): model.canStepClientTab
         default: true
         }
     }
@@ -481,6 +484,15 @@ enum MainMenu {
         view.addItem(item(String(localized: "Overview"), #selector(BridgeAppDelegate.showOverviewPane(_:)), "1", target: target))
         view.addItem(item(String(localized: "Activity"), #selector(BridgeAppDelegate.showActivityPane(_:)), "2", target: target))
         view.addItem(item(String(localized: "Settings"), #selector(BridgeAppDelegate.showSettingsPane(_:)), "3", target: target))
+        view.addItem(.separator())
+        for (title, selector, arrow) in [
+            (String(localized: "Previous Tab"), #selector(BridgeAppDelegate.previousTab(_:)), NSLeftArrowFunctionKey),
+            (String(localized: "Next Tab"), #selector(BridgeAppDelegate.nextTab(_:)), NSRightArrowFunctionKey),
+        ] {
+            let tab = item(title, selector, String(Character(UnicodeScalar(arrow)!)), target: target)
+            tab.keyEquivalentModifierMask = [.command, .option]
+            view.addItem(tab)
+        }
 
         let window = submenu(String(localized: "Window"), in: main)
         window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"))

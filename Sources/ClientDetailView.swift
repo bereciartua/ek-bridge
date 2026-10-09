@@ -10,32 +10,47 @@ struct ClientDetailView: View {
     let client: ClientView
 
     var body: some View {
+        let tab = model.tab(client)
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 26) {
-                        ClientHeader(model: model, client: client)
-                        if client.paused {
-                            PausedNotice(model: model, client: client)
-                        }
-                        ConnectSection(model: model, client: client)
-                        if model.remoteEnabled {
-                            CloudSection(model: model, client: client)
-                                .id("cloud")
-                        } else if client.cloudAccess {
-                            CloudOffNote(model: model)
-                                .id("cloud")
-                        }
-                        AccessSection(model: model, client: client)
-                            .id("access")
-                    }
-                    .padding(24)
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .onAppear { scroll(proxy) }
-                .onChange(of: model.clientScrollTarget) { _, _ in scroll(proxy) }
+            VStack(alignment: .leading, spacing: 14) {
+                ClientHeader(model: model, client: client)
+                ClientTabBar(model: model, client: client, selection: tab)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if tab == .activity {
+                ActivityList(model: model, scope: .client(client.id))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .onAppear { model.markActivityViewed() }
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            if client.paused {
+                                PausedNotice(model: model, client: client)
+                            }
+                            if tab == .access {
+                                AccessSection(model: model, client: client)
+                                    .id("access")
+                            } else {
+                                ConnectSection(model: model, client: client)
+                                FromTheCloud(model: model, client: client)
+                                    .id("cloud")
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 18)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onAppear { scroll(proxy) }
+                    .onChange(of: model.clientScrollTarget) { _, _ in scroll(proxy) }
+                }
+            }
+            // Edits made on Access stay visible from every tab until saved or reverted.
             if model.hasUnsavedChanges || model.showSavedToast {
                 SaveBar(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -44,8 +59,11 @@ struct ClientDetailView: View {
         .animation(.easeOut(duration: 0.18), value: model.hasUnsavedChanges || model.showSavedToast)
     }
 
+    /// "access" and "cloud" (deep links) choose the tab, then scroll to the anchor.
     private func scroll(_ proxy: ScrollViewProxy) {
         guard let target = model.clientScrollTarget else { return }
+        let wanted: ClientTab = target == "cloud" ? .connect : .access
+        if model.tab(client) != wanted { model.clientTab[client.id] = wanted }
         DispatchQueue.main.async {
             withAnimation {
                 if let focus = model.accessFocus {
@@ -59,7 +77,81 @@ struct ClientDetailView: View {
     }
 }
 
-/// A client keeps cloud access while Remote Access is off: one line, not a
+/// Access · Connect · Activity, with an underline under the current tab
+/// (mockup 03). View ▸ Previous Tab / Next Tab (⌘⌥← ⌘⌥→) switch tabs.
+struct ClientTabBar: View {
+    let model: BridgeAppModel
+    let client: ClientView
+    let selection: ClientTab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                ForEach(ClientTab.allCases, id: \.self) { tab in
+                    Button { select(tab) } label: {
+                        VStack(spacing: 7) {
+                            Text(title(tab))
+                                .font(.body.weight(tab == selection ? .semibold : .regular))
+                                .foregroundStyle(tab == selection ? Color.primary : Color.secondary)
+                                .padding(.horizontal, 12)
+                            Rectangle()
+                                .fill(tab == selection ? Color.accentColor : Color.clear)
+                                .frame(height: 2.5)
+                        }
+                        .fixedSize()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(title(tab))
+                    .accessibilityAddTraits(tab == selection ? [.isButton, .isSelected] : .isButton)
+                }
+                Spacer()
+            }
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "Connection tabs"))
+    }
+
+    private func title(_ tab: ClientTab) -> String {
+        switch tab {
+        case .access: String(localized: "Access")
+        case .connect: String(localized: "Connect")
+        case .activity: String(localized: "Activity")
+        }
+    }
+
+    private func select(_ tab: ClientTab) { model.clientTab[client.id] = tab }
+}
+
+/// Connect ▸ From the cloud: the Cloud section while Remote Access is on;
+/// otherwise one line.
+struct FromTheCloud: View {
+    let model: BridgeAppModel
+    let client: ClientView
+
+    var body: some View {
+        if model.remoteEnabled {
+            CloudSection(model: model, client: client)
+        } else if client.cloudAccess {
+            CloudOffNote(model: model)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "globe")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(String(localized: "Use from a cloud agent (claude.ai, ChatGPT…)?"))
+                    .foregroundStyle(.secondary)
+                Button(String(localized: "Set Up Remote Access…")) { model.showRemoteAccess() }
+                    .buttonStyle(.link)
+                    .fixedSize()
+            }
+            .font(.callout)
+        }
+    }
+}
+
+/// A connection keeps cloud access while Remote Access is off: one line, not a
 /// whole Cloud section.
 struct CloudOffNote: View {
     let model: BridgeAppModel
@@ -72,15 +164,11 @@ struct CloudOffNote: View {
             Text(String(localized: "Cloud access is on for this connection, but Remote Access is off, so cloud agents can't reach this Mac."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(String(localized: "Remote Access…")) {
-                model.settingsScrollTarget = "remote"
-                model.navigate(to: .settings)
-            }
-            .buttonStyle(.link)
-            .fixedSize()
+            Button(String(localized: "Remote Access…")) { model.showRemoteAccess() }
+                .buttonStyle(.link)
+                .fixedSize()
         }
         .font(.callout)
-        .padding(.top, -14)
     }
 }
 
@@ -89,44 +177,47 @@ struct ClientHeader: View {
     let client: ClientView
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        let status = model.connectionStatusLine(client)
+        HStack(alignment: .center, spacing: 14) {
+            AvatarView(name: client.name, id: client.id, size: 40)
+                .opacity(client.paused ? 0.5 : 1)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     PaneTitle(title: client.name)
                     if client.paused {
                         Pill(label: String(localized: "Paused"), tone: .neutral)
                     }
                 }
-                Text(subtitle).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Circle().fill(color(status.dot)).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(status.text)
+                        .foregroundStyle(status.dot == .warning ? Color.orange : Color.secondary)
+                        .lineLimit(2)
+                }
             }
             Spacer(minLength: 12)
-            HStack(spacing: 8) {
-            Button {
-                model.openActivity(client: client.id)
-            } label: {
-                Label(String(localized: "Activity"), systemImage: "list.bullet")
-            }
-            .help(String(localized: "Show this connection's requests"))
             ActionMenuButton(accessibilityLabel: String(localized: "More actions for \(client.name)"),
                              help: String(localized: "More actions")) {
                 ClientMenu.items(model: model, client: client)
             }
             .fixedSize()
-            }
-            .padding(.top, 4)
         }
+        .accessibilityElement(children: .contain)
     }
 
-    private var subtitle: String {
-        let last = model.lastRequest(for: client.id)
-            .map { String(localized: "Last request \(RelativeTime.ago($0, now: model.now).lowercased())") }
-            ?? String(localized: "No requests yet")
-        return "\(last) · \(AccessSummary.counts(client.grants))"
+    private func color(_ dot: StatusDot) -> Color {
+        switch dot {
+        case .ok: .green
+        case .waiting: .orange
+        case .warning: .orange
+        case .neutral: .secondary
+        }
     }
 }
 
-/// Shown at the top of a paused client's page: what pausing means, and the
-/// way back.
+/// Shown at the top of a paused connection's tabs: what pausing keeps, and
+/// the way back. The header says since when.
 struct PausedNotice: View {
     let model: BridgeAppModel
     let client: ClientView
@@ -138,24 +229,16 @@ struct PausedNotice: View {
                     .foregroundStyle(.secondary)
                     .font(.body.weight(.semibold))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).bold()
-                    Text(String(localized: "Every request from it is refused and shows in Activity as Connection was paused. Its keys, tokens, access and cloud connections are kept, so it works again as soon as you resume it."))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(String(localized: "Its requests are refused and show in Activity as Connection was paused. Its keys, tokens, access and cloud connections are kept."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
                 Button(String(localized: "Resume")) { model.setPaused(client.id, false) }
                     .help(String(localized: "Let this connection's requests through again"))
             }
-            .padding(16)
+            .padding(14)
         }
         .accessibilityElement(children: .contain)
-    }
-
-    private var title: String {
-        guard let pausedAt = client.pausedAt else { return String(localized: "This connection is paused.") }
-        return String(localized: "Paused since \(pausedAt.formatted(date: .abbreviated, time: .shortened)).")
     }
 }
 
@@ -220,29 +303,21 @@ struct ConnectSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionTitle(title: String(localized: "Connect"))
-                Spacer()
+            // Only a connection with both credentials chooses between them.
+            if client.hasMCPToken && client.hasSigningKey {
                 Picker(String(localized: "Connects from"), selection: Binding(
                     get: { tab }, set: { model.connectTab[client.id] = $0 })) {
-                    Label(String(localized: "AI agent (MCP)"), systemImage: "sparkles").tag(ConnectTab.agent)
+                    Label(String(localized: "AI agent"), systemImage: "sparkles").tag(ConnectTab.agent)
                     Label(String(localized: "Command line"), systemImage: "terminal").tag(ConnectTab.cli)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
             }
-            switch tab {
-            case .agent: ConnectAgentTab(model: model, client: client)
-            case .cli:
-                if client.hasSigningKey {
-                    CommandLineConnect(model: model, client: client)
-                } else {
-                    EmptyConnectCard(text: String(localized: "This connection has no command-line key."),
-                                     button: String(localized: "Add Command-Line Key")) {
-                        model.addSigningKey(client.id)
-                    }
-                }
+            if client.hasSigningKey && (!client.hasMCPToken || tab == .cli) {
+                CommandLineConnect(model: model, client: client)
+            } else {
+                ConnectAgentTab(model: model, client: client)
             }
         }
     }
@@ -401,11 +476,7 @@ struct AccessSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionTitle(title: String(localized: "Access"))
-                Spacer()
-                ApprovalControl(model: model, client: client)
-            }
+            // The tab is called Access, so no section title (mockup 03).
             HStack(spacing: 12) {
                 Picker(String(localized: "Type"), selection: Binding(
                     get: { tab }, set: { model.accessTab[client.id] = $0 })) {
@@ -415,6 +486,10 @@ struct AccessSection: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                Spacer(minLength: 12)
+                ApprovalControl(model: model, client: client)
+            }
+            HStack(spacing: 12) {
                 Spacer()
                 SearchField(text: $filter, prompt: String(localized: "Filter"),
                             accessibilityLabel: String(localized: "Filter calendars and lists"))

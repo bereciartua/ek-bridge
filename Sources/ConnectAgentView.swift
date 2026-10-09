@@ -65,6 +65,7 @@ struct EmptyConnectCard: View {
 struct AgentSetupCard: View {
     let model: BridgeAppModel
     let client: ClientView
+    @State private var choosingAgent = false
 
     private var agent: AgentKind { model.agent(for: client.id) }
     private var methodKey: String { "\(client.id)|\(agent.rawValue)" }
@@ -75,28 +76,42 @@ struct AgentSetupCard: View {
 
     var body: some View {
         let context = model.setupContext(client.id)
-        let snippet = agent.snippet(method, context)
-        if agent.oneClick && !model.copySetup.contains(client.id) {
-            oneClick(context)
-        } else {
-            copySetup(snippet)
-        }
-    }
-
-    /// Add to <Agent>… (B07), with the other ways behind links.
-    private func oneClick(_ context: SetupContext) -> some View {
+        let oneClick = agent.oneClick && !model.copySetup.contains(client.id)
+        let snippet = agent.snippet(oneClick ? agent.recommended : method, context)
         VStack(alignment: .leading, spacing: 10) {
-            OneClickCard(model: model, client: client, agent: agent,
-                         snippet: agent.snippet(agent.recommended, context))
-            HStack(spacing: 20) {
-                Button(String(localized: "Copy the setup instead")) { model.copySetup.insert(client.id) }
-                Button(String(localized: "Advanced options (method, token file)")) { model.copySetup.insert(client.id) }
+            if oneClick {
+                OneClickCard(model: model, client: client, agent: agent, snippet: snippet)
+            } else {
+                Card {
+                    if model.advancedSetup.contains(client.id) && agent.methods.count > 1 && agent != .other {
+                        ConnectRow(label: String(localized: "Method")) {
+                            Picker(String(localized: "Method"), selection: Binding(
+                                get: { method }, set: { model.methodChoice[methodKey] = $0 })) {
+                                ForEach(agent.methods, id: \.self) { option in
+                                    Text(methodTitle(option)).tag(option)
+                                }
+                            }
+                            .pickerStyle(.radioGroup)
+                            .labelsHidden()
+                        } actions: { EmptyView() }
+                        RowDivider()
+                    }
+                    SnippetView(model: model, client: client, agent: agent, method: method, snippet: snippet)
+                }
             }
-            .buttonStyle(.link)
+            links(oneClick: oneClick)
             Card {
-                statusRow
-                RowDivider()
-                tokenRow(agent.snippet(agent.recommended, context))
+                tokenRow(snippet)
+                if model.advancedSetup.contains(client.id) {
+                    RowDivider()
+                    ConnectRow(label: String(localized: "Token file")) {
+                        MonoText(text: model.tokenFileURL(client.id).map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "–")
+                    } actions: {
+                        Button { model.showTokenFile(client.id) } label: { Image(systemName: "folder") }
+                            .help(String(localized: "Show in Finder"))
+                            .accessibilityLabel(String(localized: "Show Token File in Finder"))
+                    }
+                }
                 RowDivider()
                 ConnectRow(label: String(localized: "Server")) {
                     MonoText(text: model.mcpURL)
@@ -108,65 +123,39 @@ struct AgentSetupCard: View {
             if !model.isInstalledInApplications {
                 NotInApplicationsNotice(model: model, padded: false)
             }
-        }
-    }
-
-    private func copySetup(_ snippet: SetupSnippet) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if agent.oneClick {
-                Button(String(localized: "Use Add to \(agent.displayName) instead")) { model.copySetup.remove(client.id) }
-                    .buttonStyle(.link)
-            }
-            Card {
-                ConnectRow(label: String(localized: "Agent")) {
-                    FlowLayout(spacing: 6) {
-                        ForEach(AgentKind.allCases) { kind in
-                            AgentChip(title: kind.displayName, selected: kind == agent) {
-                                model.setAgent(kind, for: client.id)
-                            }
-                        }
-                    }
-                } actions: { EmptyView() }
-                if agent.methods.count > 1 && agent != .other {
-                    RowDivider()
-                    ConnectRow(label: String(localized: "Method")) {
-                        Picker(String(localized: "Method"), selection: Binding(
-                            get: { method }, set: { model.methodChoice[methodKey] = $0 })) {
-                            ForEach(agent.methods, id: \.self) { option in
-                                Text(methodTitle(option)).tag(option)
-                            }
-                        }
-                        .pickerStyle(.radioGroup)
-                        .horizontalRadioGroupLayout()
-                        .labelsHidden()
-                    } actions: { EmptyView() }
-                }
-                RowDivider()
-                SnippetView(model: model, client: client, agent: agent, method: method, snippet: snippet)
-                RowDivider()
-                statusRow
-                RowDivider()
-                tokenRow(snippet)
-                RowDivider()
-                ConnectRow(label: String(localized: "Server")) {
-                    MonoText(text: model.mcpURL)
-                } actions: {
-                    MCPServerPill(model: model)
-                    CopyButton(text: model.mcpURL, help: String(localized: "Copy URL"))
-                }
-            }
-            Label(String(localized: "The token is never shown. The recommended setups read it from a private file, so it never lands in the agent's config, your shell history or the clipboard."),
+            Label(String(localized: "The token is never shown. The setups read it from a private file, so it never lands in the agent's config, your shell history or the clipboard."),
                   systemImage: "lock")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 2)
-            Label(AgentSetup.cloudFootnote, systemImage: "info.circle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 2)
         }
+    }
+
+    /// Copy the setup instead · Advanced options · Set up a different agent…
+    private func links(oneClick: Bool) -> some View {
+        HStack(spacing: 20) {
+            if oneClick {
+                Button(String(localized: "Copy the setup instead")) { model.copySetup.insert(client.id) }
+            } else if agent.oneClick {
+                Button(String(localized: "Use Add to \(agent.displayName) instead")) { model.copySetup.remove(client.id) }
+            }
+            Button(model.advancedSetup.contains(client.id) ? String(localized: "Hide advanced options")
+                                                          : String(localized: "Advanced options (method, token file)")) {
+                if model.advancedSetup.contains(client.id) {
+                    model.advancedSetup.remove(client.id)
+                } else {
+                    model.advancedSetup.insert(client.id)
+                    // The method choice lives with the copyable setup.
+                    if agent.methods.count > 1 { model.copySetup.insert(client.id) }
+                }
+            }
+            Button(String(localized: "Set up a different agent…")) { choosingAgent = true }
+                .popover(isPresented: $choosingAgent, arrowEdge: .bottom) {
+                    AgentPicker(model: model, client: client) { choosingAgent = false }
+                }
+        }
+        .buttonStyle(.link)
     }
 
     private func methodTitle(_ option: SetupMethod) -> String {
@@ -179,41 +168,6 @@ struct AgentSetupCard: View {
         case (.directHTTP, _): name = String(localized: "Direct HTTP, token in an environment variable")
         }
         return option == agent.recommended ? String(localized: "Recommended: \(name.lowercasedFirst)") : name
-    }
-
-    private var statusRow: some View {
-        ConnectRow(label: String(localized: "Status")) {
-            switch model.mcpConnection(for: client) {
-            case .waiting:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(String(localized: "Waiting for the agent…")).foregroundStyle(.secondary)
-                }
-            case .connected(let agent, let at):
-                let fresh = model.now.timeIntervalSince(at) < 600
-                HStack(spacing: 8) {
-                    Circle().fill(fresh ? Color.green : Color.secondary).frame(width: 9, height: 9)
-                        .accessibilityHidden(true)
-                    (Text(String(localized: "Connected")).bold()
-                     + Text(agent.map { " · \($0) " } ?? " ")
-                     + Text(agent == nil ? "" : String(localized: "(as reported)")).foregroundStyle(.secondary)
-                     + Text(" · \(RelativeTime.ago(at, now: model.now).lowercased())"))
-                        .lineLimit(2)
-                }
-            case .refused(let code, _):
-                Label(String(localized: "Last request was refused: \(OutcomePresentation.of(code).label)"),
-                      systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-            }
-        } actions: {
-            if case .refused(_, let entryID) = model.mcpConnection(for: client) {
-                Button(String(localized: "Show in Activity")) { model.openActivity(selecting: entryID) }
-                    .buttonStyle(.link)
-            } else if model.lastRequest(for: client.id) != nil {
-                Button(String(localized: "Show in Activity")) { model.openActivity(client: client.id) }
-                    .buttonStyle(.link)
-            }
-        }
     }
 
     private func tokenRow(_ snippet: SetupSnippet) -> some View {
@@ -267,6 +221,35 @@ struct MCPServerPill: View {
         case .failed: Pill(label: String(localized: "Couldn't start"), tone: .bad, icon: true)
         case .starting, .off: Pill(label: String(localized: "Starting…"), tone: .neutral)
         }
+    }
+}
+
+/// Set up a different agent…: the agents, installed ones marked; the choice
+/// is remembered for the connection.
+struct AgentPicker: View {
+    let model: BridgeAppModel
+    let client: ClientView
+    let done: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(String(localized: "Set up a different agent")).font(.headline)
+            FlowLayout(spacing: 6) {
+                ForEach(AgentKind.allCases) { kind in
+                    AgentChip(title: model.installedAgents.contains(kind)
+                                ? String(localized: "\(kind.displayName) ✓") : kind.displayName,
+                              selected: kind == model.agent(for: client.id)) {
+                        model.setAgent(kind, for: client.id)
+                        done()
+                    }
+                    .accessibilityLabel(model.installedAgents.contains(kind)
+                                        ? String(localized: "\(kind.displayName), installed") : kind.displayName)
+                }
+            }
+            Text(String(localized: "✓ found on this Mac")).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 380)
     }
 }
 
@@ -333,9 +316,6 @@ struct SnippetView: View {
             }
             if snippet.skipsListenerCheck {
                 warning(AgentSetup.listenerCheckCaveat)
-            }
-            if method == .launcher && agent != .other && !model.isInstalledInApplications {
-                NotInApplicationsNotice(model: model, padded: false)
             }
             if let footnote = agent.footnote {
                 Label(footnote, systemImage: "info.circle")
@@ -498,7 +478,12 @@ struct OneClickCard: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    CodeBox(text: snippet.text)
+                    // The entry Add puts in the file, laid out as it will be.
+                    if case .jsonMerge(_, let root, let key, let entry)? = agent.oneClickSetup(model.setupContext(client.id)) {
+                        CodeBox(text: SetupJSON.object([(root, .object([(key, entry)]))]).pretty(unit: "  ", level: 0))
+                    } else {
+                        CodeBox(text: snippet.text)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)

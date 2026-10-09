@@ -93,6 +93,12 @@ enum ClientKind: String, CaseIterable, Identifiable {
 /// The client page's Connect tabs.
 enum ConnectTab: Hashable { case agent, cli }
 
+/// A connection page's tabs (B08).
+enum ClientTab: Hashable, CaseIterable { case access, connect, activity }
+
+/// The dot before a connection's status line.
+enum StatusDot: Equatable { case ok, waiting, warning, neutral }
+
 /// The MCP server, as the model drives it. The UI-review build passes fakes.
 @MainActor
 struct MCPControls {
@@ -246,6 +252,10 @@ final class BridgeAppModel {
     /// The scroll target inside Settings ("mcp" or "remote").
     var settingsScrollTarget: String?
     var accessTab = [String: ClientResource]()
+    /// The tab each connection page shows, this session (B08).
+    var clientTab = [String: ClientTab]()
+    /// Connections whose Connect tab shows Advanced options (method, token file).
+    var advancedSetup = Set<String>()
 
     var activityClientFilter: ActivityClientFilter = .all
     var activityVia: ActivityViaFilter = .all
@@ -655,6 +665,12 @@ final class BridgeAppModel {
                                        message: String(localized: "Quit \(agent.displayName) and open it again.")))
             }
         }
+    }
+
+    /// Remote Access's settings (its own page after B10).
+    func showRemoteAccess() {
+        settingsScrollTarget = "remote"
+        navigate(to: .settings)
     }
 
     // MARK: Derived state
@@ -1455,6 +1471,7 @@ final class BridgeAppModel {
         confirmUnsaved { [weak self] in
             guard let self else { return }
             self.go(.client(clientID))
+            self.clientTab[clientID] = .access
             self.clientScrollTarget = "access"
             if let key {
                 self.accessTab[clientID] = key.resource
@@ -1994,6 +2011,65 @@ final class BridgeAppModel {
         case (nil, let logged?): return .connected(agent: logged.agent, at: logged.at)
         case (nil, nil): return .waiting
         }
+    }
+
+    /// Connect until the connection's first successful request, then Access.
+    func defaultTab(_ client: ClientView) -> ClientTab {
+        activity.contains { $0.clientID == client.id && $0.code == "success" } ? .access : .connect
+    }
+
+    func tab(_ client: ClientView) -> ClientTab { clientTab[client.id] ?? defaultTab(client) }
+
+    /// View ▸ Previous Tab / Next Tab on a connection's page.
+    func stepClientTab(_ offset: Int) {
+        guard case .client(let id) = route, let client = client(id), !client.revoked else { return }
+        let all = ClientTab.allCases
+        guard let index = all.firstIndex(of: tab(client)) else { return }
+        clientTab[id] = all[(index + offset + all.count) % all.count]
+    }
+
+    var canStepClientTab: Bool {
+        if case .client(let id) = route, client(id)?.revoked == false { return true }
+        return false
+    }
+
+    /// The header's one status line (B08): connected, waiting, paused or refused.
+    func connectionStatusLine(_ client: ClientView) -> (dot: StatusDot, text: String) {
+        if client.paused {
+            guard let at = client.pausedAt else { return (.neutral, String(localized: "Paused")) }
+            return (.neutral, String(localized: "Paused since \(at.formatted(.dateTime.month(.abbreviated).day().hour().minute()))"))
+        }
+        let last = activity.first { $0.clientID == client.id }
+        if let last, last.isProblem {
+            return (.warning, String(localized: "Last request was refused: \(last.outcome.label)"))
+        }
+        let lastText = last.map { String(localized: "last request \(RelativeTime.ago($0.at, now: now).lowercased())") }
+        if client.hasMCPToken, case .connected(let agent, _) = mcpConnection(for: client) {
+            return (.ok, ([String(localized: "Connected")] + [agent, lastText].compactMap { $0 }).joined(separator: " · "))
+        }
+        if let lastText { return (.ok, ([String(localized: "Connected")] + [lastText]).joined(separator: " · ")) }
+        let waiting = client.hasMCPToken
+            ? String(localized: "Waiting for \(agent(for: client.id).displayName)")
+            : String(localized: "Waiting for its first request")
+        return (.waiting, ([waiting] + [startingSummary(client)]).joined(separator: " · "))
+    }
+
+    /// "reads all calendars and lists · asks before changes".
+    func startingSummary(_ client: ClientView) -> String {
+        let readable = Set(client.grants.filter { $0.mask & ClientGrant.read != 0 }
+            .map { GrantKey(resource: $0.resource, targetID: $0.targetID) })
+        let reads: String
+        if client.grants.isEmpty {
+            reads = String(localized: "no access yet")
+        } else if !collections.isEmpty, collections.allSatisfy({ readable.contains($0.key) }) {
+            reads = String(localized: "reads all calendars and lists")
+        } else {
+            reads = AccessSummary.counts(client.grants).lowercasedFirst
+        }
+        let writes = client.grants.contains { $0.mask & ~ClientGrant.read != 0 }
+        guard writes || client.approval == .ask else { return reads }
+        return reads + " · " + (client.approval == .ask ? String(localized: "asks before changes")
+                                                        : String(localized: "changes without asking"))
     }
 
     /// The agent subtitle on Overview: "claude-code 2.4.1". The time is in its

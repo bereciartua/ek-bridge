@@ -7,8 +7,6 @@ struct ActivityView: View {
     @Bindable var model: BridgeAppModel
 
     var body: some View {
-        let scoped = clientScoped
-        let rows = filtered(scoped)
         VStack(spacing: 0) {
             // The filters move under the title when the pane is too narrow
             // for one row (the minimum window size).
@@ -16,63 +14,19 @@ struct ActivityView: View {
                 HStack(spacing: 12) {
                     title
                     Spacer(minLength: 12)
-                    filters(scoped)
+                    filters
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     title
-                    HStack(spacing: 12) { filters(scoped) }
+                    HStack(spacing: 12) { filters }
                 }
             }
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 14)
-            if model.activity.isEmpty {
-                ContentUnavailableView {
-                    Label(String(localized: "No requests yet"), systemImage: "list.bullet")
-                } description: {
-                    Text(String(localized: "Requests from your connections appear here, with what happened and why."))
-                }
-            } else {
-                GeometryReader { proxy in
-                    // Only rows the filters show; a hidden selection closes the details.
-                    let selected = rows.first { $0.id == model.activitySelection }
-                    // Beside the table when there's room for both, below it otherwise.
-                    let wide = proxy.size.width >= 780
-                    let layout = wide
-                        ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-                    layout {
-                        ActivityTable(model: model, rows: rows,
-                                      width: wide && selected != nil ? proxy.size.width - 251 : proxy.size.width)
-                            .overlay {
-                                if rows.isEmpty {
-                                    if model.activitySearch.isEmpty {
-                                        ContentUnavailableView(
-                                            model.activityProblemsOnly ? String(localized: "No problems")
-                                                                       : String(localized: "No requests"),
-                                            systemImage: model.activityProblemsOnly ? "checkmark.circle" : "list.bullet",
-                                            description: Text(String(localized: "Nothing matches this filter.")))
-                                    } else {
-                                        ContentUnavailableView.search(text: model.activitySearch)
-                                    }
-                                }
-                            }
-                        if let selected {
-                            Divider()
-                            ActivityInspector(model: model, entry: selected, compact: !wide)
-                                .frame(width: wide ? 250 : nil,
-                                       height: wide ? nil : min(250, proxy.size.height * 0.55))
-                                .transition(.opacity)
-                        }
-                    }
-                }
-                .animation(.easeOut(duration: 0.18), value: model.activitySelection == nil)
-                .background(Palette.card)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
+            ActivityList(model: model, scope: .all)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
-            }
         }
         .onAppear { model.markActivityViewed() }
     }
@@ -83,38 +37,117 @@ struct ActivityView: View {
             .layoutPriority(1)
     }
 
-    @ViewBuilder
-    private func filters(_ scoped: [ActivityEntry]) -> some View {
+    @ViewBuilder private var filters: some View {
         ActivityFilterMenu(model: model)
-        Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
-            Text(String(localized: "All")).tag(false)
-            Text(String(localized: "Problems \(scoped.filter(\.isProblem).count)")).tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .accessibilityLabel(String(localized: "Show"))
+        ActivityProblemsPicker(model: model, scope: .all)
         SearchField(text: $model.activitySearch, prompt: String(localized: "Search"),
                     accessibilityLabel: String(localized: "Search activity"),
                     focusRequest: model.activitySearchFocusRequest)
             .frame(minWidth: 110, idealWidth: 180, maxWidth: 180)
     }
+}
 
-    private var clientScoped: [ActivityEntry] {
-        model.activity.filter { entry in
-            let client = switch model.activityClientFilter {
-            case .all: true
-            case .client(let id): entry.clientID == id
-            case .unknown: entry.clientID == nil
+/// Which rows an `ActivityList` shows: everything (the Activity page, with
+/// its connection and Via filters) or one connection's (its Activity tab).
+enum ActivityScope: Equatable {
+    case all
+    case client(String)
+
+    @MainActor
+    func entries(_ model: BridgeAppModel) -> [ActivityEntry] {
+        switch self {
+        case .client(let id): return model.activity.filter { $0.clientID == id }
+        case .all:
+            return model.activity.filter { entry in
+                let client = switch model.activityClientFilter {
+                case .all: true
+                case .client(let id): entry.clientID == id
+                case .unknown: entry.clientID == nil
+                }
+                let via = switch model.activityVia {
+                case .all: true
+                case .mcp: entry.via == "mcp"
+                case .remote: entry.via == "remote"
+                // Rows from before 0.4.0 have no via, and all came from the command line.
+                case .cli: entry.via == nil || entry.via == "cli"
+                }
+                return client && via
             }
-            let via = switch model.activityVia {
-            case .all: true
-            case .mcp: entry.via == "mcp"
-            case .remote: entry.via == "remote"
-            // Rows from before 0.4.0 have no via, and all came from the command line.
-            case .cli: entry.via == nil || entry.via == "cli"
+        }
+    }
+}
+
+/// All / Problems N.
+struct ActivityProblemsPicker: View {
+    @Bindable var model: BridgeAppModel
+    let scope: ActivityScope
+
+    var body: some View {
+        Picker(String(localized: "Show"), selection: $model.activityProblemsOnly) {
+            Text(String(localized: "All")).tag(false)
+            Text(String(localized: "Problems \(scope.entries(model).filter(\.isProblem).count)")).tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel(String(localized: "Show"))
+    }
+}
+
+/// The Activity table and its details, for the Activity page and for a
+/// connection's Activity tab (without the Connection column).
+struct ActivityList: View {
+    @Bindable var model: BridgeAppModel
+    let scope: ActivityScope
+
+    var body: some View {
+        let rows = filtered(scope.entries(model))
+        if scope == .all ? model.activity.isEmpty : rows.isEmpty && model.activitySearch.isEmpty && !model.activityProblemsOnly {
+            ContentUnavailableView {
+                Label(String(localized: "No requests yet"), systemImage: "list.bullet")
+            } description: {
+                Text(scope == .all ? String(localized: "Requests from your connections appear here, with what happened and why.")
+                                   : String(localized: "This connection's requests appear here, with what happened and why."))
             }
-            return client && via
+        } else {
+            GeometryReader { proxy in
+                // Only rows the filters show; a hidden selection closes the details.
+                let selected = rows.first { $0.id == model.activitySelection }
+                // Beside the table when there's room for both, below it otherwise.
+                let wide = proxy.size.width >= 780
+                let layout = wide
+                    ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                layout {
+                    ActivityTable(model: model, rows: rows,
+                                  width: wide && selected != nil ? proxy.size.width - 251 : proxy.size.width,
+                                  showsClient: scope == .all)
+                        .overlay {
+                            if rows.isEmpty {
+                                if model.activitySearch.isEmpty {
+                                    ContentUnavailableView(
+                                        model.activityProblemsOnly ? String(localized: "No problems")
+                                                                   : String(localized: "No requests"),
+                                        systemImage: model.activityProblemsOnly ? "checkmark.circle" : "list.bullet",
+                                        description: Text(String(localized: "Nothing matches this filter.")))
+                                } else {
+                                    ContentUnavailableView.search(text: model.activitySearch)
+                                }
+                            }
+                        }
+                    if let selected {
+                        Divider()
+                        ActivityInspector(model: model, entry: selected, compact: !wide)
+                            .frame(width: wide ? 250 : nil,
+                                   height: wide ? nil : min(250, proxy.size.height * 0.55))
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: model.activitySelection == nil)
+            .background(Palette.card)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
         }
     }
 
@@ -157,7 +190,7 @@ enum ActivityColumns {
     /// What Client and Calendar or list keep before Request gives way.
     static let namesMinimum: CGFloat = 120
 
-    static func widths(for tableWidth: CGFloat) -> Widths {
+    static func widths(for tableWidth: CGFloat, showsClient: Bool = true) -> Widths {
         let usable = max(tableWidth - overhead, 320)
         let time = max(widestTime, usable * 0.12)
         let result = max(widestResultLabel, usable * 0.2)
@@ -165,7 +198,9 @@ enum ActivityColumns {
         let rest = max(usable - time - result - via, 0)
         let request = max(rest * 0.34, min(widestRequestLabel, rest - namesMinimum))
         let names = rest - request
-        return Widths(time: time, via: via, client: names / 2, request: request, target: names / 2,
+        // Without the Connection column (a connection's Activity tab), Calendar or list takes it all.
+        let client = showsClient ? names / 2 : 0
+        return Widths(time: time, via: via, client: client, request: request, target: names - client,
                       result: result)
     }
 
@@ -218,11 +253,15 @@ struct ActivityTable: View {
     let rows: [ActivityEntry]
     /// The table's width. Columns are sized from it so nothing scrolls sideways.
     let width: CGFloat
+    /// False on a connection's Activity tab: every row is that connection's.
+    var showsClient = true
+    /// Only hides the Connection column on a connection's tab.
+    @State private var customization = TableColumnCustomization<ActivityEntry>()
 
     var body: some View {
-        let columns = ActivityColumns.widths(for: width)
+        let columns = ActivityColumns.widths(for: width, showsClient: showsClient)
         ScrollViewReader { proxy in
-        Table(rows, selection: $model.activitySelection) {
+        Table(rows, selection: $model.activitySelection, columnCustomization: $customization) {
             TableColumn(String(localized: "Time")) { entry in
                 Text(RelativeTime.clock(entry.at, now: model.now))
                     .monospacedDigit()
@@ -243,6 +282,8 @@ struct ActivityTable: View {
             }
             // The one flexible column: it takes whatever the others leave.
             .width(min: columns.client, ideal: columns.client)
+            .customizationID("client")
+            .defaultVisibility(showsClient ? .automatic : .hidden)
             TableColumn(String(localized: "Request")) { entry in
                 Text(CommandPresentation.shortLabel(entry.command))
                     .lineLimit(1)
