@@ -846,10 +846,10 @@ final class BridgeAppModel {
                 default: nil
                 }
             }
-            if let first = failing.first { return String(localized: "On · \(first)") }
+            if let first = failing.first { return first.capitalizingFirstLetter }
+            // The header already says "EK Bridge is on".
             let count = activeClients.count - pausedCount
-            var parts = [String(localized: "On"),
-                         count == 1 ? String(localized: "1 connection") : String(localized: "\(count) connections")]
+            var parts = [count == 1 ? String(localized: "1 connection") : String(localized: "\(count) connections")]
             if pausedCount > 0 { parts.append(String(localized: "\(pausedCount) paused")) }
             if let last = activity.first?.at {
                 parts.append(String(localized: "last request \(RelativeTime.ago(last, now: now).lowercased())"))

@@ -23,6 +23,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     var button: NSStatusBarButton? { statusItem.button }
 
+    /// The menu's appearance (UI review screenshots); nil follows the menu bar.
+    var menuAppearance: NSAppearance? {
+        get { menu.appearance }
+        set { menu.appearance = newValue }
+    }
+
     private func observe() {
         withObservationTracking {
             _ = model.bridge
@@ -255,7 +261,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     // Menu item images aren't shown on every macOS version, so status icons
     // are drawn as text attachments inside the title.
     private static let iconWidth: CGFloat = 16
-    private static let ageTab: CGFloat = 288
+    private static let ageTab: CGFloat = 334
 
     private func iconTitle(_ image: NSImage?, _ text: String, trailing: String? = nil) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
@@ -280,13 +286,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return result
     }
 
-    /// "Claude Code · Update event · Work" (item names come with Activity's item IDs).
+    /// "Update event · Work", then "Claude Code · 2 min" on the right (mockup 09;
+    /// item names come with Activity's item IDs).
     private func recentTitle(_ entry: ActivityEntry) -> NSAttributedString {
         let target = entry.targetID.flatMap { id in model.collections.first { $0.id == id }?.name }
-        let text = [model.clientName(entry.clientID), CommandPresentation.label(entry.command), target]
-            .compactMap { $0 }.joined(separator: " · ")
+        let text = [CommandPresentation.label(entry.command), target].compactMap { $0 }.joined(separator: " · ")
         return iconTitle(outcomeImage(entry.outcome.tone), text,
-                         trailing: RelativeTime.short(entry.at, now: model.now))
+                         trailing: "\(model.clientName(entry.clientID)) · \(RelativeTime.short(entry.at, now: model.now))")
     }
 
     private func item(_ title: String, key: String = "", image: NSImage? = nil,
@@ -340,7 +346,7 @@ final class StatusHeaderView: NSView {
     private let subtitle = NSTextField(wrappingLabelWithString: "")
     private let toggle = NSSwitch()
     private var widthConstraint: NSLayoutConstraint!
-    static let width: CGFloat = 360
+    static let width: CGFloat = 390
 
     init(model: BridgeAppModel, onToggle: @escaping (Bool) -> Void) {
         self.model = model

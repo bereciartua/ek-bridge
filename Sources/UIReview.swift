@@ -14,7 +14,7 @@ import SwiftUI
 //   --ui-snapshots <dir>         write PNGs of every screen, light and dark
 //   --ui-visual-review           show the window and print its window number
 //     --ui-route overview|activity|client|settings, --ui-hold <seconds>,
-//     --ui-size <width>x<height>, --ui-select-problem, --ui-open-menu
+//     --ui-size <width>x<height>, --ui-select-problem, --ui-open-menu, --ui-appearance light|dark
 //   --ui-fresh                   start with no clients (setup checklist)
 //   --ui-calendar / --ui-reminders notDetermined|denied|writeOnly|restricted|fullAccess
 //   --ui-many-collections        60 calendars and lists
@@ -594,6 +594,15 @@ final class UIReview {
             }
             if arguments.contains("--ui-select-problem") {
                 model.activitySelection = model.activity.first { $0.code == "forbidden" }?.id
+            }
+            switch value("--ui-appearance") {
+            case "dark":
+                NSApp.appearance = NSAppearance(named: .darkAqua)
+                statusMenu.menuAppearance = NSAppearance(named: .darkAqua)
+            case "light":
+                NSApp.appearance = NSAppearance(named: .aqua)
+                statusMenu.menuAppearance = NSAppearance(named: .aqua)
+            default: break
             }
             if arguments.contains("--ui-open-menu") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { statusMenu.button?.performClick(nil) }
