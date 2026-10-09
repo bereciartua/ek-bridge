@@ -8,9 +8,9 @@ https://my-mac.tail1234.ts.net/r/q7Zk2vN4bXwP9sL1mT6hYa/mcp
 steps:
 1. In the Google Cloud console, open Gemini Enterprise ▸ Data stores ▸ Create data store and choose Custom MCP Server.
 2. Paste this URL as the MCP server URL and choose OAuth 2.0. In EK Bridge, click Set Up OAuth Client… for “claude.ai” and enter the Authorization URL, Token URL, Client ID, Client secret and scope it shows. Turn on Enable PKCE Support.
-3. When it asks you to sign in, open the client “claude.ai” in EK Bridge, choose Connect a Cloud App…, and approve the code you see in both places.
+3. When it asks you to sign in, open the connection “claude.ai” in EK Bridge, choose Connect a Cloud App…, and approve the code you see in both places.
 
 warnings:
 - Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
 
-footnote: Gemini Enterprise needs an OAuth client set up ahead of time: Set Up OAuth Client… creates one for this client. Clicking it again replaces a client that hasn't connected.
+footnote: Gemini Enterprise needs an OAuth client set up ahead of time: Set Up OAuth Client… creates one for this connection. Clicking it again replaces one that hasn't connected.

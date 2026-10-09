@@ -418,7 +418,7 @@ The check calls `list_collections` to see whether EK Bridge is on, so it adds an
 | Symptom or message | What to do |
 | --- | --- |
 | "EK Bridge isn't running, or it's paused." | Open the app and turn EK Bridge on (and check that Settings ▸ Advanced ▸ Local MCP server is on). The launcher waits up to 5 seconds for the first connection, so an agent started at login with the app usually connects. |
-| "doesn't recognize this agent's token" / "this client's token" (HTTP 401) | The token was reset or MCP access was removed. Launcher and `headersHelper` setups re-read the file; for a pasted token, **Copy Token…** again. If the connection's page says the token file is missing, **Reset…** it. |
+| "doesn't recognize this agent's token" / "this connection's token" (HTTP 401) | The token was reset or MCP access was removed. Launcher and `headersHelper` setups re-read the file; for a pasted token, **Copy Token…** again. If the connection's page says the token file is missing, **Reset…** it. |
 | "Another program is using EK Bridge's port." | Something else is listening on the port, so the launcher sent nothing. Check Settings ▸ Advanced and choose another port if needed. |
 | Settings says the port is in use | Quit the other app or **Choose Another Port…**. Launcher setups pick up the new port automatically; direct HTTP setups need the new URL. |
 | EK Bridge paused (`bridge_off`) | Turn on EK Bridge from the menu bar. The agent doesn't need to reconnect. |

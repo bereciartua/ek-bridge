@@ -479,7 +479,7 @@ extension CloudAgentKind {
 
     var warnings: [String] {
         let apiRunsTools = String(localized: """
-            The API calls tools without asking you, so this client's grants are the only limit. Give \
+            The API calls tools without asking you, so this connection's grants are the only limit. Give \
             it only the lists it needs.
             """)
         var list: [String]
@@ -493,7 +493,7 @@ extension CloudAgentKind {
                 """)]
         case .copilotAgent:
             list = [String(localized: """
-                Copilot runs MCP tools without asking for approval. Give this client Read-only grants \
+                Copilot runs MCP tools without asking for approval. Give this connection Read-only grants \
                 and keep the tools list to the read tools.
                 """)]
         case .cursorCloud, .devin, .claudeAI, .chatGPT, .geminiEnterprise:
@@ -538,7 +538,7 @@ extension CloudAgentKind {
         case .geminiEnterprise:
             return String(localized: """
                 Gemini Enterprise needs an OAuth client set up ahead of time: Set Up OAuth Client… \
-                creates one for this client. Clicking it again replaces a client that hasn't connected.
+                creates one for this connection. Clicking it again replaces one that hasn't connected.
                 """)
         case .codexCloud:
             return String(localized: """
@@ -551,14 +551,14 @@ extension CloudAgentKind {
     func snippet(_ c: CloudSetupContext) -> SetupSnippet {
         let placeholder = AgentSetup.remoteTokenPlaceholder
         let copyToken = String(localized: """
-            Paste the token from Copy Remote Token… on the “\(c.clientName)” client.
+            Paste the token from Copy Remote Token… on the “\(c.clientName)” connection.
             """)
         let exportToken = String(localized: """
             In Terminal, set \(AgentSetup.remoteTokenEnvironmentVariable) to the remote token (Copy \
             Remote Token…) and ANTHROPIC_API_KEY to your API key, then run the command.
             """)
         let pairing = String(localized: """
-            When it asks you to sign in, open the client “\(c.clientName)” in \(AppIdentity.displayName), \
+            When it asks you to sign in, open the connection “\(c.clientName)” in \(AppIdentity.displayName), \
             choose Connect a Cloud App…, and approve the code you see in both places.
             """)
 

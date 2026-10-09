@@ -11,7 +11,7 @@ steps:
 3. The tools list holds only the read tools. Add a write tool only if you give this client a list it may change.
 
 warnings:
-- Copilot runs MCP tools without asking for approval. Give this client Read-only grants and keep the tools list to the read tools.
+- Copilot runs MCP tools without asking for approval. Give this connection Read-only grants and keep the tools list to the read tools.
 - Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
 
 footnote: Copilot can't sign in with OAuth, so it uses the remote token.

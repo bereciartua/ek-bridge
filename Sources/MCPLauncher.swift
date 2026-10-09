@@ -175,8 +175,8 @@ struct LauncherInvocation {
             // the registry, so only the ID is accepted.
             guard let uuid = UUID(uuidString: clientValue.trimmingCharacters(in: .whitespaces)) else {
                 throw LauncherError.usage(
-                    "--client takes the client's ID (a UUID), not its name. "
-                        + "Copy the setup from the client's page in \(AppIdentity.displayName).")
+                    "--client takes the connection's ID (a UUID), not its name. "
+                        + "Copy the setup from the connection's page in \(AppIdentity.displayName).")
             }
             result.client = uuid
         } else if result.tokenFile == nil {
@@ -196,7 +196,7 @@ enum LauncherHelp {
 
         Connects an agent on this Mac to \(AppIdentity.displayName)'s MCP server. The relay reads one
         JSON-RPC message per stdin line, posts it to the server and writes each reply as one
-        stdout line. Problems go to stderr. Copy the setup for your agent from the client's
+        stdout line. Problems go to stderr. Copy the setup for your agent from the connection's
         page in \(AppIdentity.displayName).
 
         Options:
@@ -592,8 +592,8 @@ enum RelayText {
         + "Open \(app) and check Settings ▸ Advanced."
     static let badEndpoint = "\(app)'s endpoint file isn't valid, so nothing was sent. "
         + "Quit and reopen \(app)."
-    static let rejected = "\(app) doesn't recognize this client's token. "
-        + "Open the client in \(app) and check MCP access."
+    static let rejected = "\(app) doesn't recognize this connection's token. "
+        + "Open the connection in \(app) and check MCP access."
 
     static func refused(_ status: Int, _ explanation: String) -> String {
         "\(app) refused the request (HTTP \(status)): \(explanation)"

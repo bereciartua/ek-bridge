@@ -27,8 +27,8 @@ NOT_RUNNING = (f"{PRODUCT} isn't running, or it's paused. "
 SQUATTER = (f"Another program is using {PRODUCT}'s port. "
             f"Open {PRODUCT} and check Settings ▸ Advanced.")
 BAD_ENDPOINT = f"{PRODUCT}'s endpoint file isn't valid, so nothing was sent. Quit and reopen {PRODUCT}."
-REJECTED = (f"{PRODUCT} doesn't recognize this client's token. "
-            f"Open the client in {PRODUCT} and check MCP access.")
+REJECTED = (f"{PRODUCT} doesn't recognize this connection's token. "
+            f"Open the connection in {PRODUCT} and check MCP access.")
 MODERN = "2026-07-28"
 
 
@@ -457,7 +457,7 @@ def main() -> int:
             ("no arguments", [], 2, "bridge-mcp: error: missing --client or --token-file. "
              "Run bridge-mcp --help.\n"),
             ("client name", ["--client", "Claude Code"], 2, "bridge-mcp: error: --client takes the "
-             f"client's ID (a UUID), not its name. Copy the setup from the client's page in {PRODUCT}.\n"),
+             f"connection's ID (a UUID), not its name. Copy the setup from the connection's page in {PRODUCT}.\n"),
             ("unknown option", ["--client", agent_id, "--verbose"], 2,
              'bridge-mcp: error: unknown option "--verbose". Run bridge-mcp --help.\n'),
             ("unknown command", ["chek", "--client", agent_id], 2,

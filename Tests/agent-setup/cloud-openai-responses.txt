@@ -13,7 +13,7 @@ steps:
 2. This example allows only the read tools, without approval. To use the others, remove allowed_tools and handle approval requests in your code.
 
 warnings:
-- The API calls tools without asking you, so this client's grants are the only limit. Give it only the lists it needs.
+- The API calls tools without asking you, so this connection's grants are the only limit. Give it only the lists it needs.
 - Cloud agents often run while you're away. With Ask me first, changes wait up to 45 s for you at this Mac and are declined otherwise.
 
 footnote: The authorization field takes the bare token, without Bearer.

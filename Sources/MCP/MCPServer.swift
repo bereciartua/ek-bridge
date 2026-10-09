@@ -67,7 +67,7 @@ enum MCPHTTPGate {
         var response = json(401, JSONRPC.error(
             id: nil, code: JSONRPC.authenticationFailed,
             message: "\(AppIdentity.displayName) doesn't recognize this agent's token. "
-                + "Copy the setup again from the client's page in \(AppIdentity.displayName)."))
+                + "Copy the setup again from the connection's page in \(AppIdentity.displayName)."))
         // No resource_metadata parameter, so clients don't start OAuth.
         response.headers.append(("WWW-Authenticate", "Bearer realm=\"\(AppIdentity.displayName)\""))
         return response
