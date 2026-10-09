@@ -12,6 +12,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 - **Live-test copy: Remote Access automation and quick tunnels for maintainers** ([details](docs/TESTING.md#live-test-copy)). EK Bridge Test's automation can turn Remote Access on, set the address, run Test and drive the guide, and `sh scripts/live_test.sh quicktunnel start|stop|stop-all|status` runs Cloudflare quick tunnels to the test copy's remote port only (never another port, never with `~/.cloudflared`). Nothing changes in the released app.
 
+### Changed
+
+- **The Remote Access page's Tunnel row** moves up under Status and says whether the tunnel is running on this Mac: *Running · on this Mac · forwards to 47616*, *Not running* with the command to start it (with Copy), *Wrong port*, *Not public* (Tailscale Serve without Funnel), *Not installed* with where to get it, or *Can't check on this Mac*. It names the tunnel that answered the last test, then what the address looks like, then the tunnel you picked, so it can't disagree with the address. When a test fails and the check explains why, the Status row says so (*Tailscale Funnel isn't running on this Mac.*). Its button is now **Switch Tunnel…**.
+
 ## [0.10.3] - 2026-10-09
 
 A small fix release for the Remote Access guide. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.2 works by installing its DMG over this one.

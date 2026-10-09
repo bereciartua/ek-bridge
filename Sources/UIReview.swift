@@ -63,6 +63,18 @@ final class UIReview {
     var mcpMode: String
     /// What the fake Remote Access test answers.
     var remoteReachable = true
+    /// What the fake tunnel checks on this Mac answer, per tunnel (plan 08).
+    /// Other tunnel can't be checked.
+    var tunnelHealth: [TunnelProvider: TunnelHealth] = UIReview.defaultTunnelHealth
+    static let quickTunnelOrigin = "https://quiet-river-1234.trycloudflare.com"
+    static let defaultTunnelHealth: [TunnelProvider: TunnelHealth] = [
+        .tailscaleFunnel: .running(address: remoteOrigin, port: 47616),
+        .cloudflareQuick: .running(address: quickTunnelOrigin, port: 47616),
+        .cloudflareTunnel: .notRunning(reason: .noTunnel),
+        .ngrok: .notInstalled,
+    ]
+    /// Checks the fake ran, for the behavior test.
+    var tunnelChecks = 0
     /// Calls to the fake MCP server, for the behavior test.
     var mcpStarts = 0
     var mcpStops = 0
@@ -231,7 +243,11 @@ final class UIReview {
                         done(self.notificationPermission == .allowed)
                     }
                 },
-                openSettings: {}))
+                openSettings: {}),
+            tunnels: TunnelChecks { [unowned self] provider, _, done in
+                self.tunnelChecks += 1
+                DispatchQueue.main.async { done(self.tunnelHealth[provider] ?? .unknown) }
+            })
     }
 
     /// The fake notification center (C05): what was posted, and what macOS allows.
@@ -2257,7 +2273,33 @@ final class SnapshotReview {
                 self.model.testRemoteAccess()
                 return main
             }
+            // Plan 08: the Tunnel row's states, from the checks on this Mac.
+            step("remote-tunnel-down") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .notRunning(reason: .noTunnel)
+                self.review.remoteReachable = false
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-wrong-port") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .wrongPort(port: 47615, address: UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-not-public") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .notPublic(address: UIReview.remoteOrigin)
+                self.model.testRemoteAccess()
+                return main
+            }
+            step("remote-tunnel-cant-check") {
+                self.review.tunnelHealth[.tailscaleFunnel] = .unknown
+                self.review.remoteReachable = true
+                self.model.testRemoteAccess()
+                return main
+            }
             step("client-cloud") {
+                // Back to a running tunnel for the steps that follow.
+                self.review.tunnelHealth = UIReview.defaultTunnelHealth
+                self.model.testRemoteAccess()
                 if self.model.client(UIReview.claudeID)?.cloudAccess != true {
                     self.model.setCloudAccess(UIReview.claudeID, true)
                 }

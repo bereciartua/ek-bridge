@@ -327,6 +327,8 @@ struct RemoteSetUpView: View {
             Card {
                 statusRow
                 RowDivider()
+                tunnelRow
+                RowDivider()
                 ValueRow(label: String(localized: "Address")) {
                     if let origin = model.remoteOrigin {
                         MonoText(text: origin)
@@ -377,13 +379,6 @@ struct RemoteSetUpView: View {
                             .fixedSize()
                     }
                 } actions: { EmptyView() }
-                RowDivider()
-                ValueRow(label: String(localized: "Tunnel")) {
-                    Text(model.tunnelChoice.name)
-                } actions: {
-                    Button(String(localized: "Change")) { model.chooseTunnelAgain() }
-                        .buttonStyle(.link)
-                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 SectionTitle(title: String(localized: "Cloud access"))
@@ -448,7 +443,9 @@ struct RemoteSetUpView: View {
                             .foregroundStyle(.secondary)
                     case .notReachable(let reason, _):
                         Pill(label: String(localized: "Not reachable"), tone: .warn, icon: true)
-                        Text(reason).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        // The check on this Mac says why, when it can (plan 08 §5.2).
+                        Text(model.remoteUnreachableReason ?? reason)
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -460,6 +457,121 @@ struct RemoteSetUpView: View {
                     .disabled(model.remoteOrigin == nil || model.remoteTest == .testing)
                     .help(String(localized: "Fetch this app's health URL through the tunnel"))
             }
+        }
+    }
+}
+
+extension RemoteSetUpView {
+    /// The tunnel in use (D4) and whether it runs on this Mac (plan 08 §5),
+    /// with the fix underneath when it doesn't.
+    @ViewBuilder fileprivate var tunnelRow: some View {
+        let provider = model.tunnelLabel
+        // Nothing is checked while Remote Access is off.
+        let health = model.remoteEnabled ? model.currentTunnelHealth : nil
+        ValueRow(label: String(localized: "Tunnel")) {
+            HStack(spacing: 10) {
+                Text(provider.name).fontWeight(.medium).fixedSize()
+                if let health {
+                    TunnelHealthLine(health: health, provider: provider, remotePort: model.remotePort,
+                                     mcpPort: model.mcpPort)
+                        .layoutPriority(1)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(TunnelHealthLine.accessibilityText(provider: provider, health: health,
+                                                                   remotePort: model.remotePort,
+                                                                   mcpPort: model.mcpPort))
+        } actions: {
+            Button(String(localized: "Switch Tunnel…")) { model.chooseTunnelAgain() }
+        }
+        if let health {
+            TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
+                      hostname: model.remoteOrigin.flatMap(URL.init(string:))?.host)
+                .padding(.leading, 104)
+                .padding(.trailing, 16)
+                .padding(.bottom, 12)
+        }
+    }
+}
+
+/// "Running · on this Mac · forwards to 47616": the pill and its text.
+struct TunnelHealthLine: View {
+    let health: TunnelHealth
+    let provider: TunnelProvider
+    let remotePort: Int
+    let mcpPort: Int
+    var address: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Pill(label: health.label, tone: Self.tone(health.tone), icon: health.tone == .ok)
+            let detail = [health.detail(provider, remotePort: remotePort, mcpPort: mcpPort), address]
+                .compactMap { $0 }.joined(separator: " · ")
+            if !detail.isEmpty {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    static func tone(_ tone: TunnelHealth.Tone) -> OutcomeTone {
+        switch tone {
+        case .ok: .ok
+        case .warn: .warn
+        case .neutral: .neutral
+        }
+    }
+
+    /// "Tailscale Funnel, Running, on this Mac · forwards to 47616".
+    static func accessibilityText(provider: TunnelProvider, health: TunnelHealth?, remotePort: Int,
+                                  mcpPort: Int) -> String {
+        guard let health else { return provider.name }
+        return ([provider.name, health.label] + [health.detail(provider, remotePort: remotePort, mcpPort: mcpPort)]
+            .compactMap { $0 }).joined(separator: ", ")
+    }
+}
+
+/// What to do about a tunnel that isn't running or is set up wrong: the
+/// command to run (with Copy) or where to get the tool. EK Bridge never
+/// runs it (D9).
+struct TunnelFix: View {
+    let health: TunnelHealth
+    let provider: TunnelProvider
+    let remotePort: Int
+    let hostname: String?
+
+    var body: some View {
+        if let fix {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(fix.intro).font(.callout).foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    CodeBox(text: fix.command)
+                    CopyButton(text: fix.command, title: String(localized: "Copy"),
+                               help: String(localized: "Copy Command"))
+                }
+            }
+        } else if case .notInstalled = health, let link = provider.installLink.flatMap(URL.init(string:)) {
+            Link(String(localized: "Download \(provider == .ngrok ? "ngrok" : "Tailscale")…"), destination: link)
+                .font(.callout)
+        }
+    }
+
+    private var fix: (intro: String, command: String)? {
+        switch health {
+        case .notRunning where health.showsStartCommand:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Start it in Terminal:"), $0) }
+        case .wrongPort:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Start it on port \(String(remotePort)) in Terminal:"), $0) }
+        case .notPublic where provider == .tailscaleFunnel:
+            return provider.runCommand(port: remotePort, hostname: hostname)
+                .map { (String(localized: "Turn on Funnel in Terminal:"), $0) }
+        case .notInstalled where provider == .cloudflareTunnel || provider == .cloudflareQuick:
+            return (String(localized: "Install it in Terminal:"), "brew install cloudflared")
+        default:
+            return nil
         }
     }
 }
