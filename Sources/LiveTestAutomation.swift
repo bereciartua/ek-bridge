@@ -181,6 +181,7 @@ final class LiveTestAutomation {
         case .overview: route = "overview"
         case .activity: route = "activity"
         case .settings: route = "settings"
+        case .remoteAccess: route = "remote"
         case .client(let id): route = "client:\(id)"
         }
         let names = testNames()
@@ -189,6 +190,9 @@ final class LiveTestAutomation {
                 "id": client.id, "name": client.name, "revoked": client.revoked, "paused": client.paused,
                 "approval": client.approval.rawValue,
                 "kind": client.hasMCPToken && client.hasSigningKey ? "both" : client.hasMCPToken ? "agent" : "cli",
+                "agent": model.connectionAgents[client.id]?.rawValue ?? NSNull(),
+                "status": model.connectionStatusLine(client).text,
+                "tab": "\(model.tab(client))",
                 "grants": client.grants.map { grant -> [String: Any] in
                     ["resource": grant.resource.rawValue, "mask": grant.mask,
                      "collection": names[grant.targetID] ?? "(not a test collection)"]
@@ -221,6 +225,8 @@ final class LiveTestAutomation {
                 ["title": banner.title, "action": banner.actionTitle ?? NSNull()]
             } ?? NSNull(),
             "bridge": model.bridge.isOn ? "on" : "paused",
+            "bridgeTitle": model.bridgeTitle,
+            "resumeAt": model.resumeAt.map { ISO8601DateFormatter().string(from: $0) as Any } ?? NSNull(),
             "calendarAccess": accessText(model.calendarAccess),
             "remindersAccess": accessText(model.remindersAccess),
             "mcp": ["allowed": model.localMCPAllowed, "running": model.mcpStarted, "listening": model.mcpIsListening,
@@ -258,6 +264,7 @@ final class LiveTestAutomation {
         case "overview": route = .overview
         case "activity": route = .activity
         case "settings": route = .settings
+        case "remote": route = .remoteAccess
         default:
             guard text.hasPrefix("client:") else { throw CommandError(message: "unknown route") }
             route = .client(try client(String(text.dropFirst(7))).id)
@@ -269,6 +276,9 @@ final class LiveTestAutomation {
             case "lists": model.accessTab[id] = .reminderList
             case "agent": model.connectTab[id] = .agent
             case "cli": model.connectTab[id] = .cli
+            case "access": model.clientTab[id] = .access
+            case "connect": model.clientTab[id] = .connect
+            case "activity": model.clientTab[id] = .activity
             default: throw CommandError(message: "unknown tab")
             }
         }
@@ -494,9 +504,18 @@ final class LiveTestAutomation {
         return mode.rawValue
     }
 
+    /// `{"on": false, "for": "oneHour"}` pauses as Pause EK Bridge ▸ does
+    /// (oneHour, untilTomorrow or untilTurnedOn).
     private func setBridge(_ command: [String: Any]) throws -> String {
         guard let on = command["on"] as? Bool else { throw CommandError(message: "needs on") }
-        model.setBridgeEnabled(on)
+        if !on, let choice = command["for"] as? String {
+            let choices: [String: PauseChoice] = ["oneHour": .oneHour, "untilTomorrow": .untilTomorrow,
+                                                  "untilTurnedOn": .untilTurnedOn]
+            guard let pause = choices[choice] else { throw CommandError(message: "for is oneHour, untilTomorrow or untilTurnedOn") }
+            model.pause(for: pause)
+        } else {
+            model.setBridgeEnabled(on)
+        }
         return model.bridge.isOn ? "on" : "paused"
     }
 
