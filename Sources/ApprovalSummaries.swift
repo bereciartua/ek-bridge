@@ -426,3 +426,46 @@ enum ApprovalSummaries {
             : date.formatted(style.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
     }
 }
+
+extension AccessAsk {
+    static func build(_ access: AccessRequest, summary: ApprovalSummary, collections: [CollectionInfo]) -> AccessAsk {
+        let missing = access.missing
+        let collection = collections.first { $0.id == missing.targetID && $0.resource == missing.resource }
+        let name = collection?.name ?? (missing.resource == .calendar ? String(localized: "this calendar")
+                                                                      : String(localized: "this list"))
+        let events = missing.resource == .calendar
+        let things = events ? String(localized: "events") : String(localized: "reminders")
+        let phrase: String = switch missing.missingBit {
+        case ClientGrant.create where missing.isDestination: String(localized: "move \(things) to \(name)")
+        case ClientGrant.create: String(localized: "add \(things) to \(name)")
+        case ClientGrant.edit: String(localized: "change \(things) in \(name)")
+        case ClientGrant.delete: String(localized: "delete \(things) in \(name)")
+        case ClientGrant.complete: String(localized: "complete reminders in \(name)")
+        default: String(localized: "use \(name)")
+        }
+        let action = AccessWords.actions.first { $0.bit == missing.missingBit }?.title ?? ""
+        let has = AccessWords.actions.filter { missing.currentMask & $0.bit != 0 }.map(\.title)
+            .joined(separator: ", ")
+        // The item's title and its time, from the same rows the approval panel shows.
+        let item = summary.rows.first { [String(localized: "Event"), String(localized: "Reminder")].contains($0.label) }
+        let time = summary.rows.first { [String(localized: "When"), String(localized: "Due")].contains($0.label) }
+        let verb: String = switch access.request.command {
+        case .createEvent, .createReminder: String(localized: "Add")
+        case .updateEvent, .updateReminder: missing.isDestination || missing.destinationID != nil
+            ? String(localized: "Move") : String(localized: "Change")
+        case .deleteEvent, .deleteReminder: String(localized: "Delete")
+        case .completeReminder: String(localized: "Complete")
+        default: String(localized: "Change")
+        }
+        var asked = item.map { "\(verb) “\($0.value)”" } ?? "\(verb) \(events ? String(localized: "an event") : String(localized: "a reminder"))"
+        if let time, time.value != "–" {
+            asked += access.request.command == .createReminder || access.request.command == .updateReminder
+                ? String(localized: ", due \(time.value)") : ", \(time.value)"
+        }
+        return AccessAsk(missing: missing,
+                         title: String(localized: "\(missing.clientName) can't \(phrase)"),
+                         subtitle: collection.map { "\($0.name) · \($0.account)" },
+                         collectionColor: collection?.color, collection: name, has: has.isEmpty ? "—" : has, asked: asked,
+                         action: action)
+    }
+}

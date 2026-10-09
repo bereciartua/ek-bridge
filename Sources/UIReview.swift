@@ -70,6 +70,11 @@ final class UIReview {
     private(set) lazy var approvals = ApprovalCenter(summarize: { request in
         ApprovalSummaries.build(request, lookup: Self.fixtureLookup(request),
                                 collections: Self.collections(many: false))
+    }, summarizeAccess: { access in
+        AccessAsk.build(access, summary: ApprovalSummaries.build(access.approvalRequest,
+                                                                 lookup: Self.fixtureLookup(access.approvalRequest),
+                                                                 collections: Self.collections(many: false)),
+                        collections: Self.collections(many: false))
     })
     private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private(set) lazy var oauth = OAuthServer(
@@ -398,6 +403,29 @@ final class UIReview {
                                               request: request,
                                               targetID: (parameters["calendarID"] ?? parameters["listID"]) as? String)) { _ in }
         approvalPanel.update()
+    }
+
+    /// Queues an access request (C04) as the pipeline would; Always Allow
+    /// saves the action like the pipeline does.
+    @discardableResult
+    func queueAccess(_ command: BridgeCommand, _ parameters: [String: Any], client: String = UIReview.claudeID,
+                     name: String = "Claude Code", resource: ClientResource, target: String, mask: Int, bit: Int,
+                     source: String? = nil, agent: String? = "claude-code 2.4.1",
+                     answered: @escaping (AccessDecision) -> Void = { _ in }) -> Bool {
+        approvals.resetAccessThrottle()
+        let request = BridgeRequest(id: UUID().uuidString.lowercased(), command: command, parameters: parameters)
+        let missing = MissingAccess(clientID: client, clientName: name, revision: 1, resource: resource,
+                                    targetID: target, currentMask: mask, missingBit: bit, sourceID: source)
+        let shown = approvals.requestAccess(AccessRequest(missing: missing, request: request, agent: agent,
+                                                          requestID: "\(client)|\(request.id)")) { [weak self] decision in
+            if decision == .allowAlways {
+                _ = self?.registry.addAccess(clientID: client, resource: resource, targetID: target, bit: bit)
+                self?.model?.refresh()
+            }
+            answered(decision)
+        } != nil
+        approvalPanel.update()
+        return shown
     }
 
     func cleanup() {
@@ -1558,6 +1586,35 @@ final class BehaviorReview {
             return item.title == "Design review" && item.exists && write.changeLabel == "Changed event" &&
                 write.resultLabel == "Approved" && self.review.itemShows == before + 1
         }
+        // C04: the access panel, Always Allow and the access table.
+        step("access request panel appears and Always Allow updates the access table") {
+            self.review.approvals.withdrawAll()
+            self.model.navigate(to: .client(UIReview.cursorID))
+            let home = GrantKey(resource: .calendar, targetID: "cal-home")
+            guard self.model.client(UIReview.cursorID)?.grants.first(where: { $0.targetID == "cal-home" })?.mask == 1,
+                  self.review.queueAccess(.createEvent, ["calendarID": "cal-home", "title": "Dentist"],
+                                          client: UIReview.cursorID, name: "Cursor", resource: .calendar,
+                                          target: "cal-home", mask: ClientGrant.read, bit: ClientGrant.create),
+                  let item = self.review.approvals.pendingAccess.first,
+                  self.model.pendingAccessRequests == ["Cursor can't add events to Home"],
+                  self.model.needsYouItems.contains(.accessRequest(title: "Cursor can't add events to Home"))
+            else { return false }
+            // Unsaved access edits hold Always Allow back.
+            self.model.setAction(GrantKey(resource: .calendar, targetID: "cal-family"), bit: ClientGrant.read, on: true)
+            self.review.approvals.allowAlways(item.id)
+            guard self.review.approvals.pendingAccess.count == 1 else { return false }
+            self.model.revertDraft()
+            self.review.approvals.allowAlways(item.id)
+            return self.review.approvals.pendingAccess.isEmpty &&
+                self.model.client(UIReview.cursorID)?.grants.first(where: { $0.targetID == "cal-home" })?.mask == 3 &&
+                self.model.draft?.mask(home) == 3
+        }
+        step("restore Cursor's access") {
+            _ = self.review.registry.replaceGrants(clientID: UIReview.cursorID, grants: [
+                ClientGrant(resource: .calendar, targetID: "cal-home", mask: 1)])
+            self.model.refresh()
+            return self.model.client(UIReview.cursorID)?.grants.first?.mask == 1
+        }
         step("an answered change keeps its summary for the session") {
             let request = BridgeRequest(id: "c03", command: .updateEvent, parameters: ["calendarID": "cal-work"])
             var asked = ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code", agent: nil,
@@ -2021,6 +2078,26 @@ final class SnapshotReview {
                 self.review.approvals.selection = 2
                 return self.review.approvalPanel.window
             }
+            // Ask for access when refused (C04, mockup 06).
+            step("access-request-panel") {
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.createReminder, [
+                    "listID": "list-groceries", "title": "Buy oat milk",
+                    "due": ["kind": "timed", "at": 1_793_887_200, "timeZone": "America/New_York"]],
+                    resource: .reminderList, target: "list-groceries", mask: ClientGrant.read, bit: ClientGrant.create)
+                self.review.approvalPanel.window?.appearance = NSAppearance(named: appearance)
+                return self.review.approvalPanel.window
+            }
+            step("access-request-panel-move") {
+                self.review.approvals.withdrawAll()
+                self.review.queueAccess(.updateEvent, [
+                    "calendarID": "cal-work", "itemID": "fixture-update", "expectedVersion": "1",
+                    "targetCalendarID": "cal-home"],
+                    client: UIReview.cursorID, name: "Cursor", resource: .calendar, target: "cal-home",
+                    mask: ClientGrant.read, bit: ClientGrant.create, source: "cal-work", agent: "cursor 1.7")
+                self.review.approvalPanel.window?.appearance = NSAppearance(named: appearance)
+                return self.review.approvalPanel.window
+            }
             // Remote Access (B10): the page before setup, the guide, then set up.
             step("remote-not-set-up") {
                 self.review.approvals.withdrawAll()
@@ -2310,7 +2387,9 @@ final class SnapshotReview {
     private func target(for name: String) -> NSWindow? {
         if name.hasPrefix("restore") { return nil }
         if name.hasPrefix("menu-glyphs") { return glyphWindow }
-        if name.hasPrefix("approval-panel") { return review.approvalPanel.window }
+        if name.hasPrefix("approval-panel") || name.hasPrefix("access-request-panel") {
+            return review.approvalPanel.window
+        }
         if name.hasPrefix("setup") || name.hasPrefix("overview-renamed") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }
         }

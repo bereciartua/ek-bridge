@@ -682,6 +682,8 @@ enum MCPRunPolicy {
 /// Overview's Needs you (B12): what's waiting for the user, in order.
 enum NeedsYouItem: Equatable {
     case approvals(Int)
+    /// An agent waiting for access (C04): "Cursor can't add events to Home".
+    case accessRequest(title: String)
     case problem(AttentionProblem)
     /// A granted calendar or list EventKit doesn't list; `name` from its label.
     case unavailable(connectionID: String, connectionName: String, key: GrantKey, name: String?, mask: Int)
@@ -700,11 +702,12 @@ enum NeedsYou {
 
     /// Approvals, problems, unavailable calendars, refused requests not yet
     /// seen, then an update (only when Overview has no update card).
-    static func items(pendingApprovals: Int, problems: [AttentionProblem], unavailable: [Unavailable],
-                      unseenProblems: Int, lastViewed: Date?, update: (version: String, critical: Bool)?,
-                      updateCardShown: Bool) -> [NeedsYouItem] {
+    static func items(pendingApprovals: Int, accessRequests: [String] = [], problems: [AttentionProblem],
+                      unavailable: [Unavailable], unseenProblems: Int, lastViewed: Date?,
+                      update: (version: String, critical: Bool)?, updateCardShown: Bool) -> [NeedsYouItem] {
         var items = [NeedsYouItem]()
         if pendingApprovals > 0 { items.append(.approvals(pendingApprovals)) }
+        items += accessRequests.map { .accessRequest(title: $0) }
         items += problems.map { .problem($0) }
         items += unavailable.map {
             .unavailable(connectionID: $0.connectionID, connectionName: $0.connectionName, key: $0.key,

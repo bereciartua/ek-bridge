@@ -74,6 +74,10 @@ enum AgentOutcomeText {
         if code.hasPrefix("completed_reminder_") { return unsupportedShape }
         if let readback = readbackEntry(code, c) { return readback }
         switch code {
+        case "forbidden" where c.detail == "access_denied" || c.detail == "access_timeout":
+            // The user was asked for this access (C04) and didn't allow it.
+            return ("Not allowed", "the user didn't allow this agent to \(c.action?.words ?? "do that") in that "
+                + "\(c.collection). Don't retry unless the user asks you to.")
         case "forbidden":
             let grant = c.action.map { "grant \($0.grant)" } ?? "grant that access"
             return ("Not allowed", "this agent can't \(c.action?.words ?? "do that") in that "

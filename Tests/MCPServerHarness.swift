@@ -303,6 +303,40 @@ final class FakeApprovals: ApprovalGate {
     }
 }
 
+/// Ask for access (C04). "refuse" (the default) shows nothing, like the
+/// throttle; the others answer after 0.1 s, as a person would.
+@MainActor
+final class FakeAccess: AccessRequestGate {
+    var mode = "refuse"
+    private(set) var asked = 0
+
+    func requestAccess(_ access: AccessRequest,
+                       completion: @escaping (AccessDecision) -> Void) -> (() -> Void)? {
+        let decision: AccessDecision
+        switch mode {
+        case "allowOnce": decision = .allowOnce
+        case "allowAlways": decision = .allowAlways
+        case "notNow": decision = .notNow
+        case "timeout": decision = .timedOut
+        default: return nil
+        }
+        asked += 1
+        var done = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated {
+                guard !done else { return }
+                done = true
+                completion(decision)
+            }
+        }
+        return {
+            guard !done else { return }
+            done = true
+            completion(.withdrawn)
+        }
+    }
+}
+
 @MainActor
 final class Harness {
     let directory: URL
@@ -311,6 +345,7 @@ final class Harness {
     let collections = FakeCollections()
     let executor: FakeExecutor
     let approvals: FakeApprovals
+    let access = FakeAccess()
     let limiter = RateLimiter()
     let counters = MCPTrafficCounters()
     var bridgeOn = true
@@ -331,7 +366,7 @@ final class Harness {
         approvals = FakeApprovals(mode: approvalMode)
         let pipeline = RequestPipeline(
             registry: registry, commands: executor, collections: collections,
-            approvals: approvals, limiter: limiter,
+            approvals: approvals, accessRequests: access, limiter: limiter,
             bridgeActive: { [unowned self] in self.bridgeOn }, didRecord: {})
         let server = MCPServer(registry: registry, pipeline: pipeline, limiter: limiter,
                                counters: counters,
@@ -406,6 +441,9 @@ final class Harness {
             return ["ok": approvals.answer(decision)]
         case "pending":
             return ["pending": approvals.pendingCount]
+        case "access":
+            access.mode = command["mode"] as? String ?? "refuse"
+            return ["ok": true, "asked": access.asked]
         case "activity":
             let rows = (registry.activity() ?? []).map { row -> [String: Any] in
                 var value: [String: Any] = ["command": row.command, "outcome": row.outcome,

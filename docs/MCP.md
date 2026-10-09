@@ -425,7 +425,7 @@ The check calls `list_collections` to see whether EK Bridge is on, so it adds an
 | Settings says the port is in use | Quit the other app or **Choose Another Port…**. Launcher setups pick up the new port automatically; direct HTTP setups need the new URL. |
 | EK Bridge paused (`bridge_off`) | Turn on EK Bridge from the menu bar. The agent doesn't need to reconnect. |
 | Paused (`client_paused`) | The connection is paused. **Resume** it on its page. The agent doesn't need to reconnect. |
-| Not allowed (`forbidden`) | Select the row in Activity; it names the missing access and links to it. Grant it only if this agent should have it. Agents cache tool lists, so a new grant can take a reconnect (or about 30 seconds for agents on the current protocol) to show a new tool. |
+| Not allowed (`forbidden`) | If the connection could read that calendar or list, EK Bridge asked you in a panel first (see [USAGE ▸ When an agent asks for more access](USAGE.md#when-an-agent-asks-for-more-access)); answering **Allow Once** or **Always Allow** lets it through. Otherwise select the row in Activity; it names the missing access and links to it. Grant it only if this agent should have it. Agents cache tool lists, so a new grant can take a reconnect (or about 30 seconds for agents on the current protocol) to show a new tool. |
 | Agent sees fewer tools than expected | A tool appears only when the connection has that action on at least one calendar or list. `list_collections` is always there. |
 | Declined or not approved in time | Answer the panel, or switch the connection to *Allow without asking*. |
 | Too many requests (`rate_limited`) | The agent is looping. See the [limits](#limits). |
@@ -518,7 +518,7 @@ The text the agent sees addresses the model and ends by saying whether to retry,
 
 | Code | Meaning for the agent |
 | --- | --- |
-| `forbidden` | This connection lacks that action on that calendar or list. Ask the user to grant it; don't retry. |
+| `forbidden` | This connection lacks that action on that calendar or list. Ask the user to grant it; don't retry. When EK Bridge asked the user for that access and they didn't allow it (or didn't answer), the text says so: *the user didn't allow this agent to …; don't retry unless the user asks you to*. |
 | `unauthorized` | The connection's access was removed. Tell the user. |
 | `bridge_off` | EK Bridge is paused (turned off in the menu bar). Ask the user to turn it on; don't retry until they do. |
 | `client_paused` | The user paused this connection. Its access is kept; ask the user to resume it, and don't retry until they do. |

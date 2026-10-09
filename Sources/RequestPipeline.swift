@@ -47,6 +47,15 @@ struct ApprovalRequest {
     var requestID: String? = nil
 }
 
+extension AccessRequest {
+    /// The same request as Ask before changes sees it, for the panel's words.
+    var approvalRequest: ApprovalRequest {
+        ApprovalRequest(clientID: missing.clientID, clientName: missing.clientName, agent: agent, request: request,
+                        targetID: missing.sourceID ?? missing.targetID, revision: missing.revision,
+                        requestID: requestID)
+    }
+}
+
 enum ApprovalDecision: Equatable {
     case allowed
     /// An "Allow for 15 minutes" window was open for this client.
@@ -97,18 +106,20 @@ final class RequestPipeline {
     private let commands: BridgeCommandExecutor
     private let collections: CollectionSource
     private let approvals: ApprovalGate?
+    private let accessRequests: AccessRequestGate?
     private let limiter: RateLimiter?
     private let bridgeActive: () -> Bool
     private let didRecord: () -> Void
     private var inFlight = [String: Int]()
 
     init(registry: ClientRegistry, commands: BridgeCommandExecutor, collections: CollectionSource,
-         approvals: ApprovalGate? = nil, limiter: RateLimiter? = nil,
+         approvals: ApprovalGate? = nil, accessRequests: AccessRequestGate? = nil, limiter: RateLimiter? = nil,
          bridgeActive: @escaping () -> Bool, didRecord: @escaping () -> Void) {
         self.registry = registry
         self.commands = commands
         self.collections = collections
         self.approvals = approvals
+        self.accessRequests = accessRequests
         self.limiter = limiter
         self.bridgeActive = bridgeActive
         self.didRecord = didRecord
@@ -140,15 +151,91 @@ final class RequestPipeline {
             reject(request, clientID, origin, ["error": "rate_limited", "retryAfter": wait], completion)
             return ticket
         }
-        // 3. The saved grant for this exact collection and action.
-        let call: AuthorizedClientCall
-        switch registry.authorize(clientID: clientID, request: request, origin: origin) {
-        case .success(let authorized): call = authorized
-        case .failure(let error):
+        // 3. The saved grant for this exact collection and action. A write
+        // one action short on a calendar or list it can read may ask the
+        // user (3b) instead of being refused.
+        switch registry.authorizeOrAsk(clientID: clientID, request: request, origin: origin) {
+        case .authorized(let call):
+            proceed(call, request, origin, ticket, askedForAccess: false, completion)
+        case .refused(let error):
             didRecord()
             completion(["error": error.rawValue])
-            return ticket
+        case .missingAccess(let missing):
+            askForAccess(missing, request, origin, ticket, completion)
         }
+        return ticket
+    }
+
+    // 3b. Ask for access (P7). The answer counts as the approval for this
+    // change, so Ask before changes doesn't hold it again and the request
+    // stays inside the agent's time limit.
+    private func askForAccess(_ missing: MissingAccess, _ request: BridgeRequest, _ origin: RequestOrigin,
+                              _ ticket: PipelineTicket, _ completion: @escaping ([String: Any]) -> Void) {
+        let writable = collections.collections(missing.resource)?.first { $0.id == missing.targetID }?.writable
+        let requestID = ClientRegistry.requestID(clientID: missing.clientID, request: request)
+        let refuse = { [weak self] (approval: String?, reply: [String: Any]) in
+            guard let self else { completion(["error": "app_unavailable"]); return }
+            let code = reply["error"] as! String
+            let recorded = self.registry.recordRefusal(missing, request: request, origin: origin, approval: approval,
+                                                       outcome: code == "forbidden" ? "forbidden" : "error:\(code)")
+            self.didRecord()
+            completion(recorded ? reply : ["error": "activity_unavailable"])
+        }
+        guard let gate = accessRequests,
+              AccessRequestPolicy.eligible(missing, command: request.command, writable: writable) else {
+            refuse(nil, ["error": "forbidden"])
+            return
+        }
+        let ask = AccessRequest(missing: missing, request: request, agent: origin.agent, requestID: requestID)
+        var answered = false
+        let withdraw = gate.requestAccess(ask) { [weak self] decision in
+            answered = true
+            ticket.withdrawApproval = nil
+            guard let self else { completion(["error": "app_unavailable"]); return }
+            if ticket.isCancelled { refuse(nil, ["error": "cancelled"]); return }
+            switch decision {
+            case .allowOnce, .allowAlways:
+                if decision == .allowAlways {
+                    guard case .success = self.registry.addAccess(clientID: missing.clientID, resource: missing.resource,
+                                                                  targetID: missing.targetID, bit: missing.missingBit)
+                    else { refuse(nil, ["error": "scope_changed"]); return }
+                }
+                let temporary = decision == .allowOnce
+                    ? TemporaryGrant(requestID: requestID, resource: missing.resource, targetID: missing.targetID,
+                                     bit: missing.missingBit, revision: missing.revision)
+                    : nil
+                switch self.registry.authorizeOrAsk(clientID: missing.clientID, request: request, origin: origin,
+                                                    temporaryGrant: temporary) {
+                case .authorized(var call):
+                    call.approvalDetail = decision == .allowOnce ? "access_once" : "access_always"
+                    self.proceed(call, request, origin, ticket, askedForAccess: true, completion)
+                case .refused(let error):
+                    self.didRecord()
+                    completion(["error": error.rawValue])
+                case .missingAccess:
+                    // Its access changed while the panel was up.
+                    refuse(nil, ["error": "scope_changed"])
+                }
+            case .notNow: refuse("access_denied", ["error": "forbidden", "detail": "access_denied"])
+            case .timedOut: refuse("access_timeout", ["error": "forbidden", "detail": "access_timeout"])
+            case .withdrawn: refuse(nil, ["error": "scope_changed"])
+            case .unavailable: refuse(nil, ["error": "app_unavailable"])
+            }
+        }
+        guard let withdraw else {
+            // The throttle or the queue limits: refused as before, no panel.
+            refuse(nil, ["error": "forbidden"])
+            return
+        }
+        if !answered { ticket.withdrawApproval = withdraw }
+    }
+
+    // 4–7 for an authorized call. `askedForAccess`: the user just answered
+    // an access request for it, which counts as the approval.
+    private func proceed(_ call: AuthorizedClientCall, _ request: BridgeRequest, _ origin: RequestOrigin,
+                         _ ticket: PipelineTicket, askedForAccess: Bool,
+                         _ completion: @escaping ([String: Any]) -> Void) {
+        let clientID = call.clientID
         inFlight[clientID, default: 0] += 1
         let finish: (AuthorizedClientCall, [String: Any]) -> Void = { [weak self] call, value in
             guard let self else { completion(["error": "app_unavailable"]); return }
@@ -165,14 +252,14 @@ final class RequestPipeline {
             generation: call.revision, moveTargetID: call.moveTargetID)
         if let error = CommandPolicy.validate(request, scope: selected) {
             finish(call, ["error": error])
-            return ticket
+            return
         }
         // 5. Nothing changed since step 3.
-        guard stillAllowed(call) else { finish(call, ["error": "scope_changed"]); return ticket }
-        if ticket.isCancelled { finish(call, ["error": "cancelled"]); return ticket }
+        guard stillAllowed(call) else { finish(call, ["error": "scope_changed"]); return }
+        if ticket.isCancelled { finish(call, ["error": "cancelled"]); return }
         // 6. Ask before changes, then recheck: the user may have revoked access,
         // paused the client or turned the bridge off while the panel was up.
-        if request.command.isWrite, call.approval == .ask, let approvals {
+        if request.command.isWrite, call.approval == .ask, !askedForAccess, let approvals {
             let approval = ApprovalRequest(clientID: clientID, clientName: call.clientName,
                                            agent: origin.agent, request: request,
                                            targetID: call.targetID, revision: call.revision,
@@ -196,10 +283,9 @@ final class RequestPipeline {
                 case .unavailable: finish(answered, ["error": "app_unavailable"])
                 }
             }
-            return ticket
+            return
         }
         dispatch(request, call, selected, ticket, finish)
-        return ticket
     }
 
     private static func detail(_ decision: ApprovalDecision) -> String? {

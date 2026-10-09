@@ -9,6 +9,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 ### Added
 
 - Activity says what changed: a **Change** column (*Added event*, *Moved event*, *Completed*) and an **Item** column with the event's or reminder's name, looked up in Calendar or Reminders when shown (only its ID is stored; a deleted one shows **Deleted item**). Rows are grouped under **Today**, **Yesterday** and dates, there's a **Changes** filter next to All and Problems, and the details below the table show the item with **Show in Calendar** / **Show in Reminders**. A refused move now says when it was the destination that lacked Create.
+- **Ask for access when refused:** when an agent tries to add, change, complete or delete on a calendar or list it can already read but lacks that one action, EK Bridge asks you in the approval panel (*Claude Code can't add reminders to Groceries*) with **Not Now**, **Allow Once** and **Always Allow**, instead of refusing straight away. The answer counts as the approval for that change, so it fits in the agent's time limit. Writes only, never for calendars it can't read, at most once an hour per connection, calendar or list and action; each connection can turn it off (**Let … ask for more access**). Activity shows the answer, and the agent is told when you didn't allow it.
 - For a change you answered in the approval panel, Activity's details show what changed (*When: 10:00–11:00 → 11:00–12:00*) until EK Bridge quits. The panel's text is kept in memory only, never written.
 
 ### Changed

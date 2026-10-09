@@ -490,6 +490,10 @@ final class BridgeAppModel {
         services.approvals?.answered = { [weak self] requestID, summary, _ in
             self?.rememberApprovalSummary(requestID, summary)
         }
+        // Saving unsaved access edits would write over what Always Allow adds.
+        services.approvals?.alwaysAllowBlocked = { [weak self] clientID in
+            self?.draft?.clientID == clientID && self?.draft?.hasChanges == true
+        }
         syncMCPServer()
         if remoteEnabled {
             if let offAt = remoteOffAt, offAt <= Date() {
@@ -805,7 +809,8 @@ final class BridgeAppModel {
                                      mask: client.grants.first { $0.resource == key.resource && $0.targetID == key.targetID }?.mask ?? 0)
             }
         }
-        return NeedsYou.items(pendingApprovals: pendingApprovalCount, problems: shown, unavailable: unavailable,
+        return NeedsYou.items(pendingApprovals: pendingApprovalCount, accessRequests: pendingAccessRequests,
+                              problems: shown, unavailable: unavailable,
                               unseenProblems: unseenProblemCount, lastViewed: activityLastViewed,
                               update: foundUpdate.map { ($0.version, $0.critical) }, updateCardShown: showsUpdateCard)
     }
@@ -2091,6 +2096,17 @@ final class BridgeAppModel {
 
     /// Saved at once, outside the staged grant draft: a different kind of
     /// setting with a different undo story. Bumps the client's revision.
+    /// "Let <Name> ask for more access" (C04).
+    func setAsksForAccess(_ clientID: String, _ on: Bool) {
+        guard let client = client(clientID), !client.revoked, client.asksForAccess != on else { return }
+        switch services.registry.setAsksForAccess(clientID: clientID, on) {
+        case .success: refresh()
+        case .failure(let error):
+            showBanner(Banner(kind: .error, title: String(localized: "Couldn't change it."),
+                              message: String(localized: "Nothing was changed."), code: error.rawValue))
+        }
+    }
+
     func setApproval(_ clientID: String, _ mode: ApprovalMode) {
         guard let client = client(clientID), !client.revoked, client.approval != mode else { return }
         switch services.registry.setApproval(clientID: clientID, mode) {
@@ -2139,7 +2155,10 @@ final class BridgeAppModel {
         }
     }
 
-    var pendingApprovalCount: Int { services.approvals?.pending.count ?? 0 }
+    /// Changes waiting in the approval panel.
+    var pendingApprovalCount: Int { services.approvals?.pendingChanges.count ?? 0 }
+    /// Access requests waiting in the same panel (C04), by their title.
+    var pendingAccessRequests: [String] { services.approvals?.pendingAccess.map(\.summary.title) ?? [] }
 
     // MARK: MCP access per client
 

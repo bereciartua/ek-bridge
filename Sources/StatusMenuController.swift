@@ -35,6 +35,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.needsAttention
             _ = model.statusSubtitle
             _ = model.pendingApprovalCount
+            _ = model.pendingAccessRequests
             _ = model.remoteEnabled
             _ = model.resumeAt
         } onChange: { [weak self] in
@@ -54,7 +55,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .on: String(localized: "on")
         case .paused: String(localized: "paused")
         }
-        let pending = model.pendingApprovalCount
+        let pending = model.pendingApprovalCount + model.pendingAccessRequests.count
         var label = String(localized: "\(AppIdentity.displayName), \(state)")
         if pending > 0 {
             label += ", " + (pending == 1 ? String(localized: "1 change waiting for approval")
@@ -211,6 +212,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             let approvals = item(title) { [weak self] in self?.model.showApprovals() }
             approvals.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
             items.append(approvals)
+        }
+        // Access requests (C04): the panel comes forward.
+        for request in model.pendingAccessRequests {
+            let title = request + "…"
+            let access = item(title) { [weak self] in self?.model.showApprovals() }
+            access.attributedTitle = iconTitle(symbol("hand.raised.fill", color: .systemBlue), title)
+            items.append(access)
         }
         for problem in model.problems {
             let title = item(problem.title) { [weak self] in self?.model.fix(problem) }

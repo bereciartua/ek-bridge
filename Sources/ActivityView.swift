@@ -869,6 +869,11 @@ enum ApprovalText {
         case "window": String(localized: "Allowed by a 15-minute allowance")
         case "denied": String(localized: "You declined")
         case "timeout": String(localized: "No answer in 45 s")
+        // Ask for access (C04).
+        case "access_once": String(localized: "You allowed it once")
+        case "access_always": String(localized: "You allowed it from now on")
+        case "access_denied": String(localized: "You didn't allow it")
+        case "access_timeout": String(localized: "No answer in 45 s")
         default: nil
         }
     }

@@ -35,12 +35,17 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
     private let mcpCounters = MCPTrafficCounters()
     private lazy var approvals = ApprovalCenter(summarize: { [weak self] request in
         ApprovalSummaries.build(request, store: self?.store, collections: self?.model.collections ?? [])
+    }, summarizeAccess: { [weak self] access in
+        let collections = self?.model.collections ?? []
+        return AccessAsk.build(access, summary: ApprovalSummaries.build(access.approvalRequest, store: self?.store,
+                                                                        collections: collections),
+                               collections: collections)
     })
     private lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private lazy var pipeline = RequestPipeline(
         registry: clientRegistry, commands: commands,
         collections: EventKitCollectionSource(store: store),
-        approvals: approvals, limiter: rateLimiter,
+        approvals: approvals, accessRequests: approvals, limiter: rateLimiter,
         bridgeActive: { [weak self] in self?.localBridge?.active == true },
         didRecord: { [weak self] in self?.model.scheduleRefresh() })
     private lazy var mcpService: MCPService = {

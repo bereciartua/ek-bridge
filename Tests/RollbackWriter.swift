@@ -91,5 +91,8 @@ struct RollbackWriter {
 /// Phase C fields on the registry record, set by the work packages that add them.
 enum WriterHooks {
     @MainActor
-    static func afterClients(_ registry: ClientRegistry, agent: String) {}
+    static func afterClients(_ registry: ClientRegistry, agent: String) {
+        // C04: "Let it ask for more access" turned off is stored on the record.
+        guard case .success = registry.setAsksForAccess(clientID: agent, false) else { fatalError() }
+    }
 }

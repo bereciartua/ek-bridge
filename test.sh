@@ -47,6 +47,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -64,6 +65,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -82,6 +84,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -89,6 +92,18 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/CollectionLabels.swift" \
     "$project_dir/Tests/CollectionLabelsTests.swift" \
     -o "$project_dir/build/collection-labels-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/ClientRegistry.swift" \
+    "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/ClientCredentialFiles.swift" \
+    "$project_dir/Tests/AccessRequestsTests.swift" \
+    -o "$project_dir/build/access-requests-tests"
+"$project_dir/build/access-requests-tests"
 xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -124,6 +139,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Tests/RollbackWriter.swift" \
     -o "$project_dir/build/rollback-writer"
 rollback_dir=$(mktemp -d "${TMPDIR:-/tmp}/ekb-rollback.XXXXXX")
@@ -267,6 +283,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/WriteIdempotencyKey.swift" \
     "$project_dir/Tests/ClientRegistryTests.swift" \
@@ -280,6 +297,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Tests/ClientGrantEditingTests.swift" \
@@ -293,6 +311,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -344,6 +363,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/AppIdentity.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
@@ -360,6 +380,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Tests/ClientRegistryV4Tests.swift" \
     -o "$project_dir/build/client-registry-v4-tests"
 "$project_dir/build/client-registry-v4-tests"
@@ -381,6 +402,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
     "$project_dir/Sources/ActivityItems.swift" \
     "$project_dir/Sources/MCP/RateLimiter.swift" \
@@ -402,6 +424,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/MCP/MCPToolCatalog.swift" \
     "$project_dir/Tests/MCPToolCatalogTests.swift" \
     -o "$project_dir/build/mcp-tool-catalog-tests"
@@ -435,6 +458,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
@@ -471,6 +495,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/ClientGrantEditing.swift" \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
@@ -501,6 +526,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
     "$project_dir/Sources/ActivityItems.swift" \
@@ -595,6 +621,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/ClientCredentialFiles.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
+    "$project_dir/Sources/AccessRequests.swift" \
     "$project_dir/Sources/SafePath.swift" \
     "$project_dir/Sources/RequestPipeline.swift" \
     "$project_dir/Sources/ActivityItems.swift" \

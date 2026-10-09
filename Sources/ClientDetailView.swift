@@ -526,6 +526,13 @@ struct AccessSection: View {
                         action: { model.sheet = .unavailableGrants(client.id) }))
                 }
             }
+            // Ask for access when refused (C04, P7).
+            HStack(spacing: 4) {
+                Toggle(String(localized: "Let \(client.name) ask for more access"), isOn: Binding(
+                    get: { client.asksForAccess }, set: { model.setAsksForAccess(client.id, $0) }))
+                    .toggleStyle(.checkbox)
+                InfoButton(text: String(localized: "When it's refused an add, change, completion or delete on a calendar or list it can already read, \(AppIdentity.displayName) asks you in a panel instead of refusing straight away. At most once an hour for each calendar or list and action; it never asks about calendars or lists it can't read."))
+            }
         }
     }
 

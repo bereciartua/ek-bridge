@@ -30,7 +30,9 @@ enum MCPToolMapping {
     static func toolResult(tool: String, request: BridgeRequest?, core: [String: Any],
                            zone: TimeZone, now: Date) -> [String: Any] {
         if let code = core["error"] as? String {
-            return errorResult(tool: tool, code: code, detail: nil, request: request,
+            // Only the access request's answer is passed on as a detail (C04).
+            let detail = code == "forbidden" ? core["detail"] as? String : nil
+            return errorResult(tool: tool, code: code, detail: detail, request: request,
                                retryAfter: integer(core["retryAfter"]))
         }
         guard let structured = structured(tool, request?.parameters ?? [:], core,

@@ -20,9 +20,97 @@ struct ClientRegistryV4Tests {
         try roundTrip()
         try remoteAccess()
         try pause()
+        try accessRequests()
         print("Client registry v4: v2/v3 upgrade and one-time backups, tokens, revision bumps, "
               + "MCP-only clients, load validation, agent names, failed-auth coalescing, "
-              + "CLI/MCP rows, round trip, remote access, pause and resume passed")
+              + "CLI/MCP rows, round trip, remote access, pause and resume, missing access, "
+              + "temporary grants, Always Allow passed")
+    }
+
+    /// C04: a write one action short comes back as missing access without a
+    /// row; Allow Once counts for its request and revision only.
+    @MainActor
+    static func accessRequests() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registry = ClientRegistry(directory: directory)
+        let id = value(registry.createClient(name: "Asker", credentials: [.mcpToken])).id
+        success(registry.replaceGrants(clientID: id, grants: [
+            ClientGrant(resource: .reminderList, targetID: "L1", mask: ClientGrant.read),
+            ClientGrant(resource: .calendar, targetID: "C1", mask: ClientGrant.read | ClientGrant.edit),
+            ClientGrant(resource: .calendar, targetID: "C2", mask: ClientGrant.read)]))
+        precondition(registry.clients()!.first!.asksForAccess, "on by default")
+        let rows = { registry.activity()!.count }
+        // A create on a list it can read: missing Create, nothing recorded.
+        let create = request(.createReminder, ["listID": "L1", "title": "t"])
+        let before = rows()
+        guard case .missingAccess(let missing) = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        else { preconditionFailure("missing access expected") }
+        precondition(missing.currentMask == ClientGrant.read && missing.missingBit == ClientGrant.create)
+        precondition(missing.targetID == "L1" && missing.resource == .reminderList && !missing.isDestination)
+        precondition(missing.clientName == "Asker" && missing.revision > 0 && missing.asksForAccess)
+        precondition(rows() == before, "no forbidden row in that branch")
+        // The old entry point still refuses and records it, with the missing bit.
+        failure(registry.authorize(clientID: id, request: create, origin: .cli), .forbidden)
+        precondition(registry.activity()!.first!.outcome == "forbidden" &&
+                     registry.activity()!.first!.missing == ClientGrant.create)
+        // Reads, and collections without any grant, are refused outright.
+        let readNothing = request(.readReminders, ["listID": "L9", "limit": 1])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: readNothing, origin: .cli)
+        else { preconditionFailure("no grant: refused") }
+        let elsewhere = request(.createReminder, ["listID": "L9", "title": "t"])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: elsewhere, origin: .cli)
+        else { preconditionFailure("no grant on L9: refused") }
+        // A move whose destination lacks Create: missing Create on the destination.
+        let move = request(.updateEvent, ["calendarID": "C1", "itemID": "E", "targetCalendarID": "C2"])
+        guard case .missingAccess(let destination) = registry.authorizeOrAsk(clientID: id, request: move, origin: .cli)
+        else { preconditionFailure("destination missing access") }
+        precondition(destination.targetID == "C2" && destination.sourceID == "C1" && destination.isDestination &&
+                     destination.missingBit == ClientGrant.create)
+        // A move missing both Edit here and Create there: refused.
+        let both = request(.updateEvent, ["calendarID": "C2", "itemID": "E", "targetCalendarID": "C1"])
+        guard case .refused(.forbidden) = registry.authorizeOrAsk(clientID: id, request: both, origin: .cli)
+        else { preconditionFailure("two actions missing: refused") }
+        // Allow Once: only for that request, at that revision.
+        let once = TemporaryGrant(requestID: ClientRegistry.requestID(clientID: id, request: create),
+                                  resource: .reminderList, targetID: "L1", bit: ClientGrant.create,
+                                  revision: missing.revision)
+        guard case .authorized(let call) = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli,
+                                                                   temporaryGrant: once)
+        else { preconditionFailure("allowed once") }
+        precondition(call.temporaryGrant == once && registry.stillAuthorized(call))
+        precondition(registry.clients()!.first!.grants.first { $0.targetID == "L1" }!.mask == ClientGrant.read,
+                     "nothing saved")
+        let other = request(.createReminder, ["listID": "L1", "title": "other"])
+        guard case .missingAccess = registry.authorizeOrAsk(clientID: id, request: other, origin: .cli,
+                                                            temporaryGrant: once)
+        else { preconditionFailure("another request isn't allowed by it") }
+        // A revision change ends it, in flight too.
+        success(registry.bumpRevision(clientID: id))
+        precondition(!registry.stillAuthorized(call))
+        guard case .missingAccess = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli,
+                                                            temporaryGrant: once)
+        else { preconditionFailure("stale revision") }
+        // Always Allow adds the bit to the existing grant only.
+        success(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L1", bit: ClientGrant.create))
+        precondition(registry.clients()!.first!.grants.first { $0.targetID == "L1" }!.mask == 3)
+        failure(registry.addAccess(clientID: id, resource: .reminderList, targetID: "L9", bit: ClientGrant.create),
+                .invalidGrants)
+        failure(registry.addAccess(clientID: id, resource: .calendar, targetID: "C2", bit: ClientGrant.complete),
+                .invalidGrants)
+        guard case .authorized = registry.authorizeOrAsk(clientID: id, request: create, origin: .cli)
+        else { preconditionFailure("allowed after Always Allow") }
+        // The switch is kept, without a revision change, and survives a reload.
+        success(registry.setAsksForAccess(clientID: id, false))
+        precondition(!ClientRegistry(directory: directory).clients()!.first!.asksForAccess)
+        guard case .missingAccess(let off) = registry.authorizeOrAsk(clientID: id, request: request(
+            .deleteReminder, ["listID": "L1", "itemID": "R"]), origin: .cli), !off.asksForAccess
+        else { preconditionFailure("reports the switch") }
+        success(registry.setAsksForAccess(clientID: id, true))
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf:
+            directory.appendingPathComponent("client-registry.json"))) as! [String: Any]
+        let record = (saved["clients"] as! [[String: Any]]).first!
+        precondition(record["asksForAccess"] == nil, "on is stored as absent")
     }
 
     /// Pausing refuses every request but keeps every credential, grant and

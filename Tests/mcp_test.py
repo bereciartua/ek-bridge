@@ -249,6 +249,12 @@ def main():
     finally:
         a.close()
 
+    q = Harness(harness_binary, approval="none")
+    try:
+        run_access_requests(q)
+    finally:
+        q.close()
+
     t = Harness(harness_binary)
     try:
         run_auth_lockout(t)
@@ -855,6 +861,43 @@ def run_limits(h):
     check("rate limited", limited is not None and "Wait" in limited, limited)
     check("rate_limited recorded", h.activity()[0]["outcome"] == "error:rate_limited")
     c.close()
+
+
+def run_access_requests(h):
+    """C04: a write one action short on a calendar it can read asks for access.
+    The answer arrives within the agent's 55 s and counts as the approval."""
+    c = Client(h, h.token("reader"))
+    create = {"calendar_id": "CAL-WORK", "title": "Dentist",
+              "start": "2026-10-06T09:00:00-04:00", "end": "2026-10-06T10:00:00-04:00"}
+    reset = [{"resource": "calendar", "targetID": "CAL-WORK", "mask": 1}]
+    for mode, ok, approval in [("allowOnce", True, "access_once"), ("allowAlways", True, "access_always"),
+                               ("notNow", False, "access_denied"), ("timeout", False, "access_timeout")]:
+        h.control(cmd="grants", client="reader", grants=reset)
+        h.control(cmd="access", mode=mode)
+        started = time.monotonic()
+        _, body = c.call("create_event", create)
+        elapsed = time.monotonic() - started
+        result = body["result"]
+        check(f"access {mode} answers in time", elapsed < 55, elapsed)
+        check(f"access {mode} result", result["isError"] is (not ok), result)
+        row = h.activity()[0]
+        check(f"access {mode} recorded", row.get("approval") == approval and
+              row["outcome"] == ("success" if ok else "forbidden"), row)
+        if not ok:
+            check(f"access {mode} agent text", text_of(result) ==
+                  "Not allowed: the user didn't allow this agent to create events in that calendar. "
+                  "Don't retry unless the user asks you to. (code: forbidden)", result)
+    asked = h.control(cmd="access", mode="refuse")["asked"]
+    check("access asked four times", asked == 4, asked)
+    # Throttled or ineligible: refused as before, with the usual text.
+    h.control(cmd="grants", client="reader", grants=reset)
+    _, body = c.call("create_event", create)
+    check("access refused without a panel", "grant Create for this connection" in text_of(body["result"]), body)
+    # Reads never ask.
+    h.control(cmd="access", mode="allowOnce")
+    _, body = c.call("read_reminders", {"list_id": "LIST-GROC"})
+    check("reads never ask", body["result"]["isError"] is True and
+          h.control(cmd="access", mode="refuse")["asked"] == 4, body)
 
 
 def run_approvals(h):

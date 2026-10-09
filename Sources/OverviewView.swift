@@ -244,6 +244,10 @@ struct NeedsYouSection: View {
                                : String(localized: "\(count) changes waiting for approval"),
                     String(localized: "Answer in the approval panel."), String(localized: "Review…"),
                     { model.showApprovals() })
+        case .accessRequest(let title):
+            return ("hand.raised", .accentColor, title,
+                    String(localized: "It's waiting for your answer in the panel."), String(localized: "Allow…"),
+                    { model.showApprovals() })
         case .problem(let problem):
             let fix: String = switch problem {
             case .calendarAccess, .remindersAccess: String(localized: "Open Privacy Settings…")

@@ -143,6 +143,12 @@ final class LiveTestAutomation {
             case "setGrants": completion(.success(try setGrants(command)))
             case "pause", "resume": completion(.success(try setPaused(command)))
             case "setApproval": completion(.success(try setApproval(command)))
+            case "setAsksForAccess":
+                let id = try clientID(command)
+                let on = command["on"] as? Bool ?? true
+                model.setAsksForAccess(id, on)
+                guard model.client(id)?.asksForAccess == on else { throw CommandError(message: "didn't change") }
+                completion(.success(on))
             case "setBridge": completion(.success(try setBridge(command)))
             case "setMCP": completion(.success(try setMCP(command)))
             case "requestAccess": completion(.success(try requestAccess(command)))
@@ -197,7 +203,7 @@ final class LiveTestAutomation {
         let connections: [[String: Any]] = model.clients.map { client in
             [
                 "id": client.id, "name": client.name, "revoked": client.revoked, "paused": client.paused,
-                "approval": client.approval.rawValue,
+                "approval": client.approval.rawValue, "asksForAccess": client.asksForAccess,
                 "kind": client.hasMCPToken && client.hasSigningKey ? "both" : client.hasMCPToken ? "agent" : "cli",
                 "agent": model.connectionAgents[client.id]?.rawValue ?? NSNull(),
                 "status": model.connectionStatusLine(client).text,
@@ -209,8 +215,15 @@ final class LiveTestAutomation {
             ]
         }
         let pending: [[String: Any]] = context.approvals.pending.map { item in
-            ["kind": "change", "connection": item.clientName, "title": item.summary.title,
-             "isDelete": item.summary.isDelete, "lookupFailed": item.summary.lookupFailed]
+            var row: [String: Any] = ["kind": item.access == nil ? "change" : "access", "connection": item.clientName,
+                                      "title": item.summary.title, "isDelete": item.summary.isDelete,
+                                      "lookupFailed": item.summary.lookupFailed]
+            if let ask = item.access {
+                row["has"] = ask.has
+                row["asked"] = ask.asked
+                row["alwaysAllowBlocked"] = context.approvals.alwaysAllowBlocked(item.clientID)
+            }
+            return row
         }
         let activity: [[String: Any]] = model.activity.prefix(20).map { entry in
             var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: entry.at),
@@ -638,20 +651,28 @@ final class LiveTestAutomation {
 
     private func answerPanel(_ command: [String: Any], completion: @escaping Completion) throws {
         let decision = command["decision"] as? String ?? ""
-        guard ["allow", "deny", "allowWindow"].contains(decision) else {
-            throw CommandError(message: decision.isEmpty || !["allowOnce", "allowAlways", "notNow"].contains(decision)
-                ? "decision is allow, deny or allowWindow"
-                : "\(decision) answers access requests, which this build doesn't have")
+        guard ["allow", "deny", "allowWindow", "allowOnce", "allowAlways", "notNow"].contains(decision) else {
+            throw CommandError(message: "decision is allow, deny, allowWindow (changes) or allowOnce, allowAlways, notNow (access)")
         }
+        let forAccess = ["allowOnce", "allowAlways", "notNow"].contains(decision)
         let deadline = Date().addingTimeInterval(command["timeout"] as? Double ?? 20)
         func attempt() {
             let center = context.approvals
             if let item = center.current, let seen = firstSeen[item.id],
                Date().timeIntervalSince(seen) >= 0.8 {
                 let title = item.summary.title
+                guard (item.access != nil) == forAccess else {
+                    completion(.failure(CommandError(message: forAccess ? "the panel shows a change, not an access request"
+                                                                        : "the panel shows an access request")))
+                    return
+                }
+                // The same functions as the panel's buttons.
                 switch decision {
                 case "deny": center.deny(item.id)
                 case "allowWindow": center.allow(item.id, forWindow: true)
+                case "allowOnce": center.allowOnce(item.id)
+                case "allowAlways": center.allowAlways(item.id)
+                case "notNow": center.notNow(item.id)
                 default: center.allow(item.id)
                 }
                 completion(.success(["decision": decision, "title": title]))
