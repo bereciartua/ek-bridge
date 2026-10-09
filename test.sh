@@ -96,6 +96,16 @@ xcrun swiftc -parse-as-library \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
     "$project_dir/Sources/BridgeProtocol.swift" \
+    "$project_dir/Sources/AppIdentity.swift" \
+    "$project_dir/Sources/OutcomePresentation.swift" \
+    "$project_dir/Sources/NotificationRules.swift" \
+    "$project_dir/Tests/NotificationRulesTests.swift" \
+    -o "$project_dir/build/notification-rules-tests"
+"$project_dir/build/notification-rules-tests"
+xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/BridgeProtocol.swift" \
     "$project_dir/Sources/ClientRegistry.swift" \
     "$project_dir/Sources/ActivityStore.swift" \
     "$project_dir/Sources/AccessRequests.swift" \

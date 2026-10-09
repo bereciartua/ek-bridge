@@ -110,6 +110,8 @@ final class ApprovalCenter: ApprovalGate, AccessRequestGate {
     /// Called with the panel's summary when a change is answered (allowed,
     /// denied or timed out), so Activity can show it this session (C03).
     @ObservationIgnored var answered: (_ requestID: String, ApprovalSummary, ApprovalDecision) -> Void = { _, _, _ in }
+    /// Called when a change or access request expires unanswered (C05).
+    @ObservationIgnored var expired: (PendingApproval) -> Void = { _ in }
 
     init(summarize: @escaping (ApprovalRequest) -> ApprovalSummary,
          summarizeAccess: @escaping (AccessRequest) -> AccessAsk = AccessAsk.plain,
@@ -252,12 +254,14 @@ final class ApprovalCenter: ApprovalGate, AccessRequestGate {
            [.allowed, .denied, .timedOut].contains(decision) {
             answered(requestID, item.summary, decision)
         }
+        if decision == .timedOut, let item = pending.first(where: { $0.id == id }) { expired(item) }
         remove(id)
         completion(decision)
     }
 
     private func resolveAccess(_ id: UUID, _ decision: AccessDecision) {
         guard let completion = accessCompletions.removeValue(forKey: id) else { return }
+        if decision == .timedOut, let item = pending.first(where: { $0.id == id }) { expired(item) }
         remove(id)
         completion(decision)
     }

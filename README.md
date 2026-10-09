@@ -209,7 +209,9 @@ The app has **no analytics, telemetry or crash reporting**, and no account. Your
 | One HTTPS request to GitHub for `appcast.xml`, the list of the latest version | Once a day while **Settings ▸ General ▸ Check for updates automatically** is on (on in downloaded copies; a copy built from source never checks), and when you choose **Check for Updates…**. GitHub sees your IP address and the app's version; nothing else is sent. |
 | Downloading an update from GitHub | Only after you click **Install Update** in the update window. The app checks the download's EdDSA signature and that it's signed by the same developer before installing it. |
 
-On disk, besides connections and Activity, EK Bridge keeps the names, accounts and colours of the calendars and lists you've given access to (`collection-labels.json`), so it can still name one that becomes unavailable; it never stores item titles or contents.
+On disk, besides connections and Activity, EK Bridge keeps the names, accounts and colours of the calendars and lists you've given access to (`collection-labels.json`), so it can still name one that becomes unavailable. Activity keeps an item's EventKit ID for each change (not its title), and looks the item up when you open the row; EK Bridge never stores item titles or contents.
+
+**Notifications** are shown by macOS. One about a change that wasn't made can include the item's title, which macOS may show on the lock screen depending on your settings; turn each kind on or off in **Settings ▸ General ▸ Notifications**.
 
 What an agent reads through EK Bridge goes to that agent and its AI provider, under their privacy terms, so grant only what each agent needs. Tunnels other than Tailscale Funnel can read Remote Access traffic at their edge.
 

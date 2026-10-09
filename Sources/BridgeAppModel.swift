@@ -197,6 +197,8 @@ struct BridgeServices {
     var itemLookup: (ItemRef) -> ItemSnapshot? = { _ in nil }
     /// Show in Calendar / Reminders. False when nothing opened.
     var showItem: (ItemRef) -> Bool = { _ in false }
+    /// macOS notifications (C05).
+    var notifications: NotificationControls = .unavailable
 }
 
 /// What Activity can say about a row's item.
@@ -290,6 +292,15 @@ final class BridgeAppModel {
     @ObservationIgnored private var itemCache = [ItemRef: ItemSnapshot]()
     /// Bumped when the cache is cleared, so rows look their items up again.
     private(set) var itemLookupGeneration = 0
+    /// Notifications (C05): the kinds turned on in Settings ▸ General, and
+    /// what macOS allows.
+    private(set) var notificationKinds = Set<NotificationKind>()
+    private(set) var notificationPermission = NotificationPermission.notDetermined
+    /// The last 20 posted this session, for the live-test automation. Memory only.
+    private(set) var postedNotifications = [AppNotification]()
+    @ObservationIgnored private var lastRefusedNotice = [String: Date]()
+    /// Refusals up to here were looked at for notifications.
+    @ObservationIgnored private var refusalsSeenThrough = Date()
     /// Approval panel summaries of changes answered this session, by request
     /// ID (C03): Activity shows their before → after. Memory only, at most 200.
     private(set) var recentSummaries = [String: ApprovalSummary]()
@@ -399,6 +410,8 @@ final class BridgeAppModel {
         static let setupCompleted = "SetupChecklistCompleted"
         static let setupSkipped = "SetupChecklistSkipped"
         static let activityLastViewed = "ActivityLastViewed"
+        /// The update version a notification was posted for (C05).
+        static let notifiedUpdateVersion = "NotifiedUpdateVersion"
         static let dockMode = "DockIconMode"
         static let showDeveloperTools = "ShowDeveloperTools"
         static let lastRoute = "LastPane"
@@ -432,6 +445,9 @@ final class BridgeAppModel {
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
+        notificationKinds = Set(NotificationKind.allCases.filter {
+            defaults.object(forKey: $0.defaultsKey) as? Bool ?? $0.isOnByDefault
+        })
         localMCPAllowed = defaults.object(forKey: Keys.localMCPAllowed) as? Bool ?? true
         let port = defaults.integer(forKey: Keys.mcpPort)
         mcpPort = MCPDefaults.validPorts.contains(port) ? port : MCPDefaults.port
@@ -490,6 +506,8 @@ final class BridgeAppModel {
         services.approvals?.answered = { [weak self] requestID, summary, _ in
             self?.rememberApprovalSummary(requestID, summary)
         }
+        services.approvals?.expired = { [weak self] item in self?.approvalExpired(item) }
+        refreshNotificationPermission()
         // Saving unsaved access edits would write over what Always Allow adds.
         services.approvals?.alwaysAllowBlocked = { [weak self] clientID in
             self?.draft?.clientID == clientID && self?.draft?.hasChanges == true
@@ -564,7 +582,10 @@ final class BridgeAppModel {
             policyStoreAvailable = true
             if clients != current { clients = current }
             let entries = ActivityEntry.entries(from: services.registry.activity() ?? [])
-            if entries != activity { activity = entries }
+            if entries != activity {
+                activity = entries
+                notifyNewRefusals()
+            }
             pruneConnectionAgents()
         } else {
             policyStoreAvailable = false
@@ -1666,6 +1687,119 @@ final class BridgeAppModel {
     func updateFound(_ update: FoundUpdate?) {
         foundUpdate = update
         refreshUpdater()
+        // Once per version (C05).
+        if let update, services.defaults.string(forKey: Keys.notifiedUpdateVersion) != update.version {
+            services.defaults.set(update.version, forKey: Keys.notifiedUpdateVersion)
+            notify(NotificationRules.update(version: update.version))
+        }
+    }
+
+    // MARK: Notifications (C05)
+
+    func setNotification(_ kind: NotificationKind, _ on: Bool) {
+        services.defaults.set(on, forKey: kind.defaultsKey)
+        if on { notificationKinds.insert(kind) } else { notificationKinds.remove(kind) }
+        // Turning one on is when macOS asks, never at launch.
+        if on && notificationPermission == .notDetermined {
+            services.notifications.requestPermission { [weak self] _ in self?.refreshNotificationPermission() }
+        }
+    }
+
+    func refreshNotificationPermission() {
+        services.notifications.permission { [weak self] permission in
+            guard let self, permission != self.notificationPermission else { return }
+            self.notificationPermission = permission
+        }
+    }
+
+    func openNotificationSettings() { services.notifications.openSettings() }
+
+    /// Whether the window already shows what the notification would open.
+    private func windowShows(_ kind: NotificationKind) -> Bool {
+        guard window?.isKeyWindow == true, windowIsVisible() else { return false }
+        return kind == .update ? route == .overview || route == .settings : route == .activity
+    }
+
+    private func notify(_ note: AppNotification, clientID: String? = nil) {
+        let now = Date()
+        guard NotificationRules.shouldPost(note.kind, enabled: notificationKinds, windowShowsIt: windowShows(note.kind),
+                                           lastPosted: clientID.flatMap { lastRefusedNotice[$0] }, now: now)
+        else { return }
+        if note.kind == .refused, let clientID { lastRefusedNotice[clientID] = now }
+        let post = { [weak self] in
+            guard let self else { return }
+            self.services.notifications.post(note)
+            self.postedNotifications.append(note)
+            if self.postedNotifications.count > 20 { self.postedNotifications.removeFirst() }
+        }
+        switch notificationPermission {
+        case .allowed: post()
+        case .denied: break
+        case .notDetermined:
+            // The first notification of a kind that's on asks macOS first.
+            services.notifications.requestPermission { [weak self] granted in
+                self?.refreshNotificationPermission()
+                if granted { post() }
+            }
+        }
+    }
+
+    /// A change or access request nobody answered.
+    private func approvalExpired(_ item: PendingApproval) {
+        if let ask = item.access {
+            notify(NotificationRules.declinedAccess(askTitle: ask.title, requestID: item.requestID, clientID: item.clientID))
+        } else {
+            let title = item.summary.rows.first {
+                [String(localized: "Event"), String(localized: "Reminder")].contains($0.label) && $0.value != "–"
+            }?.value
+            notify(NotificationRules.declined(panelTitle: item.summary.title, item: title,
+                                              requestID: item.requestID, clientID: item.clientID))
+        }
+    }
+
+    /// Refusals that didn't get an access panel (C05, off by default):
+    /// new `forbidden` rows from a connection, at most one per connection
+    /// every 10 minutes.
+    private func notifyNewRefusals() {
+        let fresh = activity.prefix { $0.at > refusalsSeenThrough }
+        guard let newest = fresh.first?.at else { return }
+        refusalsSeenThrough = newest
+        guard notificationKinds.contains(.refused) else { return }
+        for entry in fresh.reversed() where entry.code == "forbidden" && entry.approval == nil {
+            guard let clientID = entry.clientID, let client = client(clientID), !client.revoked else { continue }
+            let key = entry.isMove && entry.missing == ClientGrant.create
+                ? entry.destinationID.flatMap { id in entry.targetKey.map { GrantKey(resource: $0.resource, targetID: id) } }
+                : entry.targetKey
+            notify(NotificationRules.refused(clientName: client.name, command: entry.command,
+                                             collection: key.flatMap { collection($0)?.name },
+                                             requestID: entry.requestID, clientID: clientID,
+                                             resource: key?.resource.rawValue, targetID: key?.targetID),
+                   clientID: clientID)
+        }
+    }
+
+    /// A click on a notification or one of its buttons.
+    func handleNotification(_ action: String, kind: NotificationKind?, info: [String: String]) {
+        NSApp.activate()
+        switch (kind, action) {
+        case (.update?, _):
+            show(.overview)
+            checkForUpdates()
+        case (.refused?, AppNotification.allow):
+            // Allow…: the connection's Access tab at that calendar or list.
+            if let clientID = info[AppNotification.clientIDKey],
+               let resource = info[AppNotification.resourceKey].flatMap(ClientResource.init(rawValue:)),
+               let target = info[AppNotification.targetIDKey] {
+                openClientAccess(clientID, focus: GrantKey(resource: resource, targetID: target))
+            } else if let clientID = info[AppNotification.clientIDKey] {
+                openClientAccess(clientID, focus: nil)
+            }
+        default:
+            let row = info[AppNotification.requestIDKey].flatMap { request in
+                activity.first { $0.requestID == request }?.id
+            }
+            openActivity(selecting: row)
+        }
     }
 
     /// Hides the Overview card for this version; the menu item stays. A

@@ -87,6 +87,16 @@ Requests refused because EK Bridge was paused (**EK Bridge was paused**) or beca
 
 Activity stores the time, connection, command, result, the calendar or list **ID**, how the request came in (`cli`, `mcp` or `remote`), the agent's reported name, the approval answer, and for changes the item's EventKit **ID**. It never stores titles, notes, locations or other item content, keys or tokens. Item and calendar names are looked up in Calendar and Reminders when you open a row. Activity is kept in `activity/activity.jsonl` in the data folder (0600, in a 0700 folder). Separately, the names, accounts and colours of calendars and lists that a connection has access to are kept in `collection-labels.json`, so EK Bridge can name one that becomes unavailable ("Project calendar (Exchange) · Not available since Oct 5"). A label goes when no connection has access to its calendar or list any more.
 
+## Notifications
+
+EK Bridge can tell you, through macOS notifications, about three things. Turn each on or off in **Settings ▸ General ▸ Notifications**:
+
+- **A change wasn't made because nobody answered** (on): a change or an access request waited 45 seconds in the panel without an answer. *Claude Code wanted to change an event (“Design review”). Nobody answered in 45 s.* **Open Activity** shows the row.
+- **An agent was refused** (off): a write was refused and EK Bridge couldn't ask you about it (the calendar is read only, the connection can't read it, its **ask for more access** is off, or it already asked within the hour). At most one per connection every 10 minutes. *Cursor can't add events to Home.* **Allow…** opens the connection's Access tab at that calendar or list; **Open Activity** shows the row.
+- **An update is available** (on): once per version. **Install Update…** opens the update window.
+
+macOS asks whether to allow EK Bridge's notifications the first time one is about to be shown, or when you turn a kind on, never at launch. If they're off in System Settings, the section says so, with **Open Notification Settings**. Nothing is shown while the window already shows that page. The item's title appears only in the notification itself: EK Bridge doesn't store it, but macOS may show notifications on the lock screen, depending on your settings.
+
 ## Settings
 
 Settings has three tabs: **General**, **Advanced** and **About** (⌘3 or ⌘, opens it; links from the menu bar and elsewhere open the right tab).
@@ -97,6 +107,7 @@ Settings has three tabs: **General**, **Advanced** and **About** (⌘3 or ⌘, o
 - **Show in Dock:** *While the window is open* (default), *Always*, or *Never*. The menu bar icon is always shown.
 - **Check for updates automatically** (on by default) asks GitHub once a day whether a newer version exists, sending only your IP address and the app's version; **Check for Updates…** (also in the app and menu bar menus) checks now. A found update shows as **Update Available** in the menu bar menu and a card on Overview; the update window shows what's new and installs only when you click. The app waits for changes in the approval panel to be answered, then restarts. A copy built from source can't update itself.
 - **Ask before changes:** the default for **New AI agent connections** (*Ask me first*) and **New command-line connections** (*Allow without asking*), and **Apply to All Connections…**, which sets every connection to one mode after a confirmation.
+- **Notifications:** see [Notifications](#notifications).
 
 **Advanced**
 

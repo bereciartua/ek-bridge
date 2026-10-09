@@ -143,6 +143,12 @@ final class LiveTestAutomation {
             case "setGrants": completion(.success(try setGrants(command)))
             case "pause", "resume": completion(.success(try setPaused(command)))
             case "setApproval": completion(.success(try setApproval(command)))
+            case "setNotification":
+                guard let kind = (command["kind"] as? String).flatMap(NotificationKind.init(rawValue:)) else {
+                    throw CommandError(message: "kind is declined, refused or update")
+                }
+                model.setNotification(kind, command["on"] as? Bool ?? true)
+                completion(.success(model.notificationKinds.map(\.rawValue).sorted()))
             case "setAsksForAccess":
                 let id = try clientID(command)
                 let on = command["on"] as? Bool ?? true
@@ -284,7 +290,10 @@ final class LiveTestAutomation {
             "connections": connections,
             "pending": pending,
             "activity": activity,
-            "notifications": [Any](),
+            // Posted this session (C05); only test items exist in test collections.
+            "notifications": model.postedNotifications.map { ["kind": $0.kind.rawValue, "title": $0.title, "body": $0.body] },
+            "notificationPermission": "\(model.notificationPermission)",
+            "notificationKinds": model.notificationKinds.map(\.rawValue).sorted(),
             "testCollections": testCollections().map {
                 ["id": $0.calendarIdentifier, "name": $0.title,
                  "resource": $0.allowedEntityTypes.contains(.event) ? "calendar" : "reminderList"]

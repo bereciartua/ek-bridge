@@ -222,8 +222,22 @@ final class UIReview {
             showItem: { [unowned self] _ in
                 self.itemShows += 1
                 return true
-            })
+            },
+            notifications: NotificationControls(
+                post: { [unowned self] in self.posted.append($0) },
+                permission: { [unowned self] done in MainActor.assumeIsolated { done(self.notificationPermission) } },
+                requestPermission: { [unowned self] done in
+                    MainActor.assumeIsolated {
+                        if self.notificationPermission == .notDetermined { self.notificationPermission = .allowed }
+                        done(self.notificationPermission == .allowed)
+                    }
+                },
+                openSettings: {}))
     }
+
+    /// The fake notification center (C05): what was posted, and what macOS allows.
+    var posted = [AppNotification]()
+    var notificationPermission = NotificationPermission.notDetermined
 
     /// The panel's summary for the seeded "Design review" change: moved an hour later.
     static var designSummary: ApprovalSummary {
@@ -1625,6 +1639,59 @@ final class BehaviorReview {
             self.review.approvals.allow(item.id)
             return self.model.recentSummaries["\(UIReview.claudeID)|c03"] == item.summary
         }
+        // C05: notifications.
+        step("a change nobody answered posts one notification") {
+            self.review.posted.removeAll()
+            self.model.navigate(to: .overview)
+            let request = BridgeRequest(id: "c05", command: .updateEvent,
+                                        parameters: ["calendarID": "cal-work", "itemID": "fixture-update"])
+            var asked = ApprovalRequest(clientID: UIReview.claudeID, clientName: "Claude Code", agent: nil,
+                                        request: request, targetID: "cal-work")
+            asked.requestID = "\(UIReview.claudeID)|c05"
+            _ = self.review.approvals.request(asked) { _ in }
+            guard let item = self.review.approvals.pending.last else { return false }
+            self.review.approvals.expired(item)
+            self.review.approvals.withdrawAll()
+            let note = self.review.posted.last
+            return self.review.posted.count == 1 && note?.kind == .declined &&
+                note?.title == "A change wasn't made" &&
+                note?.body == "Claude Code wanted to change an event (“Design review”). Nobody answered in 45 s." &&
+                self.review.notificationPermission == .allowed
+        }
+        step("refused is off by default, then posts once per connection") {
+            self.review.posted.removeAll()
+            guard !self.model.notificationKinds.contains(.refused),
+                  self.model.notificationKinds == [.declined, .update] else { return false }
+            let refuse = {
+                let request = BridgeRequest(id: UUID().uuidString, command: .createEvent,
+                                            parameters: ["calendarID": "cal-family", "title": "x"])
+                _ = self.review.registry.authorize(clientID: UIReview.cursorID, request: request, origin: .cli)
+                self.model.refresh()
+            }
+            refuse()
+            guard self.review.posted.isEmpty else { return false }
+            self.model.setNotification(.refused, true)
+            refuse()
+            refuse()
+            let ok = self.review.posted.count == 1 && self.review.posted[0].body == "Cursor can't add events to Family."
+            self.model.setNotification(.refused, false)
+            return ok
+        }
+        step("an update posts once per version") {
+            // Not from Overview, which shows the update itself.
+            self.model.navigate(to: .activity)
+            self.review.posted.removeAll()
+            self.model.updateFound(FoundUpdate(version: "9.9.9", critical: false))
+            self.model.updateFound(nil)
+            self.model.updateFound(FoundUpdate(version: "9.9.9", critical: false))
+            self.model.updateFound(nil)
+            return self.review.posted.map(\.body) == ["EK Bridge 9.9.9 is available."]
+        }
+        step("clicking a declined notification opens its Activity row") {
+            self.model.handleNotification(AppNotification.openActivity, kind: .declined,
+                                          info: [AppNotification.requestIDKey: "nothing"])
+            return self.model.route == .activity
+        }
         step("deleted item shows Deleted") {
             guard let gone = self.model.activity.first(where: { $0.item?.id == "ev-gone" }),
                   case .found(let item) = self.model.itemDisplay(gone) else { return false }
@@ -1890,7 +1957,25 @@ final class SnapshotReview {
                 }?.id
                 return main
             }
+            step("settings-notifications") {
+                self.review.calendarStatus = .fullAccess
+                self.model.refresh()
+                self.model.activitySelection = nil
+                main?.setContentSize(MainWindowController.defaultSize)
+                self.model.settingsTab = .general
+                self.model.navigate(to: .settings)
+                self.model.settingsScrollTarget = "notifications"
+                return main
+            }
+            step("settings-notifications-off") {
+                self.review.notificationPermission = .denied
+                self.model.refreshNotificationPermission()
+                self.model.settingsScrollTarget = "notifications"
+                return main
+            }
             step("settings") {
+                self.review.notificationPermission = .notDetermined
+                self.model.refreshNotificationPermission()
                 self.review.calendarStatus = .fullAccess
                 self.model.refresh()
                 self.model.activitySelection = nil

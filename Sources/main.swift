@@ -66,6 +66,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
         clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
     private let keepAwake = KeepAwake()
+    private lazy var notificationPoster = NotificationPoster()
     private lazy var updater = SparkleUpdater(gate: UpdateRelaunchGate(
         pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
         maximumWait: ApprovalCenter.timeout + 5))
@@ -99,6 +100,9 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         updater.start()
         #endif
         model = BridgeAppModel(services: liveServices())
+        notificationPoster.onResponse = { [weak self] action, kind, info in
+            self?.model.handleNotification(action, kind: kind, info: info)
+        }
         // Retention (ActivityRetention) runs at launch, then as rows are added.
         activityStore.scheduleCompaction()
         updater.foundUpdateChanged = { [weak self] in self?.model.updateFound($0) }
@@ -265,7 +269,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             installedAgents: { [weak self] in self?.installedAgents.current() ?? [] },
             agentSetup: Self.agentSetup,
             itemLookup: { [weak self] ref in self.map { ItemLookup.snapshot(ref, store: $0.store) } },
-            showItem: { ItemLookup.show($0) })
+            showItem: { ItemLookup.show($0) },
+            notifications: notificationPoster.controls)
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {
