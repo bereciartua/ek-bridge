@@ -230,6 +230,12 @@ struct TunnelHealthTests {
               == "Install Tailscale, or choose another tunnel.", "install words")
         check(TunnelHealth.unknown.label == "Can't check on this Mac" && TunnelHealth.unknown.tone == .neutral
               && !TunnelHealth.unknown.warns, "can't check")
+        // Tunnel down (D10): only while Remote Access is on with an address.
+        check(TunnelHealth.isDown(remoteActive: true, health: stopped), "down")
+        check(!TunnelHealth.isDown(remoteActive: false, health: stopped), "not while off")
+        check(!TunnelHealth.isDown(remoteActive: true, health: .unknown) && !TunnelHealth.isDown(remoteActive: true, health: nil)
+              && !TunnelHealth.isDown(remoteActive: true, health: .notInstalled), "can't tell isn't down")
+        check(TunnelHealth.isDown(remoteActive: true, health: wrong), "wrong port is down")
         // The Status row when the test failed.
         check(stopped.unreachableReason(.tailscaleFunnel, remotePort: 47616) == "Tailscale Funnel isn't running on this Mac.",
               "failure text")

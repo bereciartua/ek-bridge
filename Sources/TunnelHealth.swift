@@ -62,6 +62,12 @@ enum TunnelHealth: Equatable {
         }
     }
 
+    /// The sidebar badge's Down and the menu's "tunnel down" (D10): Remote
+    /// Access is on with an address, and the tunnel in use warns.
+    static func isDown(remoteActive: Bool, health: TunnelHealth?) -> Bool {
+        remoteActive && health?.warns == true
+    }
+
     /// The public address the tool reported, if any.
     var address: String? {
         switch self {

@@ -103,20 +103,29 @@ struct SidebarView: View {
                         HStack {
                             Text(String(localized: "Remote Access"))
                             Spacer()
-                            Text(model.remoteActive ? String(localized: "On") : String(localized: "Off"))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(model.remoteActive ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(model.remoteActive ? AnyShapeStyle(Color.accentColor)
-                                                               : AnyShapeStyle(.quaternary), in: Capsule())
+                            if model.tunnelDown {
+                                // D10: on, but the tunnel on this Mac stopped.
+                                Label(String(localized: "Down"), systemImage: "exclamationmark.triangle.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text(model.remoteActive ? String(localized: "On") : String(localized: "Off"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(model.remoteActive ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(model.remoteActive ? AnyShapeStyle(Color.accentColor)
+                                                                   : AnyShapeStyle(.quaternary), in: Capsule())
+                            }
                         }
                     } icon: {
                         Image(systemName: "globe")
                     }
                     .tag(Route.remoteAccess)
-                    .accessibilityLabel(model.remoteActive ? String(localized: "Remote Access, on")
-                                                           : String(localized: "Remote Access, off"))
+                    .accessibilityLabel(model.tunnelDown ? String(localized: "Remote Access, tunnel down")
+                                        : model.remoteActive ? String(localized: "Remote Access, on")
+                                                             : String(localized: "Remote Access, off"))
                     Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
                         .tag(Route.settings)
                 }

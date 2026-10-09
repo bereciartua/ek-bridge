@@ -145,7 +145,7 @@ final class LiveTestAutomation {
             case "setApproval": completion(.success(try setApproval(command)))
             case "setNotification":
                 guard let kind = (command["kind"] as? String).flatMap(NotificationKind.init(rawValue:)) else {
-                    throw CommandError(message: "kind is declined, refused or update")
+                    throw CommandError(message: "kind is declined, refused, update or tunnelDown")
                 }
                 model.setNotification(kind, command["on"] as? Bool ?? true)
                 completion(.success(model.notificationKinds.map(\.rawValue).sorted()))
@@ -352,6 +352,9 @@ final class LiveTestAutomation {
             "candidate": model.remoteCandidate ?? NSNull(),
             "remembered": Dictionary(uniqueKeysWithValues: model.rememberedAddresses.map { ($0.key.rawValue, $0.value) }),
             "unreachableReason": model.remoteUnreachableReason ?? NSNull(),
+            "tunnelDown": model.tunnelDown,
+            "menuLine": model.remoteActive ? model.remoteMenuLine : NSNull(),
+            "sidebarBadge": model.tunnelDown ? "Down" : model.remoteActive ? "On" : "Off",
         ]
     }
 

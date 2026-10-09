@@ -1779,6 +1779,55 @@ final class BehaviorReview {
                 && self.model.banner?.title == "The Remote Access address changed."
                 && self.model.rememberedAddresses[before.label] == renamed && self.model.remoteCandidate == nil
         }
+        // Plan 08 T08: tunnel down in the sidebar, the menu and a notification (off by default).
+        var postedBefore = 0
+        step("tunnel down: On while the tunnel runs") {
+            self.model.navigate(to: .overview)
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel()
+            return !self.model.notificationKinds.contains(.tunnelDown)
+        }
+        step("…badge On, menu without tunnel down") {
+            !self.model.tunnelDown && self.model.remoteActive && !self.model.remoteMenuLine.contains("tunnel down")
+        }
+        step("tunnel down: the tunnel stops, with the notification turned on") {
+            self.model.setNotification(.tunnelDown, true)
+            postedBefore = self.review.posted.count
+            self.review.tunnelHealth[self.model.tunnelLabel] = .notRunning(reason: .noTunnel)
+            self.model.checkTunnel()
+            return true
+        }
+        step("…Down, tunnel down in the menu, one notification") {
+            let note = self.review.posted.last
+            return self.model.tunnelDown && self.model.remoteMenuLine == "Remote Access on · tunnel down"
+                && self.review.posted.count == postedBefore + 1 && note?.kind == .tunnelDown
+                && note?.body == "\(self.model.tunnelLabel.name) stopped. Cloud agents can't reach this Mac."
+        }
+        step("tunnel down: still down posts nothing more") {
+            self.model.checkTunnel()
+            return true
+        }
+        step("…still one") { self.review.posted.count == postedBefore + 1 }
+        step("tunnel down: back up, then down again within 30 minutes posts nothing") {
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel { _ in
+                self.review.tunnelHealth[self.model.tunnelLabel] = .wrongPort(port: 47615, address: nil)
+                self.model.checkTunnel()
+            }
+            return true
+        }
+        step("…Down again, no second notification") {
+            self.model.tunnelDown && self.review.posted.count == postedBefore + 1
+        }
+        step("tunnel down: never while Remote Access is off") {
+            self.model.applyRemoteEnabled(false)
+            let off = !self.model.tunnelDown
+            self.model.applyRemoteEnabled(true)
+            self.model.setNotification(.tunnelDown, false)
+            self.review.tunnelHealth = UIReview.defaultTunnelHealth
+            self.model.checkTunnel()
+            return off
+        }
         step("turning off from the page") {
             self.model.setRemoteAccessEnabled(false)
             return !self.model.remoteEnabled && self.model.remoteStatus == .off

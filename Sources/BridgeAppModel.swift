@@ -398,6 +398,14 @@ final class BridgeAppModel {
     private(set) var tunnelHealth: TunnelHealth?
     private(set) var tunnelHealthProvider: TunnelProvider?
     private(set) var tunnelHealthCheckedAt: Date?
+    /// The last check of the tunnel in use (D10's badge, menu and
+    /// notification), kept apart from a switch's checks of another tunnel.
+    private(set) var inUseTunnelHealth: TunnelHealth?
+    private(set) var inUseTunnelProvider: TunnelProvider?
+    /// For the tunnel-down notification: down at the previous check of the
+    /// tunnel in use (nil after launch or turning on), and the last post.
+    @ObservationIgnored private var lastTunnelDown: Bool?
+    @ObservationIgnored private var lastTunnelDownNotice: Date?
     @ObservationIgnored private var tunnelCheckRunning = false
     @ObservationIgnored private var tunnelCheckAgain = false
     @ObservationIgnored private var tunnelCheckStarted: Date?
@@ -1814,7 +1822,11 @@ final class BridgeAppModel {
     /// Whether the window already shows what the notification would open.
     private func windowShows(_ kind: NotificationKind) -> Bool {
         guard window?.isKeyWindow == true, windowIsVisible() else { return false }
-        return kind == .update ? route == .overview || route == .settings : route == .activity
+        switch kind {
+        case .update: return route == .overview || route == .settings
+        case .tunnelDown: return route == .remoteAccess
+        case .declined, .refused: return route == .activity
+        }
     }
 
     private func notify(_ note: AppNotification, clientID: String? = nil) {
@@ -1882,6 +1894,8 @@ final class BridgeAppModel {
         case (.update?, _):
             show(.overview)
             checkForUpdates()
+        case (.tunnelDown?, _):
+            show(.remoteAccess)
         case (.refused?, AppNotification.allow):
             // Allow…: the connection's Access tab at that calendar or list.
             if let clientID = info[AppNotification.clientIDKey],
@@ -2694,8 +2708,10 @@ final class BridgeAppModel {
     /// Mac knows how to reach it, so the sidebar and menu bar say it's off.
     var remoteActive: Bool { remoteEnabled && remoteOrigin != nil }
 
-    /// "Remote Access on · 2 cloud clients", for the menu bar.
+    /// "Remote Access on · 2 cloud clients", for the menu bar; "Remote
+    /// Access on · tunnel down" when the tunnel stopped.
     var remoteMenuLine: String {
+        if tunnelDown { return String(localized: "Remote Access on · tunnel down") }
         let count = cloudClients.count
         return count == 1 ? String(localized: "Remote Access on · 1 cloud connection")
                           : String(localized: "Remote Access on · \(count) cloud connections")
@@ -2769,6 +2785,8 @@ final class BridgeAppModel {
             setRemoteOffAt(nil)
             remoteCandidate = nil
             tunnelHealth = nil
+            inUseTunnelHealth = nil
+            lastTunnelDown = nil
             // A switch stays open, but its test no longer applies.
             if tunnelSwitch != nil {
                 tunnelSwitch?.test = .notTested
@@ -3165,6 +3183,7 @@ final class BridgeAppModel {
                     self.tunnelHealthProvider = provider
                 }
                 self.tunnelHealthCheckedAt = Date()
+                if provider == self.tunnelLabel { self.inUseTunnelChecked(provider, health) }
                 self.advanceGuideIfFound()
             }
             if self.tunnelCheckAgain || !current {
@@ -3176,6 +3195,30 @@ final class BridgeAppModel {
             self.tunnelCheckWaiters = []
             waiters.forEach { $0(health) }
         }
+    }
+
+    /// Remote Access is on with an address, but the tunnel in use isn't
+    /// running (or forwards elsewhere, or isn't public): the sidebar says
+    /// Down and the menu "tunnel down" (D10).
+    var tunnelDown: Bool {
+        TunnelHealth.isDown(remoteActive: remoteActive,
+                            health: inUseTunnelProvider == tunnelLabel ? inUseTunnelHealth : nil)
+    }
+
+    private func inUseTunnelChecked(_ provider: TunnelProvider, _ health: TunnelHealth) {
+        if inUseTunnelHealth != health || inUseTunnelProvider != provider {
+            inUseTunnelHealth = health
+            inUseTunnelProvider = provider
+        }
+        let down = tunnelDown
+        let now = Date()
+        if NotificationRules.shouldPostTunnelDown(wasDown: lastTunnelDown, isDown: down, remoteOn: remoteActive,
+                                                  lastPosted: lastTunnelDownNotice, now: now),
+           notificationKinds.contains(.tunnelDown) {
+            lastTunnelDownNotice = now
+            notify(NotificationRules.tunnelDown(tunnelName: provider.name))
+        }
+        lastTunnelDown = remoteActive ? down : nil
     }
 
     /// Opening the Remote Access page, or the Mac waking up.

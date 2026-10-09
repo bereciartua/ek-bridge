@@ -86,7 +86,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
         button.imagePosition = title.length > 0 ? .imageLeading : .imageOnly
         button.attributedTitle = title
-        if model.remoteActive { label += ", " + String(localized: "Remote Access on") }
+        if model.remoteActive {
+            label += ", " + (model.tunnelDown ? String(localized: "Remote Access on, tunnel down")
+                                              : String(localized: "Remote Access on"))
+        }
         button.setAccessibilityLabel(label)
         button.appearsDisabled = !model.bridge.isOn && !model.needsAttention
         button.setAccessibilityLabel(label)
@@ -149,7 +152,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         if model.remoteActive {
             let line = model.remoteMenuLine
             let remoteItem = item(line) { [weak self] in self?.model.show(.remoteAccess) }
-            remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)
+            remoteItem.attributedTitle = iconTitle(symbol("globe", color: model.tunnelDown ? .systemOrange : .systemBlue),
+                                                   line)
             menu.addItem(remoteItem)
             // One click cuts all cloud access (R5).
             let off = item(String(localized: "Turn Off Remote Access")) { [weak self] in
