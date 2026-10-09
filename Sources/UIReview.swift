@@ -2391,7 +2391,12 @@ final class SnapshotReview {
                 freshModel.dismissBanner()
                 return freshController.window
             }
+            step("setup-activity-empty") {
+                freshModel.navigate(to: .activity)
+                return freshController.window
+            }
             step("setup-complete") {
+                freshModel.navigate(to: .overview)
                 if let id = freshModel.activeClients.first?.id { freshReview.recordSuccess(id) }
                 return freshController.window
             }

@@ -37,6 +37,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             _ = model.pendingApprovalCount
             _ = model.pendingAccessRequests
             _ = model.remoteEnabled
+            _ = model.remoteOrigin
             _ = model.resumeAt
         } onChange: { [weak self] in
             DispatchQueue.main.async {
@@ -64,15 +65,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let image = MenuBarGlyph.image(glyph)
         image.accessibilityDescription = label
         button.image = image
-        // The pending count, and a globe while Remote Access is on, sit beside
-        // the icon.
+        // The pending count, and a globe while Remote Access is on with a
+        // tunnel address, sit beside the icon.
         let title = NSMutableAttributedString()
         if AppIdentity.isLiveTest {
             // The live-test copy can never be mistaken for the real one.
             title.append(NSAttributedString(string: "TEST ", attributes: [
                 .font: NSFont.systemFont(ofSize: 9, weight: .heavy)]))
         }
-        if model.remoteEnabled, let globe = NSImage(systemSymbolName: "globe",
+        if model.remoteActive, let globe = NSImage(systemSymbolName: "globe",
                                                    accessibilityDescription: String(localized: "Remote Access on")) {
             let attachment = NSTextAttachment()
             attachment.image = globe.withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
@@ -85,7 +86,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
         button.imagePosition = title.length > 0 ? .imageLeading : .imageOnly
         button.attributedTitle = title
-        if model.remoteEnabled { label += ", " + String(localized: "Remote Access on") }
+        if model.remoteActive { label += ", " + String(localized: "Remote Access on") }
         button.setAccessibilityLabel(label)
         button.appearsDisabled = !model.bridge.isOn && !model.needsAttention
         button.setAccessibilityLabel(label)
@@ -145,7 +146,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             mcpItem.toolTip = String(localized: "Open Settings ▸ Advanced")
             menu.addItem(mcpItem)
         }
-        if model.remoteEnabled {
+        if model.remoteActive {
             let line = model.remoteMenuLine
             let remoteItem = item(line) { [weak self] in self?.model.show(.remoteAccess) }
             remoteItem.attributedTitle = iconTitle(symbol("globe", color: .systemBlue), line)

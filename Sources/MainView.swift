@@ -89,6 +89,8 @@ struct SidebarView: View {
                         : String(localized: "You have 32 connections, the maximum. Remove one to add another."))
                     .accessibilityLabel(String(localized: "Add a Connection…"))
                 }
+                // Line the button up with the rows' trailing edge.
+                .padding(.trailing, 8)
             }
         }
         .listStyle(.sidebar)
@@ -101,21 +103,20 @@ struct SidebarView: View {
                         HStack {
                             Text(String(localized: "Remote Access"))
                             Spacer()
-                            if model.remoteEnabled {
-                                Text(String(localized: "On"))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 1)
-                                    .background(Color.accentColor, in: Capsule())
-                            }
+                            Text(model.remoteActive ? String(localized: "On") : String(localized: "Off"))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(model.remoteActive ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(model.remoteActive ? AnyShapeStyle(Color.accentColor)
+                                                               : AnyShapeStyle(.quaternary), in: Capsule())
                         }
                     } icon: {
                         Image(systemName: "globe")
                     }
                     .tag(Route.remoteAccess)
-                    .accessibilityLabel(model.remoteEnabled ? String(localized: "Remote Access, on")
-                                                            : String(localized: "Remote Access"))
+                    .accessibilityLabel(model.remoteActive ? String(localized: "Remote Access, on")
+                                                           : String(localized: "Remote Access, off"))
                     Label(String(localized: "Settings"), systemImage: "slider.horizontal.3")
                         .tag(Route.settings)
                 }

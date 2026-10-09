@@ -111,6 +111,12 @@ struct ActivityList: View {
                 Text(scope == .all ? String(localized: "Requests from your connections appear here, with what happened and why.")
                                    : String(localized: "This connection's requests appear here, with what happened and why."))
             }
+            // Fill the page like the table does, so the title stays at the top.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.card)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Palette.separator.opacity(0.6), lineWidth: 0.5))
         } else {
             GeometryReader { proxy in
                 // Only rows the filters show; a hidden selection closes the details.

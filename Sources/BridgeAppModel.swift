@@ -2578,6 +2578,10 @@ final class BridgeAppModel {
 
     var cloudClients: [ClientView] { activeClients.filter(\.cloudAccess) }
 
+    /// On and set up with a tunnel address. Until then nothing outside this
+    /// Mac knows how to reach it, so the sidebar and menu bar say it's off.
+    var remoteActive: Bool { remoteEnabled && remoteOrigin != nil }
+
     /// "Remote Access on · 2 cloud clients", for the menu bar.
     var remoteMenuLine: String {
         let count = cloudClients.count
