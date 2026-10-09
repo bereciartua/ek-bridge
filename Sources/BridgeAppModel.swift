@@ -684,7 +684,7 @@ final class BridgeAppModel {
     /// is written until the user clicks Add there.
     func beginOneClick(_ clientID: String, agent: AgentKind? = nil) {
         let agent = agent ?? self.agent(for: clientID)
-        guard agent.oneClick, client(clientID)?.hasMCPToken == true else { return }
+        guard agent.canOneClick, client(clientID)?.hasMCPToken == true else { return }
         oneClick = OneClickSession(clientID: clientID, agent: agent, phase: .loading)
         sheet = .configPreview
         services.agentSetup.preview(agent, setupContext(clientID)) { [weak self] result in

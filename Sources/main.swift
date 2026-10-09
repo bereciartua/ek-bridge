@@ -313,6 +313,10 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 guard agent != .claudeCode || environment["CLAUDE_CONFIG_DIR"]?.hasPrefix("/") == true else {
                     return done(.failure(OneClickFailure(message: "The test copy runs Claude Code only with CLAUDE_CONFIG_DIR set.")))
                 }
+                // Codex reads and writes CODEX_HOME (default ~/.codex): a scratch one only.
+                guard agent != .codex || environment["CODEX_HOME"].map({ $0.hasPrefix(home) }) == true else {
+                    return done(.failure(OneClickFailure(message: "The test copy sets Codex up only with CODEX_HOME inside the scratch home.")))
+                }
                 live.preview(agent, context, done)
             },
             apply: live.apply, restart: { _, done in done(false) })

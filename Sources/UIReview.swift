@@ -316,6 +316,23 @@ final class UIReview {
                         done(.success(.command(agent: agent, executable: NSHomeDirectory() + "/.local/bin/claude",
                                                arguments: arguments, key: key, replacing: false)))
                     }
+                case .codex(let key, _, let file, let table):
+                    // As without the codex command: its config.toml, with a model and another server.
+                    let before = Data("""
+                        model = "gpt-5-codex"
+
+                        [mcp_servers.filesystem]
+                        command = "npx"
+                        args = ["-y", "@modelcontextprotocol/server-filesystem", "~/Desktop"]
+
+                        """.utf8)
+                    let appended = try! AgentConfigWriter.appendTOML(current: before, key: key, table: table)
+                    let change = ConfigChange(
+                        fileURL: OneClickAgents.expand(file, home: NSHomeDirectory()), before: before,
+                        after: appended.after, outcome: appended.outcome,
+                        summary: String(localized: "Adds the “\(key)” server at the end"),
+                        diffLines: AgentConfigWriter.diff(before, appended.after))
+                    DispatchQueue.main.async { done(.success(.file(agent: agent, change: change))) }
                 }
             },
             apply: { [unowned self] preview, done in
@@ -2073,7 +2090,24 @@ final class SnapshotReview {
                 self.model.copySetup.insert(UIReview.claudeID)
                 return main
             }
+            // C07: Codex and Gemini CLI offer Add to … next to the copyable setup.
+            step("client-connect-codex") {
+                self.model.copySetup.remove(UIReview.claudeID)
+                self.model.agentChoice[UIReview.claudeID] = .codex
+                return main
+            }
+            step("sheet-config-preview-codex") {
+                self.model.beginOneClick(UIReview.claudeID, agent: .codex)
+                return main
+            }
+            step("sheet-config-preview-gemini") {
+                self.model.closeOneClick()
+                self.model.agentChoice[UIReview.claudeID] = .geminiCLI
+                self.model.beginOneClick(UIReview.claudeID, agent: .geminiCLI)
+                return main
+            }
             step("client-connect-direct-other") {
+                self.model.closeOneClick()
                 self.model.copySetup.remove(UIReview.claudeID)
                 self.model.agentChoice[UIReview.claudeID] = .other
                 return main

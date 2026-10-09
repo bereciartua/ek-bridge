@@ -39,6 +39,11 @@ enum ConfigWriteError: Error, Equatable {
     case changedSinceReading
     /// The insert didn't produce "the old file plus this entry" (never expected).
     case verificationFailed
+    /// TOML (C07): the server is already there in another shape.
+    case existingEntry(String)
+    /// TOML (C07): `mcp_servers` is written inline, so no table can be added.
+    case inlineTable(String)
+    case notText
 
     var message: String {
         switch self {
@@ -50,6 +55,9 @@ enum ConfigWriteError: Error, Equatable {
         case .unwritable(let reason): String(localized: "The file couldn't be written: \(reason)")
         case .changedSinceReading: String(localized: "The file changed while the preview was open. Nothing was written; try again.")
         case .verificationFailed: String(localized: "EK Bridge couldn't add its entry without changing anything else, so nothing was written.")
+        case .existingEntry(let key): String(localized: "It already has a different “\(key)” entry, so EK Bridge won't change it.")
+        case .inlineTable(let table): String(localized: "Its \(table) is written on one line, so EK Bridge won't change it.")
+        case .notText: String(localized: "The file isn't UTF-8 text, so EK Bridge won't change it.")
         }
     }
 }
@@ -141,6 +149,85 @@ enum AgentConfigWriter {
         }
         return ConfigChange(fileURL: target, before: before, after: merged.after, outcome: merged.outcome,
                             summary: summary, diffLines: diff(before ?? Data(), merged.after))
+    }
+
+    // MARK: TOML (C07)
+
+    /// Codex's config.toml after appending `table` ("[mcp_servers.<key>]" and
+    /// its lines). Nothing else in the file is touched. Refuses when the
+    /// server is already defined differently, or in any other shape (a dotted
+    /// key, a line in [mcp_servers], an inline mcp_servers), since TOML
+    /// can't define it twice.
+    static func appendTOML(current: Data?, key: String, table: String) throws -> (after: Data, outcome: ConfigChange.Outcome) {
+        guard let current else { return (Data((table + "\n").utf8), .created) }
+        guard let text = String(data: current, encoding: .utf8) else { throw ConfigWriteError.notText }
+        let tableLines = table.components(separatedBy: "\n")
+        let header = normalizedHeader(tableLines[0])
+        let wanted = tableLines.dropFirst().map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let lines = text.components(separatedBy: "\n")
+        let bareKey = key.replacingOccurrences(of: "\"", with: "")
+        var inServers = false
+        var index = 0
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") || line.isEmpty { index += 1; continue }
+            if line.hasPrefix("[") {
+                let name = normalizedHeader(line)
+                inServers = name == "[mcp_servers]"
+                if name == header {
+                    // The same table: identical is "already set up", anything else is refused.
+                    var body = [String]()
+                    var next = index + 1
+                    while next < lines.count, !lines[next].trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+                        let entry = lines[next].trimmingCharacters(in: .whitespaces)
+                        if !entry.isEmpty && !entry.hasPrefix("#") { body.append(entry) }
+                        next += 1
+                    }
+                    if body == wanted { return (current, .unchanged) }
+                    throw ConfigWriteError.existingEntry(key)
+                }
+                if name.hasPrefix(String(header.dropLast()) + ".") { throw ConfigWriteError.existingEntry(key) }
+                index += 1
+                continue
+            }
+            let compact = line.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\"", with: "")
+            if compact.hasPrefix("mcp_servers=") { throw ConfigWriteError.inlineTable("mcp_servers") }
+            if compact.hasPrefix("mcp_servers.\(bareKey).") || compact.hasPrefix("mcp_servers.\(bareKey)=")
+                || (inServers && (compact.hasPrefix("\(bareKey)=") || compact.hasPrefix("\(bareKey)."))) {
+                throw ConfigWriteError.existingEntry(key)
+            }
+            index += 1
+        }
+        var after = text
+        if !after.isEmpty && !after.hasSuffix("\n") { after += "\n" }
+        if !after.isEmpty { after += "\n" }
+        after += table + "\n"
+        return (Data(after.utf8), .added)
+    }
+
+    /// "[ mcp_servers . "ek-bridge" ]" → "[mcp_servers.ek-bridge]".
+    private static func normalizedHeader(_ line: String) -> String {
+        var header = line
+        if let comment = header.range(of: "#", options: .backwards), !header[comment.lowerBound...].contains("]") {
+            header = String(header[..<comment.lowerBound])
+        }
+        return header.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\"", with: "")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    static func previewTOML(fileURL: URL, key: String, table: String,
+                            fileManager: FileManager = .default) throws -> ConfigChange {
+        let target = fileURL.resolvingSymlinksInPath()
+        let before = try read(target, fileManager: fileManager)
+        let appended = try appendTOML(current: before, key: key, table: table)
+        let name = fileURL.lastPathComponent
+        let summary: String = switch appended.outcome {
+        case .created: String(localized: "Creates \(name) with the “\(key)” server")
+        case .unchanged: String(localized: "Already set up: “\(key)” is there and up to date")
+        default: String(localized: "Adds the “\(key)” server at the end")
+        }
+        return ConfigChange(fileURL: target, before: before, after: appended.after, outcome: appended.outcome,
+                            summary: summary, diffLines: diff(before ?? Data(), appended.after))
     }
 
     static func read(_ url: URL, fileManager: FileManager) throws -> Data? {

@@ -603,8 +603,8 @@ final class LiveTestAutomation {
     /// `confirm` is true. Only into the scratch home the copy was started with.
     private func oneClick(_ command: [String: Any], completion: @escaping Completion) throws {
         let id = try clientID(command)
-        guard let agent = AgentKind(rawValue: command["agent"] as? String ?? ""), agent.oneClick else {
-            throw CommandError(message: "agent is claudeDesktop, cursor or claudeCode")
+        guard let agent = AgentKind(rawValue: command["agent"] as? String ?? ""), agent.canOneClick else {
+            throw CommandError(message: "agent is claudeDesktop, cursor, claudeCode, codex or geminiCLI")
         }
         let confirm = command["confirm"] as? Bool ?? false
         model.beginOneClick(id, agent: agent)

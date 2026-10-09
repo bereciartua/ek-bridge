@@ -54,6 +54,15 @@ For these three, the connection's **Connect** tab has **Add to Claude Desktop…
 
 **Copy the setup instead** and **Advanced options** show the copyable setups below and the other methods.
 
+#### Also one click, next to the setup: Codex and Gemini CLI
+
+For **Codex** and **Gemini CLI**, the Connect tab shows the copyable setup as before, with **Add to Codex…** (or Gemini CLI) next to **Advanced options**. It works the same way (a preview first, a backup, never the token); it stays next to the setup rather than replacing it until it has been checked on more real-world configs.
+
+- **Codex:** with the `codex` command installed (found as for `claude` above), EK Bridge runs `codex mcp add ek-bridge -- <launcher> --client <ID>`, the same command as the setup, as an argument list; if Codex already has an `ek-bridge` server, the sheet asks to **Replace** it (`codex mcp remove ek-bridge` first). Without the command, it appends the same `[mcp_servers.ek-bridge]` table to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), after everything else in the file, with a backup. It never rewrites the file: if the server is already defined in any other shape (a different table, a dotted key, a line in `[mcp_servers]`, or `mcp_servers` written on one line), nothing is written and the sheet offers **Copy the Setup Instead**. Codex connects the next time it starts.
+- **Gemini CLI:** the JSON merge described for Claude Desktop, into `~/.gemini/settings.json` ▸ `mcpServers`, with the setup's 60-second `timeout`. Restart Gemini CLI.
+
+Zed's settings allow comments, so Zed keeps the copyable setup, as do Cline and JetBrains AI Assistant.
+
 #### Copy the setup
 
 The Connect ▸ AI agent tab generates these for the connection and your installed app; copy them from there rather than from this page. The examples below use the app at `/Applications/EKBridge.app`, client ID `3f1c2b7e-8a41-4d0c-9a8e-5b6f1d2e9a1c`, port 47615 and home folder `/Users/you`. They're the test goldens in `Tests/agent-setup/`.

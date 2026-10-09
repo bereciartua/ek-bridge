@@ -40,6 +40,8 @@ set -eu
 #   LIVE_TEST_CLAUDE_CONFIG_DIR
 #                           start: CLAUDE_CONFIG_DIR for the claude command, so
 #                           one-click setup never touches the real ~/.claude.json.
+#   LIVE_TEST_CODEX_HOME    start: CODEX_HOME for the codex command and Codex's
+#                           config.toml; must be inside LIVE_TEST_AGENT_HOME.
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 bundle_id=io.github.bereciartua.ekbridge.livetest
 app=${LIVE_TEST_APP:-"$project_dir/build/live-test/EK Bridge Test.app"}
@@ -138,6 +140,9 @@ start() {
     set -- "$app" --args "$@"
     if [ -n "${LIVE_TEST_CLAUDE_CONFIG_DIR:-}" ]; then
         set -- --env "CLAUDE_CONFIG_DIR=$LIVE_TEST_CLAUDE_CONFIG_DIR" "$@"
+    fi
+    if [ -n "${LIVE_TEST_CODEX_HOME:-}" ]; then
+        set -- --env "CODEX_HOME=$LIVE_TEST_CODEX_HOME" "$@"
     fi
     if [ -n "${LIVE_TEST_AGENT_HOME:-}" ]; then
         set -- --env "EKB_AGENT_HOME=$LIVE_TEST_AGENT_HOME" "$@"

@@ -25,7 +25,8 @@ struct AgentConfigWriterTests {
         precondition(desktopFile == "~/Library/Application Support/Claude/claude_desktop_config.json" &&
                      cursorFile == "~/.cursor/mcp.json" && root == "mcpServers" && key == "ek-bridge")
         precondition(arguments.prefix(5) == ["mcp", "add-json", "--scope", "user", "ek-bridge"] && arguments.count == 6)
-        precondition(AgentKind.vsCode.oneClickSetup(context) == nil && AgentKind.codex.oneClickSetup(context) == nil)
+        precondition(AgentKind.vsCode.oneClickSetup(context) == nil && AgentKind.zed.oneClickSetup(context) == nil)
+        try codexAndGemini(context)
         // The one-click entries are the snippets' own entries.
         let desktopSnippet = AgentKind.claudeDesktop.snippet(.launcher, context).text
         precondition(desktopSnippet == SetupJSON.object([(root, .object([(key, desktop)]))]).text)
@@ -111,7 +112,69 @@ struct AgentConfigWriterTests {
 
         try applyChecks(key: key, entry: desktop)
         locatorChecks()
-        print("Agent config writer: \(rewritten > 0 ? "\(rewritten) goldens rewritten, " : "")merges keep every key and the file's formatting, refusals, no tokens, diff, backups, atomic writes, changed-file refusal, symlinks and the executable locator passed")
+        print("Agent config writer: \(rewritten > 0 ? "\(rewritten) goldens rewritten, " : "")merges keep every key and the file's formatting, Codex TOML appends and refusals, Gemini CLI, refusals, no tokens, diff, backups, atomic writes, changed-file refusal, symlinks and the executable locator passed")
+    }
+
+    /// C07: Codex (its command, or a TOML table appended to config.toml) and
+    /// Gemini CLI (the JSON merge into settings.json), both the snippets' own entries.
+    static func codexAndGemini(_ context: SetupContext) throws {
+        guard case .codex(let key, let arguments, let file, let table)? = AgentKind.codex.oneClickSetup(context),
+              case .jsonMerge(let geminiFile, let root, _, let gemini)? = AgentKind.geminiCLI.oneClickSetup(context)
+        else { preconditionFailure("Codex and Gemini CLI setups") }
+        precondition(AgentKind.codex.oneClickTrial && AgentKind.geminiCLI.oneClickTrial && !AgentKind.codex.oneClick)
+        precondition(file == "~/.codex/config.toml" && geminiFile == "~/.gemini/settings.json" && root == "mcpServers")
+        precondition(arguments == ["mcp", "add", "ek-bridge", "--", context.launcherPath, "--client", context.clientID])
+        let snippet = AgentKind.codex.snippet(.launcher, context)
+        precondition(snippet.extraSnippets.first?.text == table, "the config.toml lines are the snippet's")
+        precondition(snippet.text.hasPrefix("codex mcp add ek-bridge -- ") && snippet.text.contains(context.launcherPath) &&
+                     snippet.text.hasSuffix("--client \(context.clientID)"), "the same command as the snippet")
+        precondition(AgentKind.geminiCLI.snippet(.launcher, context).text
+                     == SetupJSON.object([(root, .object([(key, gemini)]))]).text)
+        func toml(_ input: String?) throws -> (String, ConfigChange.Outcome) {
+            let result = try AgentConfigWriter.appendTOML(current: input.map { Data($0.utf8) }, key: key, table: table)
+            let text = String(decoding: result.after, as: UTF8.self)
+            precondition(!text.contains("ekb_mcp_v1_"), "never a token")
+            return (text, result.outcome)
+        }
+        func refused(_ input: String, _ expected: ConfigWriteError) {
+            do { _ = try toml(input); preconditionFailure("refused: \(input)") }
+            catch let error as ConfigWriteError { precondition(error == expected, "\(error)") }
+            catch { preconditionFailure("\(error)") }
+        }
+        // A missing file is created with the table.
+        let (created, createdOutcome) = try toml(nil)
+        precondition(createdOutcome == .created && created == table + "\n")
+        // Appended after everything else, which is kept byte for byte.
+        let existing = "# my settings\nmodel = \"gpt-5-codex\"\n\n[mcp_servers.other]\ncommand = \"x\"   # keep\n"
+        let (added, addedOutcome) = try toml(existing)
+        precondition(addedOutcome == .added && added == existing + "\n" + table + "\n", added)
+        // No trailing newline: one is added first.
+        let (noNewline, _) = try toml("model = \"o3\"")
+        precondition(noNewline == "model = \"o3\"\n\n" + table + "\n")
+        // The same table already there (spacing and quotes aside): unchanged.
+        let quoted = table.replacingOccurrences(of: "[mcp_servers.ek-bridge]", with: "[ mcp_servers.\"ek-bridge\" ]")
+        let (same, sameOutcome) = try toml("model = \"o3\"\n\n" + quoted + "\n\n[profiles.x]\nmodel = \"o3\"\n")
+        precondition(sameOutcome == .unchanged && same.hasPrefix("model"))
+        // Anything else that defines it is refused, never rewritten.
+        refused("[mcp_servers.ek-bridge]\ncommand = \"/somewhere/else\"\n", .existingEntry("ek-bridge"))
+        refused("[mcp_servers]\nek-bridge = { command = \"x\" }\n", .existingEntry("ek-bridge"))
+        refused("mcp_servers.ek-bridge.command = \"x\"\n", .existingEntry("ek-bridge"))
+        refused("[mcp_servers.ek-bridge.env]\nA = \"1\"\n", .existingEntry("ek-bridge"))
+        refused("mcp_servers = { other = { command = \"x\" } }\n", .inlineTable("mcp_servers"))
+        do {
+            _ = try AgentConfigWriter.appendTOML(current: Data([0xff, 0xfe, 0x00]), key: key, table: table)
+            preconditionFailure("binary refused")
+        } catch let error as ConfigWriteError { precondition(error == .notText) }
+        // Comments mentioning it don't count.
+        let (commented, commentedOutcome) = try toml("# [mcp_servers.ek-bridge] was here\n")
+        precondition(commentedOutcome == .added && commented.hasSuffix(table + "\n"))
+        // Gemini CLI: the JSON merge, with its timeout, next to other settings.
+        let geminiMerged = try AgentConfigWriter.merge(
+            current: Data(#"{"theme": "Default", "mcpServers": {"other": {"command": "x"}}}"#.utf8), key: key, entry: gemini)
+        let geminiText = String(decoding: geminiMerged.after, as: UTF8.self)
+        precondition(geminiMerged.outcome == .added && geminiText.contains("\"timeout\":60000") &&
+                     geminiText.contains("\"theme\": \"Default\"") && !geminiText.contains("ekb_mcp_v1_"), geminiText)
+        golden("codex-config-appended", added)  // TOML text, in the suite's .json golden file
     }
 
     static func golden(_ name: String, _ text: String) {
