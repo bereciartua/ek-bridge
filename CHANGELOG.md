@@ -6,6 +6,14 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-09
+
+A small fix release for the Remote Access guide. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.2 works by installing its DMG over this one.
+
+### Fixed
+
+- The Remote Access guide moves on as soon as you pick a tunnel and goes back when you click **Back**. Before, picking Tailscale Funnel (the preselected tunnel) or clicking **Back** on the second step left the page as it was until you opened another page and came back.
+
 ## [0.10.2] - 2026-10-09
 
 A small release for how EK Bridge installs: opening the DMG now shows a window that says what to do. The app is unchanged. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.1 works by installing its DMG over this one.
