@@ -312,8 +312,6 @@ final class BridgeAppModel {
     private(set) var setupHidden = false
     private(set) var setupCompleted = false
     private(set) var setupSkipped = Set<SetupChecklist.Step>()
-    /// Set once by `RenameMigration`; Overview explains the new name until dismissed.
-    private(set) var renameNoticePending = false
     /// Set by `RenameMigration` until the checklist completes or is hidden.
     private var renameAccessRecheck = false
     // Updates (Settings ▸ General, the menu and Overview).
@@ -439,7 +437,8 @@ final class BridgeAppModel {
         setupCompleted = defaults.bool(forKey: Keys.setupCompleted)
         setupSkipped = Set((defaults.array(forKey: Keys.setupSkipped) as? [Int] ?? [])
             .compactMap(SetupChecklist.Step.init(rawValue:)))
-        renameNoticePending = defaults.bool(forKey: RenameMigration.noticeKey)
+        // Overview's rename notice (0.8–0.9) is gone; so is its flag.
+        defaults.removeObject(forKey: RenameMigration.noticeKey)
         renameAccessRecheck = defaults.bool(forKey: RenameMigration.accessRecheckKey)
         let viewed = defaults.double(forKey: Keys.activityLastViewed)
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
@@ -1820,10 +1819,6 @@ final class BridgeAppModel {
         return foundUpdate.critical || foundUpdate.version != dismissedUpdateVersion
     }
 
-    func dismissRenameNotice() {
-        renameNoticePending = false
-        services.defaults.set(false, forKey: RenameMigration.noticeKey)
-    }
 
     func hideSetup() {
         setupHidden = true

@@ -17,16 +17,11 @@ To verify a download, compare its SHA-256 with the release's `SHA256SUMS` (`shas
 The app used to be called EventKit Bridge (`EventKitBridge.app`). The renamed app has a new bundle ID, so macOS treats it as a different app. Once:
 
 1. Put `EKBridge.app` in Applications next to the old app and open it. If the old app is running, it asks to quit it first.
-2. It moves `~/Library/Application Support/EventKitBridge` to `~/Library/Application Support/EKBridge`, leaves a link at the old path for scripts that name key files there, and copies your settings. Connections, keys, tokens, grants, connected cloud apps and Activity are unchanged. Overview explains the rename until you dismiss it.
+2. It moves `~/Library/Application Support/EventKitBridge` to `~/Library/Application Support/EKBridge`, leaves a link at the old path for scripts that name key files there, and copies your settings. Connections, keys, tokens, grants, connected cloud apps and Activity are unchanged.
 3. Allow Calendar and Reminders access again from the setup checklist.
 4. Copy each agent's setup again from the connection's **Connect ▸ AI agent**, after removing the old entry (for example `claude mcp remove eventkit-bridge`). The launcher's path and the server name (`ek-bridge`) changed, so tool names and allowlists change from `mcp__eventkit-bridge__…` to `mcp__ek-bridge__…`. Cloud agents keep working: the Remote Access address and their credentials moved over.
 5. If you used them: install the command-line tool again (**Settings ▸ Advanced**) and turn on **Settings ▸ General ▸ Start at login**.
 6. Delete the old app. System Settings ▸ Privacy & Security ▸ Calendars and Reminders list it until you remove it there.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/overview-renamed-dark.png">
-  <img alt="Overview on the first launch after the rename: a dismissible notice that EventKit Bridge is now EK Bridge, above the setup checklist with Calendar and Reminders access to allow again and the other steps done." src="images/overview-renamed-light.png" width="660">
-</picture>
 
 If the move fails, for example because both folders exist, the app says what to fix and tries again on its next launch. The [changelog](../CHANGELOG.md) has the full list of changes and how to roll back.
 

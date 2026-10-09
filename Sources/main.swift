@@ -147,8 +147,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         #if !EVENTKIT_UI_REVIEW
         // A first run opens the window so the setup checklist is the first thing
-        // seen; so does the first run after the rename.
-        if model.showsSetupChecklist || model.renameNoticePending { windowController.present() }
+        // seen (after the rename too: macOS access has to be allowed again).
+        if model.showsSetupChecklist { windowController.present() }
         if let movedFrom = AppMover.movedFrom() {
             windowController.present()
             model.didMove(from: movedFrom)

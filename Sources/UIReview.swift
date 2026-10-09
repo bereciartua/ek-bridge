@@ -24,7 +24,7 @@ import SwiftUI
 //   --ui-bridge-off              start with the bridge off
 //   --ui-mcp listening|off|port-in-use   the fake MCP server's state (default listening)
 //   --ui-remote                  start with Remote Access on, a tunnel address and a cloud client
-//   --ui-renamed                 the first launch after the rename (notice; use with --ui-calendar notDetermined)
+//   --ui-renamed                 the first launch after the rename (access re-check; use with --ui-calendar notDetermined)
 //   --ui-update-found <version>  a scheduled check found that version (menu item, Overview card)
 //   --ui-update-critical         …and it's a security update
 //   --ui-no-updater              a build that can't update itself (built from source)
@@ -98,7 +98,6 @@ final class UIReview {
         if mcpMode == "off" { defaults.set(false, forKey: "LocalMCPServerAllowed") }
         if CommandLine.arguments.contains("--ui-remote") && fresh != true { seedRemote() }
         if renamed ?? CommandLine.arguments.contains("--ui-renamed") {
-            defaults.set(true, forKey: RenameMigration.noticeKey)
             defaults.set(true, forKey: RenameMigration.accessRecheckKey)
         }
         if !(fresh ?? CommandLine.arguments.contains("--ui-fresh")) {
@@ -772,18 +771,6 @@ final class UIReview {
     private func value(_ flag: String) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
-    }
-
-    /// The first launch after the rename: existing clients and Activity, access
-    /// not yet granted to the new bundle ID, and the notice.
-    func makeRenamedWindow() -> (BridgeAppModel, MainWindowController) {
-        let renamed = UIReview(fresh: false, calendar: .notDetermined, reminders: .notDetermined, renamed: true)
-        extraReviews.append(renamed)
-        let model = BridgeAppModel(services: renamed.services())
-        renamed.model = model
-        let controller = MainWindowController(model: model)
-        extraWindows.append(controller)
-        return (model, controller)
     }
 
     /// A second, empty environment for the setup checklist snapshots.
@@ -1867,7 +1854,6 @@ final class SnapshotReview {
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         controller.present()
-        let (renamedModel, renamedController) = review.makeRenamedWindow()
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let suffix = appearance == .aqua ? "light" : "dark"
             let main = controller.window
@@ -2420,18 +2406,7 @@ final class SnapshotReview {
                 scriptController.present()
                 return scriptController.window
             }
-            step("overview-renamed") {
-                scriptController.window?.orderOut(nil)
-                freshController.window?.orderOut(nil)
-                renamedModel.navigate(to: .overview)
-                renamedModel.bridgeDidChange(.on)
-                renamedModel.mcpStatusDidChange(.listening(port: UIReview.port))
-                renamedController.window?.appearance = NSAppearance(named: appearance)
-                renamedController.present()
-                return renamedController.window
-            }
             step("restore") {
-                renamedController.window?.orderOut(nil)
                 freshController.window?.orderOut(nil)
                 scriptController.window?.orderOut(nil)
                 self.controller.present()
@@ -2519,7 +2494,7 @@ final class SnapshotReview {
         if name.hasPrefix("approval-panel") || name.hasPrefix("access-request-panel") {
             return review.approvalPanel.window
         }
-        if name.hasPrefix("setup") || name.hasPrefix("overview-renamed") {
+        if name.hasPrefix("setup") {
             return NSApp.windows.first { $0.isVisible && $0 !== controller.window && $0.contentViewController != nil }
         }
         guard let main = controller.window else { return nil }

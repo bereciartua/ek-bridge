@@ -7,9 +7,6 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if model.renameNoticePending {
-                    RenameNotice(model: model)
-                }
                 if model.showsUpdateCard {
                     UpdateCard(model: model)
                 }
@@ -56,27 +53,6 @@ struct OverviewView: View {
             .frame(maxWidth: 860, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-}
-
-/// Shown once after the move from EventKit Bridge (`RenameMigration`), until dismissed.
-struct RenameNotice: View {
-    let model: BridgeAppModel
-
-    var body: some View {
-        BannerView(banner: Banner(
-            kind: .info,
-            title: String(localized: "\(LegacyIdentity.displayName) is now \(AppIdentity.displayName)."),
-            message: message),
-            onDismiss: { model.dismissRenameNotice() })
-    }
-
-    private var message: String {
-        var text = String(localized: "Your settings, connections and Activity moved over. macOS asks for Calendar and Reminders access once more. Copy each agent's setup again from its connection's Connect ▸ AI agent: the launcher moved, and the server is now \(AppIdentity.mcpServerKey) (tools mcp__\(AppIdentity.mcpServerKey)__…). Then delete the old app, so it can't start again at login.")
-        if model.commandLineTool == .elsewhere {
-            text += " " + String(localized: "Install the command-line tool again from Settings ▸ Advanced.")
-        }
-        return text
     }
 }
 

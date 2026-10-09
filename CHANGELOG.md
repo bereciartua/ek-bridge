@@ -15,6 +15,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 - **Add to Codex…** and **Add to Gemini CLI…** on the Connect tab, next to the copyable setup: Codex's own `codex mcp add` (or, without it, the same table appended to `~/.codex/config.toml`, never rewriting the file), and a merge into Gemini CLI's `~/.gemini/settings.json`. A preview first, a backup, never the token.
 - For a change you answered in the approval panel, Activity's details show what changed (*When: 10:00–11:00 → 11:00–12:00*) until EK Bridge quits. The panel's text is kept in memory only, never written.
 
+### Removed
+
+- Overview's one-time notice about the rename from EventKit Bridge. Upgrading from 0.7.0 still moves everything over and brings the setup checklist back for macOS access; docs/SETUP.md has the steps.
+
 ### Changed
 
 - Activity has its own file, `activity/activity.jsonl`, instead of living inside the client registry. It keeps changes and problems for 90 days (up to 5,000) and other requests for 7 days (up to 2,000), instead of the last 500 rows in all. Each row now has a request ID, and changes keep the item's EventKit ID (never its title or content), so EK Bridge can look the item up when you open the row. Rows already in the registry move over at the first launch. The registry stays at version 4 with an empty Activity list, so rolling back to 0.8.2 or later still works.
