@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-09
+
+A trust release. Activity says what each agent changed, by name (*Moved “Design review”*), looked up when you open it, with **Show in Calendar**; changes and problems are kept for 90 days. When an agent is refused only because it lacks one action on a calendar it can already read, EK Bridge asks you instead (**Allow Once**, **Always Allow**, **Not Now**). Notifications can tell you when a change wasn't made because nobody answered, Overview and the menu name the items that changed, and Codex and Gemini CLI get one-click setup next to their copyable setups. Agents need no changes; when you don't allow an access request, the `forbidden` message says so. Activity moves to its own file on the first launch. The client registry stays at **version 4** with an empty Activity list, so going back to 0.9.0 or 0.8.x means installing its DMG over this one: connections, access and settings are kept, and that version starts a new Activity list, which 0.10 imports again later.
+
 ### Added
 
 - Activity says what changed: a **Change** column (*Added event*, *Moved event*, *Completed*) and an **Item** column with the event's or reminder's name, looked up in Calendar or Reminders when shown (only its ID is stored; a deleted one shows **Deleted item**). Rows are grouped under **Today**, **Yesterday** and dates, there's a **Changes** filter next to All and Problems, and the details below the table show the item with **Show in Calendar** / **Show in Reminders**. A refused move now says when it was the destination that lacked Create.
