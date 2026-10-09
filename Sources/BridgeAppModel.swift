@@ -357,9 +357,14 @@ final class BridgeAppModel {
     private(set) var oauthChanges = 0
     /// The guide's tunnel, saved once chosen (UserDefaults RemoteTunnelChoice).
     var tunnelChoice = TunnelProvider.tailscaleFunnel {
-        didSet { services.defaults.set(tunnelChoice.rawValue, forKey: Keys.tunnelChoice) }
+        didSet {
+            services.defaults.set(tunnelChoice.rawValue, forKey: Keys.tunnelChoice)
+            tunnelChosen = true
+        }
     }
-    var tunnelChosen: Bool { services.defaults.string(forKey: Keys.tunnelChoice) != nil }
+    /// Stored rather than read from UserDefaults, so the guide redraws when
+    /// a tunnel is picked (even the default one) or Back forgets it.
+    private(set) var tunnelChosen = false
     /// The Remote Access guide is in progress (shown even once Remote Access is on).
     var remoteGuideActive = false
     /// Guide step 2's "I've Started It", this session.
@@ -466,6 +471,7 @@ final class BridgeAppModel {
         if let tunnel = defaults.string(forKey: Keys.tunnelChoice).flatMap(TunnelProvider.init(rawValue:)) {
             tunnelChoice = tunnel
         }
+        tunnelChosen = defaults.string(forKey: Keys.tunnelChoice) != nil
         connectionAgents = ConnectionAgentKinds.load(defaults)
         let resume = defaults.double(forKey: Keys.resumeAt)
         resumeAt = resume > 0 ? Date(timeIntervalSinceReferenceDate: resume) : nil
@@ -760,6 +766,7 @@ final class BridgeAppModel {
     /// Guide step 1: forget the choice, so the tunnel chips show again.
     func chooseTunnelAgain() {
         services.defaults.removeObject(forKey: Keys.tunnelChoice)
+        tunnelChosen = false
         remoteTunnelStarted = false
         remoteGuideActive = true
     }
