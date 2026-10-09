@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-09
+
+A small fix release. The sidebar's Remote Access badge now says **Off** until Remote Access is turned on *and* has a tunnel address, so a Mac without a tunnel never shows **On**. Agents need no changes. The client registry stays at **version 4**, so going back to 0.10.0 works by installing its DMG over this one.
+
 ### Fixed
 
 - The sidebar shows Remote Access as **On** only when it's turned on and has a tunnel address, and **Off** otherwise; the menu bar's globe and Remote Access items follow the same rule. Before, turning it on in the guide's second step showed **On** before any tunnel was set up.
