@@ -11,7 +11,8 @@ set -eu
 # "EK Bridge Test · <purpose>", and nothing else. Clean up after every run.
 #
 # Usage: sh scripts/live_test.sh build          build and sign build/live-test/EK Bridge Test.app
-#        sh scripts/live_test.sh start [ARGS]   open it through LaunchServices and wait for it
+#        sh scripts/live_test.sh start [ARGS]   open it through LaunchServices (without the
+#                                               shell's SHLVL and TERM) and wait for it
 #        sh scripts/live_test.sh stop           quit it (only its bundle ID)
 #        sh scripts/live_test.sh cmd 'JSON'     send one automation command, print the response
 #        sh scripts/live_test.sh mcp CONNECTION TOOL ['JSON']
@@ -159,7 +160,10 @@ start() {
     if [ -n "${LIVE_TEST_AGENT_HOME:-}" ]; then
         set -- --env "EKB_AGENT_HOME=$LIVE_TEST_AGENT_HOME" "$@"
     fi
-    open -n "$@"
+    # Without the shell's SHLVL and TERM, as Finder, login items and updates
+    # open apps: `open` passes its environment on, and tools that look at
+    # them (Tailscale.app's CLI) behave differently (0.11.1).
+    env -u SHLVL -u TERM open -n "$@"
     LIVE_TEST_TIMEOUT=20 cmd '{"command": "state"}' > /dev/null || fail "the app didn't answer"
     printf 'live_test: started %s\n' "$app"
 }

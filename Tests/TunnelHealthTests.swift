@@ -65,6 +65,13 @@ struct TunnelHealthTests {
         check(parse(Data("not json".utf8), funnel, 47616) == .unknown, "garbage")
         check(parse(status, nil, 47616) == .unknown, "no funnel status")
         check(parse(Data(#"{"BackendState":"Starting"}"#.utf8), funnel, 47616) == .unknown, "an unknown state")
+        // What Tailscale.app's binary prints when it doesn't run as the CLI (0.11.0's bug).
+        check(parse(Data("The Tailscale GUI failed to start: The operation couldn’t be completed.\n".utf8), nil, 47616)
+              == .unknown, "the GUI answer")
+        // An app opened from Finder has no SHLVL or TERM: the CLI is asked for by name.
+        let environment = TailscaleStatus.cliEnvironment(["HOME": "/Users/test", "PATH": "/usr/bin:/bin"])
+        check(environment == ["HOME": "/Users/test", "PATH": "/usr/bin:/bin", "TAILSCALE_BE_CLI": "1"],
+              "TAILSCALE_BE_CLI added, the rest kept")
     }
 
     static func cloudflared() {

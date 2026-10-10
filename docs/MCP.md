@@ -270,7 +270,7 @@ Knowing the tunnel lets EK Bridge ask that tool, on this Mac, whether it runs, w
 
 | Tunnel | What EK Bridge reads |
 | --- | --- |
-| Tailscale Funnel | `tailscale status --json` and `tailscale funnel status --json`, run from Tailscale.app's built-in CLI (else Homebrew's), with fixed arguments and a 2-second timeout. Only the entry for the Remote Access port is shown; other Serve or Funnel entries aren't. |
+| Tailscale Funnel | `tailscale status --json` and `tailscale funnel status --json`, run from Tailscale.app's built-in CLI (else Homebrew's), with fixed arguments, `TAILSCALE_BE_CLI=1` (without it, Tailscale.app's binary acts as the app unless it was started from a shell) and a 2-second timeout. Only the entry for the Remote Access port is shown; other Serve or Funnel entries aren't. |
 | Cloudflare Tunnel and quick tunnels | cloudflared's local status server on `127.0.0.1:20241–20245` (`/ready`, `/quicktunnel`, `/config`), and for a named tunnel the `ingress` rules of `~/.cloudflared/config.yml` (or the `--config` it was started with). |
 | ngrok | Its agent API on `127.0.0.1:4040` (then 4041, 4042): `/api/tunnels`. |
 | Fallback | When those are off: this user's running `cloudflared` or `ngrok` processes and their arguments. |
