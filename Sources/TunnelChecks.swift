@@ -48,9 +48,12 @@ enum TunnelProbes {
     static func tailscale(port: Int) -> TunnelHealth {
         guard let cli = locate("tailscale", candidates: tailscaleCandidates) else { return .notInstalled }
         // Fixed arguments, stdout only: the CLI warns about version mismatches on stderr.
-        guard let status = ProcessRunner.run(cli, ["status", "--json"], timeout: commandTimeout, mergeErrors: false),
+        let environment = TailscaleStatus.cliEnvironment(ProcessInfo.processInfo.environment)
+        guard let status = ProcessRunner.run(cli, ["status", "--json"], timeout: commandTimeout,
+                                             environment: environment, mergeErrors: false),
               !status.timedOut else { return .unknown }
-        let funnel = ProcessRunner.run(cli, ["funnel", "status", "--json"], timeout: commandTimeout, mergeErrors: false)
+        let funnel = ProcessRunner.run(cli, ["funnel", "status", "--json"], timeout: commandTimeout,
+                                       environment: environment, mergeErrors: false)
         return TailscaleStatus.parse(status: Data(status.output.utf8),
                                      funnel: funnel.flatMap { $0.timedOut ? nil : Data($0.output.utf8) }, port: port)
     }

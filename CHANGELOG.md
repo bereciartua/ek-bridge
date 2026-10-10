@@ -6,6 +6,14 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-09
+
+A small fix release for the tunnel check on Remote Access. Agents need no changes. The client registry stays at **version 4**, so going back to 0.11.0 or 0.10.3 works by installing its DMG over this one.
+
+### Fixed
+
+- Remote Access ▸ Tunnel said **Can't check on this Mac** for Tailscale Funnel whenever EK Bridge was opened from Finder, at login or by an update, so the guide didn't find a running Funnel and **Down** never showed. Tailscale.app's built-in CLI acts as the CLI only when started from a shell; EK Bridge now asks for it with `TAILSCALE_BE_CLI=1`.
+
 ## [0.11.0] - 2026-10-09
 
 Remote Access can now switch tunnels properly and checks whether your tunnel is running on this Mac. **Switch Tunnel…** sets up and tests a new tunnel while the one in use keeps working, lists by name which cloud agents need the new URL and which signed-in cloud apps get disconnected, and saves nothing until you click **Switch**; EK Bridge remembers each tunnel's last address for switching back. The checks are read-only and local (the `tailscale` CLI's status, cloudflared's and ngrok's local status endpoints): they let the guide move on by itself once the tunnel runs, show the Tunnel row's state, and warn with **Down** in the sidebar when the tunnel stops; a notification for that is optional and off by default. **Address ▸ Edit…** now tests the new address before saving it. Agents need no changes; cloud agents need the new URL only when you switch tunnels or change the address, as before. The client registry stays at **version 4**, and the new settings (`RemoteTunnelAddresses`, `NotifyTunnelDown`) are ignored by 0.10.x, so going back to 0.10.3 works by installing its DMG over this one.

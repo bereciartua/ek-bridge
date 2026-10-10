@@ -234,6 +234,18 @@ enum ToolJSON {
 
 /// `tailscale status --json` and `tailscale funnel status --json`.
 enum TailscaleStatus {
+    /// The environment for the `tailscale` CLI. Tailscale.app's binary is both
+    /// the app and the CLI, and acts as the CLI only when it sees a shell
+    /// (`SHLVL`, `TERM`) or `TAILSCALE_BE_CLI`. An app opened from Finder, at
+    /// login or by an update has neither, so without the variable it answers
+    /// "The Tailscale GUI failed to start" instead of JSON. Homebrew's CLI
+    /// ignores it.
+    static func cliEnvironment(_ base: [String: String]) -> [String: String] {
+        var environment = base
+        environment["TAILSCALE_BE_CLI"] = "1"
+        return environment
+    }
+
     static func parse(status: Data?, funnel: Data?, port: Int) -> TunnelHealth {
         guard let status = ToolJSON.object(status) else { return .unknown }
         switch status["BackendState"] as? String {
