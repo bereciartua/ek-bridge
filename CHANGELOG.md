@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-09
+
+A small fix release for the tunnel check on Remote Access. Agents need no changes. The client registry stays at **version 4**, so going back to 0.11.0 or 0.10.3 works by installing its DMG over this one.
+
 ### Fixed
 
 - Remote Access ▸ Tunnel said **Can't check on this Mac** for Tailscale Funnel whenever EK Bridge was opened from Finder, at login or by an update, so the guide didn't find a running Funnel and **Down** never showed. Tailscale.app's built-in CLI acts as the CLI only when started from a shell; EK Bridge now asks for it with `TAILSCALE_BE_CLI=1`.
