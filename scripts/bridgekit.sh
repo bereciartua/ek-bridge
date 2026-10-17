@@ -10,7 +10,7 @@
 # BridgeKit, change both values, run test.sh and the live check, and note it
 # in CHANGELOG.md.
 bridgekit_version=0.1.0
-bridgekit_commit=436bbfc0eff9cec57efd026320e4c2f5f37d4e17
+bridgekit_commit=6fcf18e7f5d10fe974154a9385183044351bf564
 bridgekit_repository=https://github.com/bereciartua/bridgekit.git
 
 if [ -n "${EVENTKIT_BRIDGEKIT_DIR:-}" ]; then
