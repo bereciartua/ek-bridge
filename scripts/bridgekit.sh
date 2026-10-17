@@ -39,8 +39,9 @@ SDKROOT="$sdk_dir" swift build --quiet --package-path "$bridgekit_source" \
     --scratch-path "$project_dir/build/bridgekit" -c release --product BridgeKitCore $bridgekit_arch_flags >&2
 bridgekit_lib_dir=$(SDKROOT="$sdk_dir" swift build --package-path "$bridgekit_source" \
     --scratch-path "$project_dir/build/bridgekit" -c release $bridgekit_arch_flags --show-bin-path)
-# Xcode 26's SwiftPM (the native build system) keeps modules in Modules/.
+# SwiftPM's native build system (the default in Xcode 26) keeps modules in
+# Modules/, where BridgeKitCore.swiftmodule is a file, not a folder.
 bridgekit_module_dir=$bridgekit_lib_dir
-if [ -d "$bridgekit_lib_dir/Modules/BridgeKitCore.swiftmodule" ]; then
+if [ -e "$bridgekit_lib_dir/Modules/BridgeKitCore.swiftmodule" ]; then
     bridgekit_module_dir="$bridgekit_lib_dir/Modules"
 fi
