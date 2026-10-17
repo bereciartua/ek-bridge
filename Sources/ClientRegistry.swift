@@ -593,16 +593,13 @@ final class ClientRegistry {
             recordFailedAuth(origin)
             return .failure(.unauthorized)
         }
-        let digest = Array(SHA256.hash(data: Data(presented.utf8)))
-        // Compare against every active verifier without stopping early, so the
-        // time taken doesn't depend on which client (if any) matched.
-        var match: String?
-        for record in state!.clients where !record.revoked {
-            guard let stored = verifier(record).flatMap(Self.unhex), stored.count == 32 else { continue }
-            var difference: UInt8 = 0
-            for index in 0..<32 { difference |= stored[index] ^ digest[index] }
-            if difference == 0 { match = record.id }
+        // BridgeKitCore compares against every active verifier without stopping
+        // early, so the time taken doesn't depend on which client (if any) matched.
+        let candidates = state!.clients.filter { !$0.revoked }.compactMap { record -> (id: String, digest: Data)? in
+            guard let stored = verifier(record).flatMap(Self.unhex), stored.count == 32 else { return nil }
+            return (record.id, Data(stored))
         }
+        let match = AgentKey.firstMatch(AgentKey.digest(presented), in: candidates)
         guard let match else {
             recordFailedAuth(origin)
             return .failure(.unauthorized)
@@ -880,15 +877,7 @@ final class ClientRegistry {
     /// The agent's self-reported name for display: control characters removed,
     /// whitespace collapsed, at most 64 UTF-8 bytes (cut at a character boundary).
     static func sanitizedAgent(_ raw: String) -> String? {
-        let cleaned = String(String.UnicodeScalarView(raw.unicodeScalars.map {
-            CharacterSet.controlCharacters.contains($0) ? " " : $0
-        })).split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        var result = ""
-        for character in cleaned {
-            if result.utf8.count + String(character).utf8.count > maxAgentBytes { break }
-            result.append(character)
-        }
-        return result.isEmpty ? nil : result
+        AgentName.sanitized(raw)
     }
 
     static func validAgent(_ agent: String) -> Bool {
@@ -897,17 +886,15 @@ final class ClientRegistry {
     }
 
     static func validMCPToken(_ token: String) -> Bool {
-        token.utf8.count == 75 && token.hasPrefix(mcpTokenPrefix) &&
-            token.utf8.dropFirst(11).allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+        AgentKey.isValid(token, prefix: mcpTokenPrefix)
     }
 
     static func validRemoteToken(_ token: String) -> Bool {
-        token.utf8.count == 76 && token.hasPrefix(remoteTokenPrefix) &&
-            token.utf8.dropFirst(12).allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+        AgentKey.isValid(token, prefix: remoteTokenPrefix)
     }
 
     static func tokenDigest(_ token: String) -> String {
-        hex(Data(SHA256.hash(data: Data(token.utf8))))
+        hex(AgentKey.digest(token))
     }
 
     private static func newSigningKey() -> (key: String, verifier: String) {
@@ -918,10 +905,7 @@ final class ClientRegistry {
     private static func newMCPToken() -> String { newToken(prefix: mcpTokenPrefix) }
 
     private static func newToken(prefix: String) -> String {
-        // SystemRandomNumberGenerator reads the kernel CSPRNG.
-        var generator = SystemRandomNumberGenerator()
-        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
-        return prefix + hex(Data(bytes))
+        AgentKey.issue(prefix: prefix)
     }
 
     /// Applies `change` to an active client and persists only if it changed.

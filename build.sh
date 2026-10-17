@@ -22,6 +22,10 @@ cache_dir="$project_dir/build/module-cache"
 # EVENTKIT_ARCHS="arm64 x86_64" for a universal app.
 archs=${EVENTKIT_ARCHS:-$(uname -m)}
 minimum_macos=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$project_dir/Info.plist")
+# BridgeKitCore, the MCP core shared with Funes Vault, as a static library for
+# the same architectures; linked into the app and both command-line tools.
+bridgekit_archs=$archs
+. "$project_dir/scripts/bridgekit.sh"
 slices_dir="$output_dir/slices"
 test_flag=""
 if [ "${EVENTKIT_SYNTHETIC_TEST:-0}" = "1" ]; then
@@ -121,6 +125,7 @@ for arch in $archs; do
         -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
         -framework SwiftUI -framework Network -framework IOKit -framework UserNotifications \
         -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
         "$@" \
         -o "$slice/$app_name"
 
@@ -129,10 +134,11 @@ for arch in $archs; do
         $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
         "$project_dir/Sources/BridgeProtocol.swift" \
         "$project_dir/Sources/AppIdentity.swift" \
         "$project_dir/Sources/OutcomePresentation.swift" \
-        "$project_dir/Sources/SafePath.swift" \
+        "$project_dir/Sources/BridgeKitExports.swift" \
         "$project_dir/Sources/BridgeClient.swift" \
         -o "$slice/bridge-client"
 
@@ -141,8 +147,8 @@ for arch in $archs; do
         $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
         "$project_dir/Sources/MCPLauncher.swift" \
-        "$project_dir/Sources/SafePath.swift" \
         "$project_dir/Sources/AppIdentity.swift" \
         -o "$slice/bridge-mcp"
 done

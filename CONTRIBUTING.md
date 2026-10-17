@@ -14,6 +14,7 @@ sh build.sh    # build/EKBridge.app, signed ad hoc
 ```
 
 - `EVENTKIT_ARCHS="arm64 x86_64" sh build.sh` builds a universal app, as releases do. The default is this Mac's architecture.
+- The MCP core is [BridgeKit](https://github.com/bereciartua/bridgekit), fetched at the pinned tag on the first build (`scripts/bridgekit.sh`). To work on BridgeKit itself, point `EVENTKIT_BRIDGEKIT_DIR` at your checkout.
 - `EVENTKIT_SDK=<path>` picks the SDK. By default the scripts use the one `xcrun` selects; with Command Line Tools alone they use the macOS 26 SDK, because SwiftUI's macros in the macOS 27 SDK need Xcode.
 - `sh ui_test.sh` runs the window and behavior tests, and `sh ui_snapshots.sh` writes PNGs of every screen in light and dark. Both need a logged-in GUI session and use fake data. `ui_snapshots.sh` needs Screen Recording permission for the terminal; `sh ui_snapshots.sh --cache` doesn't, but leaves lists and tables blank.
 
