@@ -45,3 +45,13 @@ bridgekit_module_dir=$bridgekit_lib_dir
 if [ -e "$bridgekit_lib_dir/Modules/BridgeKitCore.swiftmodule" ]; then
     bridgekit_module_dir="$bridgekit_lib_dir/Modules"
 fi
+# Xcode 26's SwiftPM builds more than one architecture with XCBuild, which
+# leaves the target's prelinked BridgeKitCore_Module.o instead of the static
+# library; archive it so -lBridgeKitCore works the same everywhere.
+if [ ! -e "$bridgekit_lib_dir/libBridgeKitCore.a" ] && [ -e "$bridgekit_lib_dir/BridgeKitCore_Module.o" ]; then
+    mkdir -p "$project_dir/build/bridgekit/lib"
+    rm -f "$project_dir/build/bridgekit/lib/libBridgeKitCore.a"
+    libtool -static -no_warning_for_no_symbols -o "$project_dir/build/bridgekit/lib/libBridgeKitCore.a" \
+        "$bridgekit_lib_dir/BridgeKitCore_Module.o"
+    bridgekit_lib_dir="$project_dir/build/bridgekit/lib"
+fi
