@@ -6,6 +6,8 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-17
+
 Nothing changes for users or agents: same tools, wording, ports, files and setups. The client registry stays at **version 4**, so going back to 0.11.1 works by installing its DMG over this one.
 
 ### Internal
