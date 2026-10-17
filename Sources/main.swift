@@ -49,14 +49,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         bridgeActive: { [weak self] in self?.localBridge?.active == true },
         didRecord: { [weak self] in self?.model.scheduleRefresh() })
     private lazy var mcpService: MCPService = {
+        let origins = Set(UserDefaults.standard.stringArray(forKey: "MCPServerAllowedOrigins") ?? [])
         let server = MCPServer(registry: clientRegistry, pipeline: pipeline, limiter: rateLimiter,
-                               counters: mcpCounters,
+                               counters: mcpCounters, allowedOrigins: origins,
                                didConnect: { [weak self] id, connection in
                                    self?.model.mcpDidConnect(id, connection) })
-        let origins = Set(UserDefaults.standard.stringArray(forKey: "MCPServerAllowedOrigins") ?? [])
         let service = MCPService(server: server, limiter: rateLimiter, counters: mcpCounters,
-                                 endpointFile: MCPEndpointFile(directory: Self.dataFolder),
-                                 allowedOrigins: origins)
+                                 endpointFile: MCPEndpointFile(directory: Self.dataFolder))
         service.statusChanged = { [weak self] status in self?.model.mcpStatusDidChange(status) }
         return service
     }()

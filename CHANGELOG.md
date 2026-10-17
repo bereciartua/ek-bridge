@@ -6,6 +6,14 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-17
+
+Nothing changes for users or agents: same tools, wording, ports, files and setups. The client registry stays at **version 4**, so going back to 0.11.1 works by installing its DMG over this one.
+
+### Internal
+
+- **EK Bridge uses BridgeKit.** The MCP protocol and security core (the loopback HTTP server, MCP and JSON-RPC, tokens, rate limits, safe file loading, `bridge-mcp` and one-click agent setup) moved to [BridgeKit](https://github.com/bereciartua/bridgekit) 0.1.0, a Swift package shared with Funes Vault. `build.sh` builds it as a static library (`scripts/bridgekit.sh`, pinned to an exact tag and commit) and links it into the app, `bridge-mcp` and `bridge-client`. The tests of the moved code run in BridgeKit too; every existing test here passes unchanged against it.
+
 ## [0.11.1] - 2026-10-09
 
 A small fix release for the tunnel check on Remote Access. Agents need no changes. The client registry stays at **version 4**, so going back to 0.11.0 or 0.10.3 works by installing its DMG over this one.

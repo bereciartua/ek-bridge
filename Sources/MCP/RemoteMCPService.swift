@@ -377,7 +377,7 @@ final class RemoteMCPService {
                         guard let self else { return }
                         let auth = self.authentication(configuration: configuration, address: address,
                                                        tunnel: tunnel)
-                        self.server.handle(request, token: token ?? "", auth: auth, whenClosed: { action in
+                        self.server.handle(request, key: token ?? "", auth: auth, whenClosed: { action in
                             connection.whenClosed { DispatchQueue.main.async { MainActor.assumeIsolated(action) } }
                         }, reply: { send($0.response, $0.close) })
                     }
@@ -392,7 +392,7 @@ final class RemoteMCPService {
     private func authentication(configuration: RemoteConfiguration, address: String,
                                 tunnel: String?) -> MCPAuthentication {
         MCPAuthentication(authenticate: { [weak self] token in
-            guard let self else { return .failure(.unavailable) }
+            guard let self else { return .unavailable }
             let result: Result<String, ClientRegistryError>
             if ClientRegistry.validRemoteToken(token) {
                 result = self.registry.authenticateRemoteToken(token)
@@ -407,7 +407,7 @@ final class RemoteMCPService {
             if case .success(let clientID) = result {
                 self.didServe(RemoteRequestNote(at: Date(), clientID: clientID, tunnel: tunnel, address: address))
             }
-            return result
+            return EKBridgeMCP.outcome(result, registry: self.registry)
         }, rejected: { [weak self] in
             self?.counters.recordAuthFailure()
             self?.limiter.recordFailedRemoteAuth(address)
