@@ -185,7 +185,7 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 
 - [ ] MCP Inspector (`npx @modelcontextprotocol/inspector`, Streamable HTTP with the `Authorization` header): list tools, call each read tool, check how errors render.
 - [ ] MCP conformance suite, if one covers servers for 2025-11-25 or 2026-07-28 at release time, against `build/mcp-server-test`.
-- [ ] Claude Code, HTTP with `headersHelper`, then the launcher: connect; `list_collections`; read the test calendar; create, update and delete a timed event; create a reminder with a due date and weekly recurrence; complete a nonrecurring reminder; deny one approval; remove a grant mid-session → `forbidden`; EK Bridge paused → `bridge_off`; reset the token → the helper picks up the new token on reconnect.
+- [x] Claude Code, HTTP with `headersHelper`, then the launcher (0.11.2, below): connect; `list_collections`; read the test calendar; create, update and delete a timed event; create a reminder with a due date and weekly recurrence; complete a nonrecurring reminder; deny one approval; remove a grant mid-session → `forbidden`; EK Bridge paused → `bridge_off`; reset the token → the helper picks up the new token on reconnect.
 - [ ] Codex CLI, launcher: the same core steps; its 60-second timeout isn't hit while an approval waits.
 - [ ] Claude Desktop, launcher: connect after editing the config and restarting; one read and one approved write.
 - [ ] Cursor, launcher: one read and one write.
@@ -207,6 +207,12 @@ Measured by `Tests/WriteJournalQuotaTests.swift` on the development Mac with 10,
 | Cursor | 3.15.6 |
 
 This covers part of the four agents' rows above (not the token reset, grant removal or bridge-off steps, the timeouts, or the reminder recurrence and completion steps), so their boxes stay open. The README's "works with" names only these four.
+
+**October 17, 2026, EK Bridge 0.11.2 with BridgeKit 0.1.0, Claude Code 2.1.302** (the `release/0.11.2` tree as [EK Bridge Test](#live-test-copy), Developer ID–signed, development Mac, macOS 27.0.1, Apple silicon). The release moves the MCP protocol and security core into BridgeKitCore, so the owner ran Claude Code's row against it, on an app-created empty test calendar and list (`EK Bridge Test · …`) and a new connection with access to those two only and Ask before changes on. Claude Code ran with `--strict-mcp-config` and a temporary `--mcp-config`, so no agent config was written. Every step behaved as expected:
+
+- **HTTP with `headersHelper`:** connected; `list_collections` showed the two test collections; read the empty calendar; created, moved and deleted a timed event (each approved in the panel); created a reminder due the next morning that repeats weekly; created a nonrecurring reminder and completed it; a denied event creation came back declined (`approval_denied`) and created nothing. After **Reset…** on the token, `/mcp` reconnect picked up the new token through the helper, with no config change.
+- **Launcher:** connected with the reset token; created and deleted an event (approved); with every action on the calendar turned off and saved mid-session, reading it was refused (`forbidden`); with EK Bridge Test paused, the request was refused (pausing stops the listener, so the launcher answers and Activity has no row); after **Turn On**, the next request worked without restarting Claude Code.
+- Activity in the test copy matched (successes, one `approval_denied`, one `forbidden`). `live_test.sh cleanup` removed the test calendar and list and found none left.
 
 ## Live cloud matrix
 
