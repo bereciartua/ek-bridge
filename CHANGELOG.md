@@ -6,6 +6,20 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+Agents need no changes.
+
+### Changed
+
+- JSON-RPC request ids longer than 1 KiB (as the response writes them) are refused with `-32600` Invalid Request and `"id": null` (HTTP 400). No real MCP client sends ids like that: they use counters or UUIDs.
+
+### Fixed
+
+- A client on this Mac that sent requests without reading the replies could make EK Bridge's memory grow without limit. EK Bridge now reads the next request only once the client has taken the last reply, and closes a connection whose reply isn't taken within 30 seconds.
+
+### Internal
+
+- BridgeKit 0.1.1 (`scripts/bridgekit.sh`), which brings both changes above to the local MCP port and the Remote Access port.
+
 ## [0.11.2] - 2026-10-17
 
 Nothing changes for users or agents: same tools, wording, ports, files and setups. The client registry stays at **version 4**, so going back to 0.11.1 works by installing its DMG over this one.
