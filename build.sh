@@ -125,7 +125,7 @@ for arch in $archs; do
         -framework AppKit -framework EventKit -framework Security -framework ServiceManagement \
         -framework SwiftUI -framework Network -framework IOKit -framework UserNotifications \
         -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
         "$@" \
         -o "$slice/$app_name"
 
@@ -134,7 +134,7 @@ for arch in $archs; do
         $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
-        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
         "$project_dir/Sources/BridgeProtocol.swift" \
         "$project_dir/Sources/AppIdentity.swift" \
         "$project_dir/Sources/OutcomePresentation.swift" \
@@ -147,7 +147,7 @@ for arch in $archs; do
         $tool_flag \
         -module-cache-path "$cache_dir" \
         -target "$target" \
-        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
         "$project_dir/Sources/MCPLauncher.swift" \
         "$project_dir/Sources/AppIdentity.swift" \
         -o "$slice/bridge-mcp"

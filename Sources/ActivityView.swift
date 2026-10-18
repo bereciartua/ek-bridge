@@ -672,7 +672,7 @@ struct ActivityInspector: View {
         switch via {
         case "mcp": return agent.map { String(localized: "MCP (\($0))") } ?? String(localized: "MCP")
         case "remote":
-            let tunnel = model.remoteNote(for: entry)?.tunnel.map { String(localized: "tunnel: \($0)") }
+            let tunnel = model.remoteNote(for: entry)?.tunnel.map { String(localized: "tunnel: \($0.name)") }
             let detail = [agent, tunnel].compactMap { $0 }.joined(separator: "; ")
             return detail.isEmpty ? String(localized: "MCP · remote")
                                   : String(localized: "MCP · remote (\(detail))")

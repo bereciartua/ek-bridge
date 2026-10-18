@@ -59,12 +59,12 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         service.statusChanged = { [weak self] status in self?.model.mcpStatusDidChange(status) }
         return service
     }()
-    private lazy var cimdFetcher = CIMDFetcher()
-    private lazy var oauth = OAuthServer(
-        directory: Self.dataFolder, fetcher: cimdFetcher,
-        clientAllowed: { [weak self] id in self?.clientRegistry.cloudAccessAllowed(clientID: id) ?? false },
-        clientName: { [weak self] id in self?.clientRegistry.clients()?.first { $0.id == id }?.name })
-    private let keepAwake = KeepAwake()
+    private static let remoteConfiguration = EKBridgeMCP.remoteConfiguration(dataFolder: dataFolder)
+    private lazy var cimdFetcher = CIMDFetcher(userAgent: Self.remoteConfiguration.userAgent)
+    private lazy var remoteAuthenticator = RegistryRemoteAuthenticator(registry: clientRegistry)
+    private lazy var oauth = OAuthServer(configuration: Self.remoteConfiguration, fetcher: cimdFetcher,
+                                         authenticator: remoteAuthenticator)
+    private let keepAwake = KeepAwake.remoteAccess()
     private lazy var notificationPoster = NotificationPoster()
     private lazy var updater = SparkleUpdater(gate: UpdateRelaunchGate(
         pendingApprovals: { [weak self] in self?.approvals.pending.count ?? 0 },
@@ -76,7 +76,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                                counters: mcpCounters,
                                didConnect: { [weak self] id, connection in
                                    self?.model.mcpDidConnect(id, connection) })
-        let service = RemoteMCPService(server: server, registry: clientRegistry, limiter: rateLimiter,
+        let service = RemoteMCPService(server: server, configuration: Self.remoteConfiguration,
+                                       authenticator: remoteAuthenticator, limiter: rateLimiter,
                                        counters: mcpCounters, oauth: oauth)
         service.statusChanged = { [weak self] status in self?.model.remoteStatusDidChange(status) }
         service.didServe = { [weak self] note in self?.model.remoteDidServe(note) }
@@ -261,7 +262,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
                 stop: { [weak self] in self?.remoteService.stop() },
                 test: { [weak self] configuration, completion in
                     guard let self else { return }
-                    RemoteProbe.test(configuration, nonces: self.remoteService.nonces, completion: completion)
+                    RemoteTest.run(configuration, nonces: self.remoteService.nonces, completion: completion)
                 },
                 portIsFree: { PortProbe.isFree($0) },
                 setKeepAwake: { [weak self] in self?.keepAwake.set($0) },

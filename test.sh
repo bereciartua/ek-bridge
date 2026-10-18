@@ -8,7 +8,7 @@ cache_dir="$project_dir/build/module-cache"
 . "$project_dir/scripts/bridgekit.sh"
 mkdir -p "$project_dir/build" "$cache_dir"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -17,7 +17,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/bridge-enablement-tests"
 "$project_dir/build/bridge-enablement-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -30,7 +30,7 @@ for flavor in production live-test; do
     flag=""
     [ "$flavor" = live-test ] && flag="-D EVENTKIT_LIVE_TEST"
     xcrun swiftc -parse-as-library \
-        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+        -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
         "$project_dir/Sources/BridgeKitExports.swift" \
         $flag \
         -sdk "$sdk_dir" \
@@ -41,7 +41,7 @@ for flavor in production live-test; do
     "$project_dir/build/live-test-isolation-$flavor" "$project_dir/build/live-test-isolation-production.txt"
 done
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -50,7 +50,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/install-location-tests"
 "$project_dir/build/install-location-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -70,7 +70,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/agent-detection-tests"
 "$project_dir/build/agent-detection-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -90,7 +90,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/agent-config-writer-tests"
 "$project_dir/build/agent-config-writer-tests" "$project_dir/Tests/agent-config"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -108,7 +108,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/CollectionLabelsTests.swift" \
     -o "$project_dir/build/collection-labels-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -120,7 +120,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/notification-rules-tests"
 "$project_dir/build/notification-rules-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -134,7 +134,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/access-requests-tests"
 "$project_dir/build/access-requests-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -144,7 +144,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/activity-store-tests"
 "$project_dir/build/activity-store-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -156,7 +156,7 @@ xcrun swiftc -parse-as-library \
 "$project_dir/build/activity-items-tests" "$project_dir/Tests/mcp-fixtures"
 # Rollback: a data folder written by this code must still load in 0.8.2.
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -167,7 +167,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/RollbackHarness.swift" \
     -o "$project_dir/build/rollback-harness"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -196,7 +196,7 @@ rm -rf "$rollback_dir"
 echo "Rollback: 0.8.2 loads and writes a 0.10 data folder; its rows import once passed"
 "$project_dir/build/collection-labels-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -218,7 +218,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/bridge-protocol-tests"
 "$project_dir/build/bridge-protocol-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -227,7 +227,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/reminder-due-tests"
 "$project_dir/build/reminder-due-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -243,7 +243,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/recurrence-tests"
 "$project_dir/build/recurrence-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -259,7 +259,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/event-fields-tests"
 "$project_dir/build/event-fields-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -275,7 +275,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/reminder-fields-tests"
 "$project_dir/build/reminder-fields-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -292,7 +292,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/recurring-completion-tests"
 "$project_dir/build/recurring-completion-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -309,7 +309,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/reminder-schedule-tests"
 "$project_dir/build/reminder-schedule-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -321,7 +321,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/write-journal-retention-tests"
 "$project_dir/build/write-journal-retention-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -346,7 +346,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-registry-tests"
 "$project_dir/build/client-registry-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -361,7 +361,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-grant-editing-tests"
 "$project_dir/build/client-grant-editing-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -379,7 +379,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/app-presentation-tests"
 "$project_dir/build/app-presentation-tests" "$project_dir/Sources"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -389,7 +389,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-credential-files-tests"
 "$project_dir/build/client-credential-files-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -398,7 +398,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/bridge-polling-timer-tests"
 "$project_dir/build/bridge-polling-timer-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -407,7 +407,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/command-line-tool-tests"
 "$project_dir/build/command-line-tool-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -415,7 +415,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/http-message-tests"
 "$project_dir/build/http-message-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -424,7 +424,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/mcp-time-tests"
 "$project_dir/build/mcp-time-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -443,7 +443,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/agent-setup-tests"
 "$project_dir/build/agent-setup-tests" "$project_dir/Tests/agent-setup"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -462,7 +462,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/TunnelHealthTests.swift" \
     -o "$project_dir/build/tunnel-health-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -484,7 +484,7 @@ xcrun swiftc -parse-as-library \
 "$project_dir/build/tunnel-switch-tests"
 "$project_dir/build/tunnel-health-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -498,7 +498,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/client-registry-v4-tests"
 "$project_dir/build/client-registry-v4-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -524,7 +524,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/request-pipeline-tests"
 "$project_dir/build/request-pipeline-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -532,7 +532,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/rate-limiter-tests"
 "$project_dir/build/rate-limiter-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -548,7 +548,7 @@ xcrun swiftc -parse-as-library \
 "$project_dir/build/mcp-tool-catalog-tests" "$project_dir/Tests/mcp-fixtures/tools.json"
 # Also prints the median begin+finish time with 10,000 journal entries (§9.7).
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -560,7 +560,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/write-journal-quota-tests"
 "$project_dir/build/write-journal-quota-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -590,7 +590,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/approval-center-tests"
 "$project_dir/build/approval-center-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -599,7 +599,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/update-relaunch-gate-tests"
 "$project_dir/build/update-relaunch-gate-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -631,7 +631,7 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/approval-summaries-tests"
 "$project_dir/build/approval-summaries-tests"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -662,36 +662,12 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Tests/MCPGateTests.swift" \
     -o "$project_dir/build/mcp-gate-tests"
 "$project_dir/build/mcp-gate-tests"
-xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
-    "$project_dir/Sources/BridgeKitExports.swift" \
-    -sdk "$sdk_dir" \
-    -module-cache-path "$cache_dir" \
-    "$project_dir/Sources/AppIdentity.swift" \
-    "$project_dir/Sources/MCP/OAuthTypes.swift" \
-    "$project_dir/Sources/MCP/OAuthStore.swift" \
-    "$project_dir/Sources/MCP/OAuthPages.swift" \
-    "$project_dir/Sources/MCP/OAuthServer.swift" \
-    "$project_dir/Tests/OAuthServerTests.swift" \
-    -o "$project_dir/build/oauth-server-tests"
-"$project_dir/build/oauth-server-tests"
-# -D EVENTKIT_MCP_TEST adds hooks that let a local HTTPS fixture through the
-# fetcher's SSRF guard; normal builds can't disable it.
-xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
-    "$project_dir/Sources/BridgeKitExports.swift" \
-    -sdk "$sdk_dir" \
-    -module-cache-path "$cache_dir" -D EVENTKIT_MCP_TEST \
-    "$project_dir/Sources/AppIdentity.swift" \
-    "$project_dir/Sources/MCP/OAuthTypes.swift" \
-    "$project_dir/Sources/MCP/CIMDFetcher.swift" \
-    "$project_dir/Tests/CIMDFetcherTests.swift" \
-    -o "$project_dir/build/cimd-fetcher-tests"
-"$project_dir/build/cimd-fetcher-tests"
+# OAuthServerTests and CIMDFetcherTests moved to BridgeKit with the code
+# (BridgeKitRemote, 0.2.0), where they run as Swift Testing suites.
 # Test build only: -D EVENTKIT_CLIENT_TEST lets the CLI tests point it at a
 # fake bridge and key files in temporary directories.
 xcrun swiftc -sdk "$sdk_dir" \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -module-cache-path "$cache_dir" \
     -D EVENTKIT_CLIENT_TEST \
@@ -706,7 +682,7 @@ PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 -m py_compile "$project
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/check_version_test.py"
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/release_test.py"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -731,7 +707,7 @@ xcrun swiftc -parse-as-library \
 # Test build only: -D EVENTKIT_MCP_TEST runs the real MCP server, pipeline,
 # registry and journal with fake EventKit and approvals, over loopback.
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \
@@ -765,7 +741,7 @@ xcrun swiftc -parse-as-library \
 PYTHONPYCACHEPREFIX="$project_dir/build/pycache" python3 "$project_dir/Tests/mcp_test.py" \
     "$project_dir/build/mcp-server-test" "$project_dir/Tests/mcp-fixtures/tools.json"
 xcrun swiftc -parse-as-library \
-    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitCore \
+    -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \
     -module-cache-path "$cache_dir" \

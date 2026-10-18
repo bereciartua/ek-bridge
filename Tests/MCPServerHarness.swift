@@ -375,15 +375,17 @@ final class Harness {
                                    self.connections[id] = connection })
         service = MCPService(server: server, limiter: limiter, counters: counters,
                              endpointFile: MCPEndpointFile(directory: directory))
-        oauth = OAuthServer(directory: directory, fetcher: OfflineFetcher(),
-                            clientAllowed: { [unowned self] in self.registry.cloudAccessAllowed(clientID: $0) },
-                            clientName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
+        let remoteSettings = EKBridgeMCP.remoteConfiguration(dataFolder: directory)
+        let remoteAuthenticator = RegistryRemoteAuthenticator(registry: registry)
+        oauth = OAuthServer(configuration: remoteSettings, fetcher: OfflineFetcher(),
+                            authenticator: remoteAuthenticator)
         oauth.connectionsChanged = { [unowned self] id in _ = self.registry.bumpRevision(clientID: id) }
         let remoteServer = MCPServer(registry: registry, pipeline: pipeline, limiter: limiter, counters: counters,
                                      zone: { TimeZone(identifier: "America/New_York")! },
                                      didConnect: { [unowned self] id, connection in
                                          self.connections["remote|" + id] = connection })
-        remote = RemoteMCPService(server: remoteServer, registry: registry, limiter: limiter,
+        remote = RemoteMCPService(server: remoteServer, configuration: remoteSettings,
+                                  authenticator: remoteAuthenticator, limiter: limiter,
                                   counters: counters, oauth: oauth)
     }
 

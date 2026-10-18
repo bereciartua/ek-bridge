@@ -866,12 +866,12 @@ struct OAuthClientSheet: View {
                     row(String(localized: "Client ID"), details.clientID)
                     GridRow {
                         Text(String(localized: "Client secret")).foregroundStyle(.secondary)
-                        Text(OAuthServer.secretPrefix + " ••••••••••••••••")
+                        Text(EKBridgeMCP.clientSecretPrefix + " ••••••••••••••••")
                             .font(.body.monospaced())
                             .accessibilityLabel(String(localized: "Hidden"))
                         Button(String(localized: "Copy Secret")) { model.copyOAuthClientSecret() }
                     }
-                    row(String(localized: "Scopes"), OAuthServer.scope)
+                    row(String(localized: "Scopes"), EKBridgeMCP.remoteScope)
                     row(String(localized: "Redirect URI"), details.redirectURI, copy: false)
                 }
                 Label(String(localized: "You can copy the secret only while this sheet is open. If you lose it, click Set Up OAuth Client… again for a new one."),

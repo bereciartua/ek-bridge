@@ -806,11 +806,9 @@ extension CloudAgentKind {
 
 // MARK: - Tunnels (§22.5)
 
-enum TunnelProvider: String, CaseIterable, Identifiable {
-    case tailscaleFunnel, cloudflareTunnel, ngrok, cloudflareQuick, other
-
-    var id: String { rawValue }
-
+// BridgeKitRemote's TunnelProvider tells the tunnels apart; these are EK
+// Bridge's names, steps, notes and commands for them.
+extension TunnelProvider {
     static let defaultRemotePort = 47616
     static let cloudflareTunnelName = "ek-bridge"
 
@@ -1017,42 +1015,6 @@ enum TunnelProvider: String, CaseIterable, Identifiable {
                 String(localized: "If TLS ends at the provider's edge, the provider can read the traffic."),
             ]
         }
-    }
-
-    /// Tailscale can't rewrite Host. An unknown tunnel may not either, so ask for the hostname.
-    var preservesHost: Bool { self == .tailscaleFunnel || self == .other }
-
-    /// The request header that identifies the provider in Activity. ngrok adds none of its own, only
-    /// X-Forwarded-Host, which names an ngrok domain unless you bring your own.
-    var detectionHeader: String? {
-        switch self {
-        case .tailscaleFunnel: return "Tailscale-Funnel-Request"
-        case .cloudflareTunnel, .cloudflareQuick: return "CF-Ray"
-        case .ngrok: return "X-Forwarded-Host"
-        case .other: return nil
-        }
-    }
-
-    static let ngrokDomains = [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.app", ".ngrok.dev", ".ngrok.io"]
-
-    /// For Activity's "tunnel: …". Display only: anything on the Mac can send these headers.
-    static func detect(headers: [(String, String)]) -> TunnelProvider? {
-        func value(_ name: String) -> String? {
-            headers.first { $0.0.caseInsensitiveCompare(name) == .orderedSame }?.1.lowercased()
-        }
-        let forwardedHost = value("X-Forwarded-Host") ?? ""
-        if value("Tailscale-Funnel-Request") != nil { return .tailscaleFunnel }
-        if value("CF-Ray") != nil {
-            // A quick tunnel whose Host was rewritten looks like a named one.
-            let hosts = [forwardedHost, value("Host") ?? ""].map { $0.split(separator: ":").first ?? "" }
-            return hosts.contains { $0.hasSuffix(".trycloudflare.com") } ? .cloudflareQuick : .cloudflareTunnel
-        }
-        let bareHost = forwardedHost.split(separator: ":").first ?? ""
-        if ngrokDomains.contains(where: { bareHost.hasSuffix($0) }) { return .ngrok }
-        if ["X-Forwarded-For", "X-Forwarded-Host", "Forwarded"].contains(where: { value($0) != nil }) {
-            return .other
-        }
-        return nil
     }
 }
 
