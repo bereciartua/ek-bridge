@@ -6,7 +6,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
-## [0.11.4] - Unreleased
+## [0.11.4] - 2026-10-19
 
 Agents need no changes: same tools, ports, files and setups. An existing Tailscale Funnel setup keeps working as it is. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one. 0.11.3 was built as a draft only and never published; everything in it is here, with this change to its Funnel fix.
 
