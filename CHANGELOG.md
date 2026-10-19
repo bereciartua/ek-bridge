@@ -6,7 +6,9 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
-Agents need no changes.
+## [0.11.3] - 2026-10-19
+
+Agents need no changes: same tools, ports, files and setups. Remote Access's guide now shares Tailscale Funnel with Funes Vault and other apps on this Mac instead of taking port 443 from them. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one.
 
 ### Changed
 
