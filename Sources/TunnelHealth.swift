@@ -12,7 +12,8 @@ extension TunnelHealth {
         case .running: String(localized: "Running")
         case .wrongPort: String(localized: "Wrong port")
         case .notPublic: String(localized: "Not public")
-        case .notRunning: String(localized: "Not running")
+        case .notRunning(let reason):
+            reason == .allPortsTaken ? String(localized: "No free port") : String(localized: "Not running")
         case .notInstalled: String(localized: "Not installed")
         case .unknown: String(localized: "Can't check on this Mac")
         }
@@ -42,6 +43,8 @@ extension TunnelHealth {
                     ? String(localized: "Tailscale is turned off. Turn it on, then start Funnel.")
                     : String(localized: "\(provider.name) runs, but isn't connected yet.")
             case .noTunnel: return nil
+            case .allPortsTaken:
+                return String(localized: "Funnel's three public ports already serve other apps on this Mac. Turn one off, or choose another tunnel.")
             }
         case .notInstalled:
             switch provider {
@@ -79,12 +82,44 @@ extension TunnelProvider {
 
     /// The one command that starts the tunnel once it's set up, for the Tunnel
     /// row's Not running state. Nil for Other tunnel.
-    func runCommand(port: Int, hostname: String?) -> String? {
+    func runCommand(port: Int, hostname: String?, publicPort: Int? = 443) -> String? {
         switch self {
-        case .tailscaleFunnel, .cloudflareQuick: commands(port: port, hostname: hostname).first
+        case .tailscaleFunnel, .cloudflareQuick: commands(port: port, hostname: hostname, publicPort: publicPort).first
         case .cloudflareTunnel: "cloudflared tunnel run \(Self.cloudflareTunnelName)"
         case .ngrok: commands(port: port, hostname: hostname).first { $0.hasPrefix("ngrok http ") }
         case .other: nil
         }
     }
+}
+
+// MARK: - Funnel's public ports
+
+extension FunnelPorts {
+    /// Step 2's line above the commands: why Funnel uses another port than 443, or what's on all
+    /// three. Nil when it uses 443 or already runs.
+    var reason: String? {
+        let taken = inTheWay.map(Self.describe).formatted(.list(type: .and))
+        guard !taken.isEmpty else { return nil }
+        guard let publicPort else {
+            return String(localized: "Funnel already serves other apps on this Mac on \(taken). Starting it would replace one of them, so turn one off first, or choose another tunnel.")
+        }
+        return inTheWay.count == 1
+            ? String(localized: "Funnel already serves another app on this Mac on \(taken), so EK Bridge uses port \(String(publicPort)). Its address ends in :\(String(publicPort)).")
+            : String(localized: "Funnel already serves other apps on this Mac on \(taken), so EK Bridge uses port \(String(publicPort)). Its address ends in :\(String(publicPort)).")
+    }
+
+    /// "port 443 (it forwards to 47627)".
+    static func describe(_ entry: Entry) -> String {
+        let port = String(entry.publicPort)
+        switch entry.targets.count {
+        case 0: return String(localized: "port \(port)")
+        case 1: return String(localized: "port \(port) (it forwards to \(String(entry.targets[0])))")
+        default:
+            let targets = entry.targets.map { String($0) }.formatted(.list(type: .and))
+            return String(localized: "port \(port) (it forwards to \(targets))")
+        }
+    }
+
+    /// When the check couldn't read what Funnel serves: the 443 command, with this warning.
+    static let unknownWarning = String(localized: "EK Bridge couldn't check what Funnel already serves on this Mac. If it serves another app on port 443, this command replaces it: check with tailscale funnel status first.")
 }

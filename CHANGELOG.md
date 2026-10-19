@@ -6,7 +6,9 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
-Agents need no changes.
+## [0.11.3] - 2026-10-19
+
+Agents need no changes: same tools, ports, files and setups. Remote Access's guide now shares Tailscale Funnel with Funes Vault and other apps on this Mac instead of taking port 443 from them. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one.
 
 ### Changed
 
@@ -14,11 +16,17 @@ Agents need no changes.
 
 ### Fixed
 
+- **Remote Access shares Tailscale Funnel with other apps on this Mac**, such as Funes Vault's Remote Access.
+  - The guide used to offer `tailscale funnel --bg 47616` whatever Funnel already served, and that takes port 443 from any app using it. It now checks what Funnel serves and uses the first free public port: 443, 8443 or 10000. With 443 free, nothing changes.
+  - The address then ends in that port, such as `https://my-mac.tail1234.ts.net:8443`. If all three are taken, it says so and offers no command.
+  - Another app's Funnel entry no longer shows as **Wrong port**; only one to the local MCP port does.
+  - The command to turn Funnel off only touches EK Bridge's own port.
 - A client on this Mac that sent requests without reading the replies could make EK Bridge's memory grow without limit. EK Bridge now reads the next request only once the client has taken the last reply, and closes a connection whose reply isn't taken within 30 seconds.
 
 ### Internal
 
 - BridgeKit 0.1.1 (`scripts/bridgekit.sh`), which brings both changes above to the local MCP port and the Remote Access port.
+- BridgeKit 0.3.0 for the Funnel ports above (`FunnelPorts`, `TailscaleFunnelCommand`). Every existing golden and harness passes unchanged; the tunnel tests now expect another app's Funnel entry to be another app's, not this tunnel at the wrong port.
 - **Remote Access comes from BridgeKit 0.2.0.** The Remote Access listener, the OAuth server and its store, the client-metadata fetch, the tunnel checks and the reachability test moved to BridgeKit 0.2.0's `BridgeKitRemote`, shared with Funes Vault. Nothing changes for users or cloud agents: the same URLs, tokens, sign-in pages, wording and `remote-connections.json`. `build.sh` links it next to BridgeKitCore. Every existing test, golden and harness here passes unchanged; the tests of the moved code run in BridgeKit.
 
 ## [0.11.2] - 2026-10-17

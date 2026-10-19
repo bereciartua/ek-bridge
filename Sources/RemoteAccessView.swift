@@ -165,10 +165,10 @@ struct RemoteGuideView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(model.guideAddress != nil && model.guideAddress == address
                          ? String(localized: "Filled in from the running tunnel. Check it, then save.")
-                         : String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like https://my-mac.tail1234.ts.net."))
+                         : String(localized: "The tunnel's public https address, without a path. For Tailscale Funnel it looks like \(model.funnelExampleAddress)."))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    TextField(String(localized: "Address"), text: $address, prompt: Text("https://my-mac.tail1234.ts.net"))
+                    TextField(String(localized: "Address"), text: $address, prompt: Text(model.funnelExampleAddress))
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(save)
                         .accessibilityLabel(String(localized: "Tunnel address"))
@@ -237,7 +237,7 @@ struct TunnelStartCard: View {
 
     var body: some View {
         let hostname = model.guideCommandHostname
-        let commands = provider.commands(port: model.remotePort, hostname: hostname)
+        let commands = provider.commands(port: model.remotePort, hostname: hostname, publicPort: model.guideFunnelPort)
         Card {
             VStack(alignment: .leading, spacing: 2) {
                 Text(provider.name).font(.headline)
@@ -277,6 +277,12 @@ struct TunnelStartCard: View {
                         Text(provider == .ngrok
                              ? String(localized: "Your ngrok dev domain, from the ngrok dashboard. The commands below use it.")
                              : String(localized: "A hostname on your Cloudflare domain for this Mac. The commands below use it."))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if provider == .tailscaleFunnel, let line = funnelLine {
+                        Text(line)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -346,7 +352,7 @@ struct TunnelStartStatus: View {
                                  mcpPort: model.mcpPort)
                     .accessibilityElement(children: .combine)
                 TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
-                          hostname: model.guideCommandHostname)
+                          hostname: model.guideCommandHostname, funnelPort: model.guideFunnelPort)
             case .cantCheck(nil):
                 EmptyView()
             }
@@ -538,7 +544,8 @@ extension RemoteSetUpView {
         }
         if let health {
             TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
-                      hostname: model.remoteOrigin.flatMap(URL.init(string:))?.host)
+                      hostname: model.remoteOrigin.flatMap(URL.init(string:))?.host,
+                      funnelPort: model.inUseFunnelPort, inUse: true)
                 .padding(.leading, 104)
                 .padding(.trailing, 16)
                 .padding(.bottom, 12)
@@ -584,6 +591,15 @@ struct TunnelHealthLine: View {
     }
 }
 
+extension TunnelStartCard {
+    /// Why Funnel uses another public port, what's on all three, or that the check couldn't tell.
+    var funnelLine: String? {
+        guard let health = model.currentTunnelHealth else { return nil }
+        if let ports = model.currentFunnelPorts { return ports.reason }
+        return health == .unknown ? FunnelPorts.unknownWarning : nil
+    }
+}
+
 /// What to do about a tunnel that isn't running or is set up wrong: the
 /// command to run (with Copy) or where to get the tool. EK Bridge never
 /// runs it (D9).
@@ -592,6 +608,10 @@ struct TunnelFix: View {
     let provider: TunnelProvider
     let remotePort: Int
     let hostname: String?
+    /// Funnel's public port for the command; nil when another app serves it (no command then).
+    var funnelPort: Int? = 443
+    /// The Tunnel row: the port comes from the address in use.
+    var inUse = false
 
     var body: some View {
         if let fix {
@@ -603,22 +623,36 @@ struct TunnelFix: View {
                                help: String(localized: "Copy Command"))
                 }
             }
+        } else if inUse, provider == .tailscaleFunnel, funnelPort == nil, startsFunnel {
+            Text(String(localized: "Another app on this Mac now serves Funnel's port in your address, so starting Funnel there would replace it. Use Switch Tunnel… to set it up on a free port."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         } else if case .notInstalled = health, let link = provider.installLink.flatMap(URL.init(string:)) {
             Link(String(localized: "Download \(provider == .ngrok ? "ngrok" : "Tailscale")…"), destination: link)
                 .font(.callout)
         }
     }
 
+    /// The states whose fix is Funnel's start command.
+    private var startsFunnel: Bool {
+        switch health {
+        case .notRunning: health.showsStartCommand
+        case .wrongPort, .notPublic: true
+        default: false
+        }
+    }
+
     private var fix: (intro: String, command: String)? {
         switch health {
         case .notRunning where health.showsStartCommand:
-            return provider.runCommand(port: remotePort, hostname: hostname)
+            return provider.runCommand(port: remotePort, hostname: hostname, publicPort: funnelPort)
                 .map { (String(localized: "Start it in Terminal:"), $0) }
         case .wrongPort:
-            return provider.runCommand(port: remotePort, hostname: hostname)
+            return provider.runCommand(port: remotePort, hostname: hostname, publicPort: funnelPort)
                 .map { (String(localized: "Start it on port \(String(remotePort)) in Terminal:"), $0) }
         case .notPublic where provider == .tailscaleFunnel:
-            return provider.runCommand(port: remotePort, hostname: hostname)
+            return provider.runCommand(port: remotePort, hostname: hostname, publicPort: funnelPort)
                 .map { (String(localized: "Turn on Funnel in Terminal:"), $0) }
         case .notInstalled where provider == .cloudflareTunnel || provider == .cloudflareQuick:
             return (String(localized: "Install it in Terminal:"), "brew install cloudflared")

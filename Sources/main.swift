@@ -274,7 +274,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             itemLookup: { [weak self] ref in self.map { ItemLookup.snapshot(ref, store: $0.store) } },
             showItem: { ItemLookup.show($0) },
             notifications: notificationPoster.controls,
-            tunnels: .live)
+            tunnels: .live(mistakenPorts: [MCPDefaults.port]))
     }
 
     private lazy var installedAgents: InstalledAgentsCache = {

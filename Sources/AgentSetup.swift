@@ -849,13 +849,17 @@ extension TunnelProvider {
         }
     }
 
-    /// Start commands, then `offCommands`, to run in order in Terminal.
-    func commands(port: Int, hostname: String?) -> [String] {
+    /// Start commands, then `offCommands`, to run in order in Terminal. `publicPort` is
+    /// Funnel's public port (`FunnelPorts.publicPort`); nil when other apps serve all three, and
+    /// then Funnel has no command.
+    func commands(port: Int, hostname: String?, publicPort: Int? = 443) -> [String] {
         let name = Self.cloudflareTunnelName
         let start: [String]
         switch self {
         case .tailscaleFunnel:
-            start = ["tailscale funnel --bg \(port)"]
+            guard let publicPort else { return [] }
+            return [TailscaleFunnelCommand.start(port: port, publicPort: publicPort)]
+                + offCommands(port: port, publicPort: publicPort)
         case .cloudflareTunnel:
             start = [
                 "brew install cloudflared", "cloudflared tunnel login", "cloudflared tunnel create \(name)",
@@ -876,9 +880,10 @@ extension TunnelProvider {
         return start + offCommands(port: port)
     }
 
-    /// Only Funnel keeps running in the background; the others stop with Control-C.
-    func offCommands(port: Int) -> [String] {
-        self == .tailscaleFunnel ? ["tailscale funnel --bg \(port) off"] : []
+    /// Only Funnel keeps running in the background; the others stop with Control-C. Funnel's
+    /// turns off only its own public port, never another app's.
+    func offCommands(port: Int, publicPort: Int = 443) -> [String] {
+        self == .tailscaleFunnel ? [TailscaleFunnelCommand.off(port: port, publicPort: publicPort)] : []
     }
 
     /// `~/.cloudflared/config.yml` for a named Cloudflare tunnel.

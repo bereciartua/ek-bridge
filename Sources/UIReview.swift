@@ -66,6 +66,8 @@ final class UIReview {
     /// What the fake tunnel checks on this Mac answer, per tunnel (plan 08).
     /// Other tunnel can't be checked.
     var tunnelHealth: [TunnelProvider: TunnelHealth] = UIReview.defaultTunnelHealth
+    /// What the fake Tailscale check says is served on this Mac's public ports (nil: couldn't tell).
+    var funnelPorts: FunnelPorts?
     static let quickTunnelOrigin = "https://quiet-river-1234.trycloudflare.com"
     static let defaultTunnelHealth: [TunnelProvider: TunnelHealth] = [
         .tailscaleFunnel: .running(address: remoteOrigin, port: 47616),
@@ -251,7 +253,10 @@ final class UIReview {
                 openSettings: {}),
             tunnels: TunnelChecks { [unowned self] provider, _, done in
                 self.tunnelChecks += 1
-                DispatchQueue.main.async { done(self.tunnelHealth[provider] ?? .unknown) }
+                DispatchQueue.main.async {
+                    done(TunnelCheckResult(health: self.tunnelHealth[provider] ?? .unknown,
+                                           funnel: provider == .tailscaleFunnel ? self.funnelPorts : nil))
+                }
             })
     }
 
