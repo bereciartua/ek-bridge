@@ -92,9 +92,9 @@ final class UIReview {
     })
     private(set) lazy var approvalPanel = ApprovalPanelController(center: approvals)
     private(set) lazy var oauth = OAuthServer(
-        directory: directory, fetcher: ReviewFetcher(),
-        clientAllowed: { [unowned self] id in self.registry.cloudAccessAllowed(clientID: id) },
-        clientName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
+        configuration: EKBridgeMCP.remoteConfiguration(dataFolder: directory), fetcher: ReviewFetcher(),
+        agentAllowed: { [unowned self] id in self.registry.cloudAccessAllowed(clientID: id) },
+        agentName: { [unowned self] id in self.registry.clients()?.first { $0.id == id }?.name })
     static let remoteSecret = "q7Zk2vN4bXwP9sL1mT6hYa"
     static let remoteOrigin = "https://my-mac.tail1234.ts.net"
     static var longNames: Bool { CommandLine.arguments.contains("--ui-long-names") }

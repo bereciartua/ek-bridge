@@ -19,6 +19,7 @@ Agents need no changes.
 ### Internal
 
 - BridgeKit 0.1.1 (`scripts/bridgekit.sh`), which brings both changes above to the local MCP port and the Remote Access port.
+- **Remote Access comes from BridgeKit 0.2.0.** The Remote Access listener, the OAuth server and its store, the client-metadata fetch, the tunnel checks and the reachability test moved to BridgeKit 0.2.0's `BridgeKitRemote`, shared with Funes Vault. Nothing changes for users or cloud agents: the same URLs, tokens, sign-in pages, wording and `remote-connections.json`. `build.sh` links it next to BridgeKitCore. Every existing test, golden and harness here passes unchanged; the tests of the moved code run in BridgeKit.
 
 ## [0.11.2] - 2026-10-17
 
