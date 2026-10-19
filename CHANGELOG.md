@@ -6,6 +6,23 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.11.4] - Unreleased
+
+Agents need no changes: same tools, ports, files and setups. An existing Tailscale Funnel setup keeps working as it is. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one. 0.11.3 was built as a draft only and never published; everything in it is here, with this change to its Funnel fix.
+
+### Changed
+
+- **Remote Access shares Tailscale Funnel's port 443 by path** with Funes Vault and other apps on this Mac. claude.ai and ChatGPT only connect to port 443, so 0.11.3's other public ports didn't reach a second app.
+  - A new Funnel setup shows one command per path EK Bridge answers. Each adds only that path to port 443, so other apps keep theirs.
+  - The commands to turn it off name each path. A setup from before, which forwards the whole port (`/`), stays **Running** and turns off by path too, leaving other apps' paths alone.
+  - If 443 has another app's tailnet-only entry, which Funnel would make public, the guide uses 8443 or 10000 and says that claude.ai and ChatGPT can't reach it there.
+  - New Tunnel states: **Incomplete**, with the commands for the missing paths, and **No shareable port**.
+  - After **Reset Path…**, the page shows the commands that move Funnel to the new path.
+
+### Internal
+
+- BridgeKit 0.4.0 (`RemotePaths`, `FunnelPorts`, `TailscaleFunnelCommand`). The tunnel goldens for Tailscale Funnel change to the path commands; every other golden and harness passes unchanged.
+
 ## [0.11.3] - 2026-10-19
 
 Agents need no changes: same tools, ports, files and setups. Remote Access's guide now shares Tailscale Funnel with Funes Vault and other apps on this Mac instead of taking port 443 from them. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one.

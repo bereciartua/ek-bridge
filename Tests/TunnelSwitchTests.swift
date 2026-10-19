@@ -74,29 +74,38 @@ struct TunnelSwitchTests {
         check(edit.canConfirm(normalized: "https://new-name-77.trycloudflare.com"), "a new quick-tunnel address")
     }
 
+    /// EK Bridge's switch summary, its Funnel setup from before: `/` of 443.
+    static func make(_ change: TunnelSwitch, newOrigin: String, port: Int, remoteTokenClients: [String],
+                     oauthApps: [String]) -> TunnelSwitchSummary {
+        TunnelSwitchSummary.make(change, newOrigin: newOrigin, port: port, remoteTokenClients: remoteTokenClients,
+                                 oauthApps: oauthApps, funnelOff: {
+            TailscaleFunnelCommand.off(publicPort: TailscaleFunnelCommand.publicPort(fromAddress: $0), paths: ["/"])
+        })
+    }
+
     static func summary() {
         var change = TunnelSwitch(kind: .switchTunnel, fromTunnel: .tailscaleFunnel, fromOrigin: funnel)
         change.picked = .cloudflareQuick
-        let full = TunnelSwitchSummary.make(change, newOrigin: quick, port: 47616,
+        let full = Self.make(change, newOrigin: quick, port: 47616,
                                             remoteTokenClients: ["Claude Code"], oauthApps: ["claude.ai"])
         check(full.mcpURL == quick + "/r/••••••/mcp", "the new URL, secret hidden")
         check(full.updateURLIn == ["Claude Code"] && full.disconnected == ["claude.ai"] && !full.noCloudAgents, "names")
-        check(full.stopTunnel == .tailscaleFunnel && full.stopCommands == ["tailscale funnel --bg 47616 off"],
+        check(full.stopTunnel == .tailscaleFunnel && full.stopCommands == ["tailscale funnel --https=443 --set-path / off"],
               "then you can stop Tailscale Funnel")
-        let none = TunnelSwitchSummary.make(change, newOrigin: quick, port: 47616, remoteTokenClients: [], oauthApps: [])
+        let none = Self.make(change, newOrigin: quick, port: 47616, remoteTokenClients: [], oauthApps: [])
         check(none.noCloudAgents, "No cloud agents use the current URL yet")
         // Quick tunnel → Tailscale: nothing to stop (Control-C).
         var back = TunnelSwitch(kind: .switchTunnel, fromTunnel: .cloudflareQuick, fromOrigin: quick)
         back.picked = .tailscaleFunnel
-        let reverse = TunnelSwitchSummary.make(back, newOrigin: funnel, port: 47616, remoteTokenClients: ["A"], oauthApps: [])
+        let reverse = Self.make(back, newOrigin: funnel, port: 47616, remoteTokenClients: ["A"], oauthApps: [])
         check(reverse.stopTunnel == nil && reverse.stopCommands.isEmpty, "no off command")
         // The same address through another tunnel: the URL stays.
-        let same = TunnelSwitchSummary.make(change, newOrigin: funnel, port: 47616,
+        let same = Self.make(change, newOrigin: funnel, port: 47616,
                                             remoteTokenClients: ["Claude Code"], oauthApps: ["claude.ai"])
         check(same.noCloudAgents, "nothing to update")
         // Edit… never suggests stopping the tunnel in use.
         let edit = TunnelSwitch(kind: .editAddress, fromTunnel: .tailscaleFunnel, fromOrigin: funnel)
-        check(TunnelSwitchSummary.make(edit, newOrigin: "https://other.tail1234.ts.net", port: 47616,
+        check(Self.make(edit, newOrigin: "https://other.tail1234.ts.net", port: 47616,
                                        remoteTokenClients: [], oauthApps: []).stopTunnel == nil, "Edit… stops nothing")
     }
 

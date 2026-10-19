@@ -16,12 +16,13 @@ extension TunnelSwitch {
 }
 
 extension TunnelSwitchSummary {
-    /// Step 4 with EK Bridge's off commands (only Funnel keeps running in the background).
+    /// Step 4 with EK Bridge's off commands: only Funnel keeps running in the background, and
+    /// `funnelOff` gives its commands for the address being left.
     static func make(_ change: TunnelSwitch, newOrigin: String, port: Int, remoteTokenClients: [String],
-                     oauthApps: [String]) -> TunnelSwitchSummary {
+                     oauthApps: [String], funnelOff: (String) -> [String]) -> TunnelSwitchSummary {
         make(change, newOrigin: newOrigin, port: port, remoteTokenClients: remoteTokenClients,
-             oauthApps: oauthApps, offCommands: { provider, port, origin in
-            provider.offCommands(port: port, publicPort: TailscaleFunnelCommand.publicPort(fromAddress: origin))
+             oauthApps: oauthApps, offCommands: { provider, _, origin in
+            provider == .tailscaleFunnel ? funnelOff(origin) : []
         })
     }
 }

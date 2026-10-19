@@ -849,17 +849,17 @@ extension TunnelProvider {
         }
     }
 
-    /// Start commands, then `offCommands`, to run in order in Terminal. `publicPort` is
-    /// Funnel's public port (`FunnelPorts.publicPort`); nil when other apps serve all three, and
-    /// then Funnel has no command.
-    func commands(port: Int, hostname: String?, publicPort: Int? = 443) -> [String] {
+    /// Start commands, then `offCommands`, to run in order in Terminal. Funnel's are one per
+    /// public path (`RemoteConfiguration.publicPaths`) on `publicPort` (`FunnelPorts.publicPort`;
+    /// nil when no port can take them, and then there's no command), without its off commands,
+    /// which turn off the same paths later.
+    func commands(port: Int, hostname: String?, publicPort: Int? = 443, paths: [String] = []) -> [String] {
         let name = Self.cloudflareTunnelName
         let start: [String]
         switch self {
         case .tailscaleFunnel:
-            guard let publicPort else { return [] }
-            return [TailscaleFunnelCommand.start(port: port, publicPort: publicPort)]
-                + offCommands(port: port, publicPort: publicPort)
+            guard let publicPort, !paths.isEmpty else { return [] }
+            return TailscaleFunnelCommand.start(port: port, publicPort: publicPort, paths: paths)
         case .cloudflareTunnel:
             start = [
                 "brew install cloudflared", "cloudflared tunnel login", "cloudflared tunnel create \(name)",
@@ -881,9 +881,9 @@ extension TunnelProvider {
     }
 
     /// Only Funnel keeps running in the background; the others stop with Control-C. Funnel's
-    /// turns off only its own public port, never another app's.
-    func offCommands(port: Int, publicPort: Int = 443) -> [String] {
-        self == .tailscaleFunnel ? [TailscaleFunnelCommand.off(port: port, publicPort: publicPort)] : []
+    /// turn off only these paths, never the whole port or another app's.
+    func offCommands(port: Int, publicPort: Int = 443, paths: [String] = []) -> [String] {
+        self == .tailscaleFunnel ? TailscaleFunnelCommand.off(publicPort: publicPort, paths: paths) : []
     }
 
     /// `~/.cloudflared/config.yml` for a named Cloudflare tunnel.
@@ -917,12 +917,12 @@ extension TunnelProvider {
                     funnel node attribute to your tailnet policy.
                     """),
                 String(localized: """
-                    Run the first command in Terminal. Funnel prints your public address, such as \
-                    https://my-mac.tail1234.ts.net.
+                    Run the commands in Terminal. Each adds one of the Remote Access paths to Funnel's \
+                    port; everything else on that port, such as another app's tunnel, stays as it is.
                     """),
-                paste(String(localized: "that address"))
+                paste(String(localized: "your Mac's Funnel address, such as https://my-mac.tail1234.ts.net"))
                     + " " + String(localized: "Public DNS can take about 10 minutes the first time."),
-                String(localized: "To turn it off, run the last command."),
+                String(localized: "To turn it off, run the off commands below them. They remove only these paths."),
             ]
         case .cloudflareTunnel:
             return [
@@ -982,6 +982,14 @@ extension TunnelProvider {
                 String(localized: "Tailscale Serve isn't enough: cloud agents aren't on your tailnet."),
                 String(localized: """
                     Funnel keeps running in the background, even after a restart, until you turn it off.
+                    """),
+                String(localized: """
+                    claude.ai and ChatGPT only connect to port 443, so apps on this Mac share it by path: \
+                    Tailscale sends these paths here and every other path where it went before.
+                    """),
+                String(localized: """
+                    The paths include the secret path. After Reset Path…, the page shows the commands that \
+                    move Funnel to the new one.
                     """),
             ]
         case .cloudflareTunnel:

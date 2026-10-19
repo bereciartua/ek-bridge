@@ -32,22 +32,25 @@ struct TunnelHealthTests {
         print("Tunnel health: Tailscale, cloudflared and ngrok parsers, the Tunnel row's name, state words and the check schedule passed")
     }
 
+    /// The public paths for a sample secret.
+    static let paths = RemoteConfiguration(secret: "q7Zk2vN4bXwP9sL1mT6hYa", publicOrigin: nil, port: 47616).publicPaths
+
     static func tailscale() {
         let status = fixture("tailscale-status.json")
         let funnel = fixture("tailscale-funnel.json")
         let parse = { (status: Data?, funnel: Data?, port: Int) in
-            TailscaleStatus.parse(status: status, funnel: funnel, port: port, mistakenPorts: [MCPDefaults.port])
+            TailscaleStatus.parse(status: status, funnel: funnel, port: port, paths: paths, mistakenPorts: [MCPDefaults.port])
         }
         // The real config: Funnel on 443 → 47616, and another app's Serve entry on 8443.
         check(parse(status, funnel, 47616) == .running(address: "https://my-mac.tail1234.ts.net", port: 47616), "running")
         // Another port (the test copy's, or Funes Vault's 47627): 443 and 8443 belong to other apps,
-        // not to this tunnel at the wrong port. Not started yet; the first free port is 10000.
+        // not to this tunnel at the wrong port. Not started yet; 443 is public, so its paths go there.
         check(parse(status, funnel, 47626) == .notRunning(reason: .noTunnel), "other apps' entries aren't wrong port")
-        let shared = FunnelPorts.parse(funnel: funnel, port: 47626)
-        check(shared?.publicPort == 10000 && shared?.inTheWay.map(\.publicPort) == [443, 8443],
-              "the first free port, past a Serve entry")
-        check(TailscaleStatus.parse(status: status, funnel: fixture("tailscale-funnel-wrong-port.json"), port: 47616)
-              == .notRunning(reason: .noTunnel), "a port not named as a mistake is another app's")
+        let shared = FunnelPorts.parse(funnel: funnel, port: 47626, paths: paths)
+        check(shared?.publicPort == 443 && shared?.inTheWay.isEmpty == true, "443 shared by path")
+        check(TailscaleStatus.parse(status: status, funnel: fixture("tailscale-funnel-wrong-port.json"), port: 47616,
+                                    paths: paths) == .notRunning(reason: .noTunnel),
+              "a port not named as a mistake is another app's")
         check(parse(status, fixture("tailscale-funnel-warning.txt"), 47616)
               == .running(address: "https://my-mac.tail1234.ts.net", port: 47616), "version warning before the JSON")
         var warned = Data("Warning: client version \"1\" != tailscaled server version \"2\"\n".utf8)
@@ -82,30 +85,40 @@ struct TunnelHealthTests {
               "TAILSCALE_BE_CLI added, the rest kept")
     }
 
-    /// Funes Vault and EK Bridge on one Mac: the commands and words for each port.
+    /// Funes Vault and EK Bridge on one Mac, sharing Funnel's port 443 by path: the commands and words.
     static func funnelPorts() {
-        func ports(_ entries: [(Int, [Int], Bool)], port: Int = 47616) -> FunnelPorts {
-            FunnelPorts(entries: entries.map { FunnelPorts.Entry(publicPort: $0.0, host: "my-mac.tail1234.ts.net",
-                                                                  targets: $0.1, funnel: $0.2) }, port: port)
+        func entry(_ port: Int, _ handlers: [(String, Int, String)], funnel: Bool) -> FunnelPorts.Entry {
+            FunnelPorts.Entry(publicPort: port, host: "my-mac.tail1234.ts.net",
+                              handlers: handlers.map { FunnelPorts.Handler(path: $0.0, port: $0.1, targetPath: $0.2) },
+                              funnel: funnel)
         }
+        func ports(_ entries: [FunnelPorts.Entry]) -> FunnelPorts { FunnelPorts(entries: entries, port: 47616, paths: paths) }
         let funnel = TunnelProvider.tailscaleFunnel
-        check(funnel.commands(port: 47616, hostname: nil) == ["tailscale funnel --bg 47616", "tailscale funnel --bg 47616 off"],
-              "443: the same commands as before")
-        check(funnel.commands(port: 47616, hostname: nil, publicPort: 8443)
-              == ["tailscale funnel --bg --https=8443 47616", "tailscale funnel --https=8443 off"], "8443")
-        check(funnel.commands(port: 47616, hostname: nil, publicPort: nil).isEmpty
-              && funnel.runCommand(port: 47616, hostname: nil, publicPort: nil) == nil, "no free port: no command")
+        let commands = funnel.commands(port: 47616, hostname: nil, paths: paths)
+        check(commands.count == 4 && commands.allSatisfy { $0.hasPrefix("tailscale funnel --bg --https=443 --set-path /") },
+              "443: one command per path")
+        check(funnel.commands(port: 47616, hostname: nil, publicPort: nil, paths: paths).isEmpty
+              && funnel.runCommand(port: 47616, hostname: nil, publicPort: nil, paths: paths) == nil, "no port: no command")
         check(ports([]).reason == nil, "nothing served: no line")
-        let funes = ports([(443, [47627], true)])
-        check(funes.publicPort == 8443 && funes.reason == "Funnel already serves another app on this Mac on port 443 (it forwards to 47627), so EK Bridge uses port 8443. Its address ends in :8443.",
-              "Funes Vault first on 443")
-        let full = ports([(443, [47627], true), (8443, [4000], false), (10000, [5432], true)])
-        check(full.publicPort == nil && full.reason?.hasPrefix("Funnel already serves other apps on this Mac on port 443") == true,
-              "all three taken")
-        check(ports([(443, [47616], true), (8443, [47627], true)]).reason == nil, "already running on 443: no line")
-        let taken = TunnelHealth.notRunning(reason: .allPortsTaken)
-        check(taken.label == "No free port" && taken.detail(funnel, remotePort: 47616, mcpPort: 47615)?.isEmpty == false,
-              "No free port's words")
+        // Funes Vault set up first, by path on 443: EK Bridge adds its own paths beside them.
+        let funesPaths = RemoteConfiguration(secret: "Zz9Yy8Xx7Ww6Vv5Uu4Tt3S", publicOrigin: nil, port: 47627).publicPaths
+        let funes = ports([entry(443, funesPaths.map { ($0, 47627, $0) }, funnel: true)])
+        check(funes.publicPort == 443 && funes.reason?.contains("These commands add only EK Bridge's paths") == true,
+              "Funes Vault on 443 keeps working")
+        let tailnet = ports([entry(443, [("/", 4000, "")], funnel: false)])
+        check(tailnet.publicPort == 8443 && tailnet.reason?.contains("claude.ai and ChatGPT only connect to port 443") == true,
+              "a tailnet-only 443: 8443, with the warning")
+        // EK Bridge's own setup from before: / of 443. Still running, and its off command names /.
+        let legacy = ports([entry(443, [("/", 47616, "")] + funesPaths.map { ($0, 47627, $0) }, funnel: true)])
+        check(legacy.running?.publicPort == 443 && legacy.reason == nil, "/ from before is running")
+        check(TailscaleFunnelCommand.off(legacy, address: nil, paths: paths) == ["tailscale funnel --https=443 --set-path / off"],
+              "turning off / leaves Funes Vault's paths")
+        let none = TunnelHealth.notRunning(reason: .noSharablePort)
+        check(none.label == "No shareable port" && none.detail(funnel, remotePort: 47616, mcpPort: 47615)?.isEmpty == false,
+              "No shareable port's words")
+        let incomplete = TunnelHealth.incomplete(address: nil, missing: 2)
+        check(incomplete.label == "Incomplete" && incomplete.detail(funnel, remotePort: 47616, mcpPort: 47615)?.contains("2 missing") == true,
+              "Incomplete's words")
         check(FunnelPorts.unknownWarning.hasPrefix("EK Bridge couldn't check"), "unknown")
     }
 
@@ -286,7 +299,9 @@ struct TunnelHealthTests {
         check(running.unreachableReason(.tailscaleFunnel, remotePort: 47616) == nil
               && TunnelHealth.unknown.unreachableReason(.other, remotePort: 47616) == nil, "nothing to explain")
         // Start commands and install links.
-        check(TunnelProvider.tailscaleFunnel.runCommand(port: 47616, hostname: nil) == "tailscale funnel --bg 47616", "funnel")
+        check(TunnelProvider.tailscaleFunnel.runCommand(port: 47616, hostname: nil, paths: [paths[0]])
+              == "tailscale funnel --bg --https=443 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa",
+              "funnel")
         check(TunnelProvider.cloudflareTunnel.runCommand(port: 47616, hostname: "mcp.example.com") == "cloudflared tunnel run ek-bridge",
               "named")
         check(TunnelProvider.ngrok.runCommand(port: 47616, hostname: "x.ngrok-free.app")
