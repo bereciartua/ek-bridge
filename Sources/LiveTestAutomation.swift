@@ -355,7 +355,8 @@ final class LiveTestAutomation {
             "guideStart": "\(model.tunnelStartState)",
             "guideAddress": model.guideAddress ?? NSNull(),
             "guideCommands": model.tunnelChoice.commands(port: model.remotePort, hostname: model.guideCommandHostname,
-                                                         publicPort: model.guideFunnelPort),
+                                                         publicPort: model.guideFunnelPort,
+                                                         paths: model.remotePublicPaths),
             "status": model.remoteStatusLine ?? NSNull(),
             "tunnelHealth": tunnelHealthState(),
             "switch": switchState() ?? NSNull(),
@@ -442,7 +443,8 @@ final class LiveTestAutomation {
             "start": "\(model.tunnelStartState)",
             "hostname": model.guideHostname,
             "commands": change.picked.map {
-                $0.commands(port: model.remotePort, hostname: model.guideCommandHostname, publicPort: model.guideFunnelPort)
+                $0.commands(port: model.remotePort, hostname: model.guideCommandHostname, publicPort: model.guideFunnelPort,
+                            paths: model.remotePublicPaths)
             } ?? [],
             "address": change.address,
             "addressSource": "\(change.addressSource)",

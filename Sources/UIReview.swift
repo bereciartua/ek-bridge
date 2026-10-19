@@ -251,7 +251,7 @@ final class UIReview {
                     }
                 },
                 openSettings: {}),
-            tunnels: TunnelChecks { [unowned self] provider, _, done in
+            tunnels: TunnelChecks { [unowned self] provider, _, _, done in
                 self.tunnelChecks += 1
                 DispatchQueue.main.async {
                     done(TunnelCheckResult(health: self.tunnelHealth[provider] ?? .unknown,

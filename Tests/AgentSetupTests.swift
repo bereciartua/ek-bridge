@@ -288,6 +288,8 @@ struct AgentSetupTests {
         clientName: "Other")
     static let remotePort = TunnelProvider.defaultRemotePort
     static let tunnelHost = "my-mac.tail1234.ts.net"
+    /// The public paths for a sample secret.
+    static let paths = RemoteConfiguration(secret: "q7Zk2vN4bXwP9sL1mT6hYa", publicOrigin: nil, port: remotePort).publicPaths
     static let secretPrefixes = ["ekb_mcp_v1_", "ekb_mcpr_v1_", "ekb_oat_v1_", "ekb_ort_v1_"]
 
     static func slug(_ agent: CloudAgentKind) -> String {
@@ -325,7 +327,10 @@ struct AgentSetupTests {
     static func render(_ provider: TunnelProvider) -> String {
         var lines = ["\(provider.displayName)", "preservesHost: \(provider.preservesHost)",
                      "detectionHeader: \(provider.detectionHeader ?? "none")", "", "commands:"]
-        lines += provider.commands(port: remotePort, hostname: tunnelHost)
+        lines += provider.commands(port: remotePort, hostname: tunnelHost, paths: paths)
+        if provider == .tailscaleFunnel {
+            lines += ["", "off:"] + provider.offCommands(port: remotePort, paths: paths)
+        }
         if let config = provider.configFile(port: remotePort, hostname: tunnelHost) {
             lines += ["", "config.yml:", config]
         }
@@ -462,8 +467,8 @@ struct AgentSetupTests {
     static func tunnels() {
         for provider in TunnelProvider.allCases {
             let key = "\(provider)"
-            let commands = provider.commands(port: remotePort, hostname: tunnelHost)
-            let moved = provider.commands(port: 50123, hostname: nil)
+            let commands = provider.commands(port: remotePort, hostname: tunnelHost, paths: paths)
+            let moved = provider.commands(port: 50123, hostname: nil, paths: paths)
             precondition(commands.isEmpty == (provider == .other), key)
             if provider != .other {
                 // A named Cloudflare tunnel takes the port from config.yml.
@@ -472,8 +477,10 @@ struct AgentSetupTests {
                 precondition((moved + config(50123)).contains { $0.contains("50123") }, key)
             }
             precondition(!moved.contains { $0.contains("47616") || $0.contains(tunnelHost) }, key)
-            precondition(Array(commands.suffix(provider.offCommands(port: remotePort).count))
-                         == provider.offCommands(port: remotePort), key)
+            if provider != .tailscaleFunnel {
+                precondition(Array(commands.suffix(provider.offCommands(port: remotePort).count))
+                             == provider.offCommands(port: remotePort), key)
+            }
             precondition(!provider.steps.isEmpty && !provider.notes.isEmpty, key)
             let all = commands + provider.steps + provider.notes
                 + [provider.configFile(port: remotePort, hostname: tunnelHost) ?? ""]
@@ -482,8 +489,13 @@ struct AgentSetupTests {
                 precondition(!text.contains("47615"), "\(key) points at the local port")
             }
         }
-        let tailscale = TunnelProvider.tailscaleFunnel.commands(port: remotePort, hostname: nil)
-        precondition(tailscale == ["tailscale funnel --bg 47616", "tailscale funnel --bg 47616 off"])
+        // Funnel: one command per public path on 443, the off commands apart, each naming its path.
+        let tailscale = TunnelProvider.tailscaleFunnel.commands(port: remotePort, hostname: nil, paths: paths)
+        precondition(tailscale.count == 4 && tailscale[0] == "tailscale funnel --bg --https=443 --set-path "
+            + "/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa")
+        precondition(TunnelProvider.tailscaleFunnel.offCommands(port: remotePort, paths: paths)
+            .allSatisfy { $0.hasPrefix("tailscale funnel --https=443 --set-path /") && $0.hasSuffix(" off") })
+        precondition(TunnelProvider.tailscaleFunnel.commands(port: remotePort, hostname: nil).isEmpty)
         precondition(TunnelProvider.ngrok.commands(port: remotePort, hostname: nil)[1]
                      == "ngrok http 47616 --url https://<your-dev-domain> --host-header=rewrite")
         let config = TunnelProvider.cloudflareTunnel.configFile(port: 50123, hostname: nil)!
