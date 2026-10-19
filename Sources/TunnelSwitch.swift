@@ -20,7 +20,9 @@ extension TunnelSwitchSummary {
     static func make(_ change: TunnelSwitch, newOrigin: String, port: Int, remoteTokenClients: [String],
                      oauthApps: [String]) -> TunnelSwitchSummary {
         make(change, newOrigin: newOrigin, port: port, remoteTokenClients: remoteTokenClients,
-             oauthApps: oauthApps, offCommands: { $0.offCommands(port: $1) })
+             oauthApps: oauthApps, offCommands: { provider, port, origin in
+            provider.offCommands(port: port, publicPort: TailscaleFunnelCommand.publicPort(fromAddress: origin))
+        })
     }
 }
 

@@ -396,6 +396,8 @@ final class BridgeAppModel {
     /// What the tunnel's own tool said at the last check (plan 08 §5), and
     /// for which tunnel. Display only.
     private(set) var tunnelHealth: TunnelHealth?
+    /// What Tailscale serves on this Mac's public ports, from the same check (Funnel only).
+    private(set) var tunnelFunnel: FunnelPorts?
     private(set) var tunnelHealthProvider: TunnelProvider?
     private(set) var tunnelHealthCheckedAt: Date?
     /// The last check of the tunnel in use (D10's badge, menu and
@@ -2785,6 +2787,7 @@ final class BridgeAppModel {
             setRemoteOffAt(nil)
             remoteCandidate = nil
             tunnelHealth = nil
+            tunnelFunnel = nil
             inUseTunnelHealth = nil
             lastTunnelDown = nil
             // A switch stays open, but its test no longer applies.
@@ -3152,6 +3155,31 @@ final class BridgeAppModel {
         tunnelHealthProvider == tunnelCheckTarget ? tunnelHealth : nil
     }
 
+    var currentFunnelPorts: FunnelPorts? {
+        tunnelHealthProvider == tunnelCheckTarget ? tunnelFunnel : nil
+    }
+
+    /// Funnel's public port for the guide's commands (first setup and Switch Tunnel…): where it
+    /// already runs, else the first one nothing on this Mac serves. 443 when the check couldn't
+    /// tell; nil when other apps serve all three (no command then).
+    var guideFunnelPort: Int? {
+        guard let ports = currentFunnelPorts else { return 443 }
+        return ports.publicPort
+    }
+
+    /// Funnel's public port for the tunnel in use: the one in the address. Nil when another app
+    /// now serves it, so starting Funnel there would replace that app.
+    var inUseFunnelPort: Int? {
+        let publicPort = TailscaleFunnelCommand.publicPort(fromAddress: remoteOrigin)
+        guard let entry = currentFunnelPorts?.entry(on: publicPort) else { return publicPort }
+        return entry.targets.contains(remotePort) ? publicPort : nil
+    }
+
+    /// Step 3's example address for Tailscale Funnel, with the port the guide uses.
+    var funnelExampleAddress: String {
+        "https://my-mac.tail1234.ts.net" + (guideFunnelPort.map { $0 == 443 ? "" : ":\($0)" } ?? "")
+    }
+
     /// The Status row's reason for a failed test, when the check explains it.
     var remoteUnreachableReason: String? {
         guard case .notReachable = remoteTest else { return nil }
@@ -3173,13 +3201,15 @@ final class BridgeAppModel {
         let port = remotePort
         tunnelCheckRunning = true
         tunnelCheckStarted = Date()
-        services.tunnels.check(provider, port) { [weak self] health in
+        services.tunnels.check(provider, port) { [weak self] result in
             guard let self else { return }
             self.tunnelCheckRunning = false
+            let health = result.health
             let current = provider == self.tunnelCheckTarget && port == self.remotePort
             if current {
-                if self.tunnelHealth != health || self.tunnelHealthProvider != provider {
+                if self.tunnelHealth != health || self.tunnelFunnel != result.funnel || self.tunnelHealthProvider != provider {
                     self.tunnelHealth = health
+                    self.tunnelFunnel = result.funnel
                     self.tunnelHealthProvider = provider
                 }
                 self.tunnelHealthCheckedAt = Date()
