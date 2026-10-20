@@ -556,7 +556,8 @@ extension RemoteSetUpView {
         if let health {
             TunnelFix(health: health, provider: provider, remotePort: model.remotePort,
                       hostname: model.remoteOrigin.flatMap(URL.init(string:))?.host,
-                      funnelPort: model.inUseFunnelPort, paths: model.inUseFunnelPaths, inUse: true)
+                      funnelPort: model.inUseFunnelPort, paths: model.inUseFunnelPaths, inUse: true,
+                      move: model.inUseFunnelMove)
                 .padding(.leading, 104)
                 .padding(.trailing, 16)
                 .padding(.bottom, 12)
@@ -644,9 +645,30 @@ struct TunnelFix: View {
     var paths: [String] = []
     /// The Tunnel row: the port comes from the address in use.
     var inUse = false
+    /// The Tunnel row: Funnel on 8443 or 10000, which 443 can replace now. Shown instead of the fix.
+    var move: FunnelPorts.Move? = nil
 
     var body: some View {
-        if let fix {
+        if let move {
+            let text = move.commands.joined(separator: "\n")
+            VStack(alignment: .leading, spacing: 6) {
+                Text(move.intro)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !move.commands.isEmpty {
+                    HStack(alignment: .top) {
+                        CodeBox(text: text)
+                        CopyButton(text: text, title: String(localized: "Copy"),
+                                   help: String(localized: "Copy Commands"))
+                    }
+                }
+                ForEach(move.after, id: \.self) { line in
+                    Text(line)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else if let fix {
             VStack(alignment: .leading, spacing: 6) {
                 Text(fix.intro).font(.callout).foregroundStyle(.secondary)
                 HStack(alignment: .top) {

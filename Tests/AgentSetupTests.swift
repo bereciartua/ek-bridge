@@ -69,6 +69,7 @@ struct AgentSetupTests {
         for provider in TunnelProvider.allCases {
             expected["tunnel-\(slug(provider)).txt"] = render(provider)
         }
+        expected["tunnel-funnel-move.txt"] = renderFunnelMove()
 
         let files = FileManager.default
         if ProcessInfo.processInfo.environment["UPDATE_GOLDENS"] == "1" {
@@ -336,6 +337,44 @@ struct AgentSetupTests {
         }
         lines += ["", "steps:"] + provider.steps.enumerated().map { "\($0.offset + 1). \($0.element)" }
         lines += ["", "notes:"] + provider.notes.map { "- \($0)" }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The Tunnel row's move to 443 for setups left on 8443 or 10000, and where there's none.
+    static func renderFunnelMove() -> String {
+        let host = "my-mac.tail1234.ts.net"
+        let address = "https://" + host
+        func entry(_ port: Int, _ handlers: [(String, Int)], funnel: Bool = true) -> FunnelPorts.Entry {
+            FunnelPorts.Entry(publicPort: port, host: host,
+                              handlers: handlers.map { FunnelPorts.Handler(path: $0.0, port: $0.1,
+                                                                           targetPath: $0.0 == "/" ? "" : $0.0) },
+                              funnel: funnel)
+        }
+        func ports(_ entries: [FunnelPorts.Entry]) -> FunnelPorts { FunnelPorts(entries: entries, port: remotePort, paths: paths) }
+        let ours = paths.map { ($0, remotePort) }
+        let funes = RemoteConfiguration(secret: "Zz9Yy8Xx7Ww6Vv5Uu4Tt3S", publicOrigin: nil, port: 47627).publicPaths
+            .map { ($0, 47627) }
+        let cases: [(String, FunnelPorts, String?)] = [
+            ("0.11.3's / on 8443", ports([entry(443, funes), entry(8443, [("/", remotePort)])]), address + ":8443"),
+            ("the four paths on 10000", ports([entry(443, funes), entry(10000, ours)]), address + ":10000"),
+            ("not running, the address on 8443", ports([entry(443, funes)]), address + ":8443"),
+            ("on 443 already, the address still on 8443", ports([entry(443, funes + ours)]), address + ":8443"),
+            ("/ of 443", ports([entry(443, [("/", remotePort)] + funes)]), address),
+            ("443 tailnet-only, on 8443", ports([entry(443, [("/", 4000)], funnel: false), entry(8443, [("/", remotePort)])]),
+             address + ":8443"),
+        ]
+        var lines = [String]()
+        for (name, ports, origin) in cases {
+            lines += ["\(name):"]
+            guard let move = TailscaleFunnelCommand.moveTo443(ports, address: origin) else {
+                lines += ["no move", ""]
+                continue
+            }
+            lines += [move.intro] + move.commands + move.after + [""]
+        }
+        let unknownHost = FunnelPorts.Move(from: 8443, start: TailscaleFunnelCommand.start(port: remotePort, paths: paths),
+                                           off: [], address: nil)
+        lines += ["no host:", unknownHost.intro] + unknownHost.commands + unknownHost.after
         return lines.joined(separator: "\n")
     }
 

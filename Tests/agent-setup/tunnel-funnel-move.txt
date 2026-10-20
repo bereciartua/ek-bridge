@@ -1,0 +1,48 @@
+0.11.3's / on 8443:
+claude.ai and ChatGPT only connect to Funnel's port 443, and Remote Access uses port 8443. Port 443 can take EK Bridge's paths now, beside other apps' entries. Move them in Terminal:
+tailscale funnel --bg --https=443 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --https=8443 --set-path / off
+The last command turns off EK Bridge's entry on port 8443.
+Then change the address to https://my-mac.tail1234.ts.net with Address ▸ Edit….
+
+the four paths on 10000:
+claude.ai and ChatGPT only connect to Funnel's port 443, and Remote Access uses port 10000. Port 443 can take EK Bridge's paths now, beside other apps' entries. Move them in Terminal:
+tailscale funnel --bg --https=443 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --https=10000 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa off
+tailscale funnel --https=10000 --set-path /.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa off
+tailscale funnel --https=10000 --set-path /.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa off
+tailscale funnel --https=10000 --set-path /.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa off
+The last 4 commands turn off EK Bridge's entry on port 10000.
+Then change the address to https://my-mac.tail1234.ts.net with Address ▸ Edit….
+
+not running, the address on 8443:
+claude.ai and ChatGPT only connect to Funnel's port 443, and Remote Access uses port 8443. Port 443 can take EK Bridge's paths now, beside other apps' entries. Move them in Terminal:
+tailscale funnel --bg --https=443 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa
+Then change the address to https://my-mac.tail1234.ts.net with Address ▸ Edit….
+
+on 443 already, the address still on 8443:
+claude.ai and ChatGPT only connect to Funnel's port 443, which already forwards EK Bridge's paths, but the address uses port 8443.
+Change the address to https://my-mac.tail1234.ts.net with Address ▸ Edit….
+
+/ of 443:
+no move
+
+443 tailnet-only, on 8443:
+no move
+
+no host:
+claude.ai and ChatGPT only connect to Funnel's port 443, and Remote Access uses port 8443. Port 443 can take EK Bridge's paths now, beside other apps' entries. Move them in Terminal:
+tailscale funnel --bg --https=443 --set-path /r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-protected-resource/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/oauth-authorization-server/r/q7Zk2vN4bXwP9sL1mT6hYa
+tailscale funnel --bg --https=443 --set-path /.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa http://127.0.0.1:47616/.well-known/openid-configuration/r/q7Zk2vN4bXwP9sL1mT6hYa
+Then change the address with Address ▸ Edit… to your Mac's Funnel address without :8443.

@@ -3200,6 +3200,12 @@ final class BridgeAppModel {
         return ports.pathsToAdd
     }
 
+    /// The Tunnel row's move to 443, which claude.ai and ChatGPT need (`FunnelPorts.Move.inUse`).
+    var inUseFunnelMove: FunnelPorts.Move? {
+        FunnelPorts.Move.inUse(provider: tunnelLabel, health: currentTunnelHealth, ports: currentFunnelPorts,
+                               address: remoteOrigin)
+    }
+
     func dismissFunnelResetCommands() { funnelResetCommands = nil }
 
     /// The off commands for the Funnel setup in use (Switch Tunnel…'s confirmation).
