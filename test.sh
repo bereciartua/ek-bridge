@@ -17,6 +17,13 @@ xcrun swiftc -parse-as-library \
     -o "$project_dir/build/bridge-enablement-tests"
 "$project_dir/build/bridge-enablement-tests"
 xcrun swiftc -parse-as-library \
+    -sdk "$sdk_dir" \
+    -module-cache-path "$cache_dir" \
+    "$project_dir/Sources/AppAppearance.swift" \
+    "$project_dir/Tests/AppAppearanceTests.swift" \
+    -o "$project_dir/build/app-appearance-tests"
+"$project_dir/build/app-appearance-tests"
+xcrun swiftc -parse-as-library \
     -I "$bridgekit_module_dir" -L "$bridgekit_lib_dir" -lBridgeKitRemote -lBridgeKitCore \
     "$project_dir/Sources/BridgeKitExports.swift" \
     -sdk "$sdk_dir" \

@@ -315,6 +315,7 @@ final class BridgeAppModel {
     static let maxRecentSummaries = 200
 
     private(set) var dockMode: DockIconMode = .whileWindowOpen
+    private(set) var appearance: AppAppearance = .automatic
     private(set) var showDeveloperTools = false
     private(set) var setupHidden = false
     private(set) var setupCompleted = false
@@ -444,6 +445,7 @@ final class BridgeAppModel {
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored var showWindow: () -> Void = {}
     @ObservationIgnored var dockModeChanged: () -> Void = {}
+    @ObservationIgnored var appearanceChanged: () -> Void = {}
     @ObservationIgnored var windowIsVisible: () -> Bool = { false }
     /// Brings the approval panel forward (menu bar item).
     @ObservationIgnored var showApprovals: () -> Void = {}
@@ -495,6 +497,7 @@ final class BridgeAppModel {
         let viewed = defaults.double(forKey: Keys.activityLastViewed)
         activityLastViewed = viewed > 0 ? Date(timeIntervalSinceReferenceDate: viewed) : nil
         dockMode = DockIconMode(rawValue: defaults.string(forKey: Keys.dockMode) ?? "") ?? .whileWindowOpen
+        appearance = AppAppearance(defaults: defaults)
         showDeveloperTools = defaults.bool(forKey: Keys.showDeveloperTools)
         notificationKinds = Set(NotificationKind.allCases.filter {
             defaults.object(forKey: $0.defaultsKey) as? Bool ?? $0.isOnByDefault
@@ -2046,6 +2049,12 @@ final class BridgeAppModel {
         dockMode = mode
         services.defaults.set(mode.rawValue, forKey: Keys.dockMode)
         dockModeChanged()
+    }
+
+    func setAppearance(_ choice: AppAppearance) {
+        appearance = choice
+        services.defaults.set(choice.rawValue, forKey: AppAppearance.defaultsKey)
+        appearanceChanged()
     }
 
     func setShowDeveloperTools(_ on: Bool) {

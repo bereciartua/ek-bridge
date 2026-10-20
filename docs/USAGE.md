@@ -105,6 +105,7 @@ Settings has three tabs: **General**, **Advanced** and **About** (⌘3 or ⌘, o
 
 - **Start at login** uses macOS Login Items. It's available when the app is in `/Applications` or `~/Applications`, and says what to do if macOS needs your approval. EK Bridge also remembers whether it was on.
 - **Show in Dock:** *While the window is open* (default), *Always*, or *Never*. The menu bar icon is always shown.
+- **Appearance:** *Automatic* (default) follows macOS; *Light* or *Dark* keeps EK Bridge's window, approval panels and menu bar menu that way whatever macOS uses. It changes at once and is kept when the app restarts. The menu bar icon, and the app menus at the top of the screen (File, Edit…), stay as macOS draws them.
 - **Check for updates automatically** (on by default) asks GitHub once a day whether a newer version exists, sending only your IP address and the app's version; **Check for Updates…** (also in the app and menu bar menus) checks now. A found update shows as **Update Available** in the menu bar menu and a card on Overview; the update window shows what's new and installs only when you click. The app waits for changes in the approval panel to be answered, then restarts. A copy built from source can't update itself.
 - **Ask before changes:** the default for **New AI agent connections** (*Ask me first*) and **New command-line connections** (*Allow without asking*), and **Apply to All Connections…**, which sets every connection to one mode after a confirmation.
 - **Notifications:** see [Notifications](#notifications).

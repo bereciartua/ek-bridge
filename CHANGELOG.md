@@ -8,6 +8,7 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ### Added
 
+- **Appearance: Automatic, Light or Dark.** In Settings ▸ General, keep EK Bridge dark while macOS is light, or the other way round. Automatic follows macOS, as before. It covers the window, Settings, approval and access panels, sheets, alerts and the menu bar menu, changes at once and is kept across launches. The same setting as in Funes Vault.
 - **Remote Access offers to move a Tailscale Funnel setup on port 8443 or 10000 to 443.** claude.ai and ChatGPT only connect to 443. Setups from 0.11.3's drafts, or on a port picked by hand, showed as **Running**, or got start commands for the old port.
   - Once 443 can take EK Bridge's paths, the Tunnel row says so and shows the four commands that add them to 443, then the ones that turn off the old port's entry.
   - Then **Address ▸ Edit…** changes the address to the one without a port.
