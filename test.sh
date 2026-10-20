@@ -439,6 +439,7 @@ xcrun swiftc -parse-as-library \
     "$project_dir/Sources/OutcomePresentation.swift" \
     "$project_dir/Sources/AppPresentation.swift" \
     "$project_dir/Sources/AgentSetup.swift" \
+    "$project_dir/Sources/TunnelHealth.swift" \
     "$project_dir/Tests/AgentSetupTests.swift" \
     -o "$project_dir/build/agent-setup-tests"
 "$project_dir/build/agent-setup-tests" "$project_dir/Tests/agent-setup"

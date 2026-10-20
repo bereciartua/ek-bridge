@@ -120,6 +120,30 @@ struct TunnelHealthTests {
         check(incomplete.label == "Incomplete" && incomplete.detail(funnel, remotePort: 47616, mcpPort: 47615)?.contains("2 missing") == true,
               "Incomplete's words")
         check(FunnelPorts.unknownWarning.hasPrefix("EK Bridge couldn't check"), "unknown")
+        // 0.11.3's drafts on 8443 move to 443 once 443 can take the paths, running or not.
+        let on8443 = ports([entry(443, funesPaths.map { ($0, 47627, $0) }, funnel: true), entry(8443, [("/", 47616, "")], funnel: true)])
+        let address = "https://my-mac.tail1234.ts.net:8443"
+        let running = TunnelHealth.running(address: address, port: 47616)
+        let move = FunnelPorts.Move.inUse(provider: funnel, health: running, ports: on8443, address: address)
+        check(move?.start == TailscaleFunnelCommand.start(port: 47616, paths: paths)
+              && move?.off == ["tailscale funnel --https=8443 --set-path / off"] && move?.address == "https://my-mac.tail1234.ts.net",
+              "running on 8443: 443's paths, then / of 8443 off")
+        check(move?.intro.contains("claude.ai and ChatGPT only connect to Funnel's port 443") == true
+              && move?.after.last == "Then change the address to https://my-mac.tail1234.ts.net with Address ▸ Edit….",
+              "the move's words")
+        let notRunning = ports([entry(443, funesPaths.map { ($0, 47627, $0) }, funnel: true)])
+        check(FunnelPorts.Move.inUse(provider: funnel, health: .notRunning(reason: .noTunnel), ports: notRunning,
+                                     address: address)?.off == [], "not running: 443's commands instead of 8443's")
+        check(FunnelPorts.Move.inUse(provider: funnel, health: .notRunning(reason: .loggedOut), ports: notRunning,
+                                     address: address) == nil, "log in first")
+        check(FunnelPorts.Move.inUse(provider: funnel, health: nil, ports: on8443, address: address) == nil, "not checked")
+        check(FunnelPorts.Move.inUse(provider: .cloudflareTunnel, health: running, ports: on8443, address: address) == nil,
+              "not Funnel")
+        check(FunnelPorts.Move.inUse(provider: funnel, health: .running(address: nil, port: 47616), ports: legacy,
+                                     address: "https://my-mac.tail1234.ts.net") == nil, "/ of 443 stays as it is")
+        check(FunnelPorts.Move.inUse(provider: funnel, health: running,
+                                     ports: ports([entry(443, [("/", 4000, "")], funnel: false), entry(8443, [("/", 47616, "")], funnel: true)]),
+                                     address: address) == nil, "a tailnet-only 443 would become public")
     }
 
     static func cloudflared() {

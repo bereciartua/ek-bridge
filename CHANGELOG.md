@@ -6,6 +6,14 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+### Added
+
+- **Remote Access offers to move a Tailscale Funnel setup on port 8443 or 10000 to 443.** claude.ai and ChatGPT only connect to 443. Setups from 0.11.3's drafts, or on a port picked by hand, showed as **Running**, or got start commands for the old port.
+  - Once 443 can take EK Bridge's paths, the Tunnel row says so and shows the four commands that add them to 443, then the ones that turn off the old port's entry.
+  - Then **Address ▸ Edit…** changes the address to the one without a port.
+  - A setup on `/` of 443 stays as it is.
+  - BridgeKit 0.4.1.
+
 ## [0.11.4] - 2026-10-19
 
 Agents need no changes: same tools, ports, files and setups. An existing Tailscale Funnel setup keeps working as it is. The client registry stays at **version 4**, so going back to 0.11.2 works by installing its DMG over this one. 0.11.3 was built as a draft only and never published; everything in it is here, with this change to its Funnel fix.
