@@ -11,6 +11,8 @@ regexes = [
     '''^ekb3_\d+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$''',
     # The UI review build's fake Remote Access path (Sources/UIReview.swift).
     '''^q7Zk2vN4bXwP9sL1mT6hYa$''',
+    # A fake Funes Vault secret path in the Funnel tests (AgentSetupTests, TunnelHealthTests).
+    '''^Zz9Yy8Xx7Ww6Vv5Uu4Tt3S$''',
     # A deliberately malformed token in Tests/launcher_test.py.
     '''^ekb_mcp_v1_NOPE$''',
     # Code, not a value (Sources/MCP/OAuthServer.swift).
