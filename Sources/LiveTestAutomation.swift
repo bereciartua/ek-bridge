@@ -28,6 +28,8 @@ final class LiveTestAutomation {
         let presentWindow: () -> Void
         let mainWindow: () -> NSWindow?
         let panelWindow: () -> NSWindow?
+        /// The menu bar menu's own appearance (Settings ▸ Appearance).
+        var menuAppearance: () -> NSAppearance? = { nil }
         /// A11: copies the app into Applications and relaunches it from there.
         var moveToApplications: (() -> String?)? = nil
     }
@@ -302,6 +304,12 @@ final class LiveTestAutomation {
             } ?? NSNull(),
             "bridge": model.bridge.isOn ? "on" : "paused",
             "bridgeTitle": model.bridgeTitle,
+            // Settings ▸ Appearance, and what the window and panel draw with.
+            "appearance": model.appearance.rawValue,
+            "appAppearance": NSApp.appearance?.name.rawValue ?? NSNull(),
+            "windowAppearance": window?.effectiveAppearance.name.rawValue ?? NSNull(),
+            "panelAppearance": panel?.effectiveAppearance.name.rawValue ?? NSNull(),
+            "menuAppearance": context.menuAppearance()?.name.rawValue ?? NSNull(),
             "resumeAt": model.resumeAt.map { ISO8601DateFormatter().string(from: $0) as Any } ?? NSNull(),
             "calendarAccess": accessText(model.calendarAccess),
             "remindersAccess": accessText(model.remindersAccess),
@@ -592,13 +600,14 @@ final class LiveTestAutomation {
     }
 
     private func appearance(_ command: [String: Any]) throws -> String {
-        switch command["appearance"] as? String {
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        case "system": NSApp.appearance = nil
-        default: throw CommandError(message: "appearance is light, dark or system")
+        // Through Settings ▸ Appearance, so it's kept like a click there.
+        // "system" is the older name for Automatic.
+        let value = command["appearance"] as? String
+        guard let choice = value == "system" ? .automatic : value.flatMap(AppAppearance.init(rawValue:)) else {
+            throw CommandError(message: "appearance is automatic, light or dark")
         }
-        return command["appearance"] as! String
+        model.setAppearance(choice)
+        return choice.rawValue
     }
 
     // MARK: Test collections

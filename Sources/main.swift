@@ -113,6 +113,8 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #endif
         windowController = MainWindowController(model: model)
         statusMenu = StatusMenuController(model: model)
+        applyAppearance()
+        model.appearanceChanged = { [weak self] in self?.applyAppearance() }
         #if !EVENTKIT_UI_REVIEW
         approvals.queueChanged = { [weak self] in self?.approvalPanel.update() }
         approvals.selectionChanged = { [weak self] in self?.approvalPanel.update() }
@@ -140,6 +142,7 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
             presentWindow: { [weak self] in self?.windowController.present() },
             mainWindow: { [weak self] in self?.windowController.window },
             panelWindow: { [weak self] in self?.approvalPanel.window },
+            menuAppearance: { [weak self] in self?.statusMenu.menuAppearance },
             moveToApplications: { [weak self] in
                 if case .failed(let problem) = AppMover.move(prepareToQuit: { self?.quitAfterApprovals() }) {
                     return problem
@@ -199,6 +202,13 @@ final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValida
         #if EVENTKIT_UI_REVIEW
         review.cleanup()
         #endif
+    }
+
+    /// Settings ▸ Appearance. Windows, panels, sheets and alerts follow
+    /// `NSApp`; the status item's menu has its own appearance, so it's set too.
+    private func applyAppearance() {
+        NSApp.appearance = model.appearance.appearance
+        statusMenu.menuAppearance = model.appearance.appearance
     }
 
     // MARK: Live services
@@ -567,6 +577,8 @@ struct EKBridgeApp {
         #endif
         let app = NSApplication.shared
         #if !EVENTKIT_UI_REVIEW
+        // Settings ▸ Appearance, before any window, panel or alert shows.
+        app.appearance = AppAppearance(defaults: .standard).appearance
         // Relaunched by Move to Applications: let the old copy quit first.
         AppMover.waitForPreviousCopy()
         #endif

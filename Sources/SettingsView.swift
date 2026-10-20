@@ -101,6 +101,18 @@ struct SettingsView: View {
                     .fixedSize()
                 }
                 RowDivider()
+                SettingsRow(title: String(localized: "Appearance"),
+                            caption: String(localized: "Automatic follows macOS.")) {
+                    Picker(String(localized: "Appearance"),
+                           selection: Binding(get: { model.appearance }, set: { model.setAppearance($0) })) {
+                        ForEach(AppAppearance.allCases) { choice in
+                            Text(choice.title).tag(choice)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                RowDivider()
                 SettingsRow(title: String(localized: "Check for updates automatically"),
                             caption: updatesCaption) {
                     Toggle(String(localized: "Check for updates automatically"),
