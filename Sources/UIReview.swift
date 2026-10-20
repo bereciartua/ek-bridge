@@ -1717,7 +1717,11 @@ final class BehaviorReview {
             guard self.model.sheet == .tunnelSwitch, let summary = self.model.tunnelSwitchSummary else { return false }
             // Earlier steps renamed Claude Code; the list uses its name now.
             return summary.updateURLIn == [self.model.clientName(claude)] && summary.disconnected == ["claude.ai"]
-                && summary.stopCommands == ["tailscale funnel --bg 47616 off"]
+                // Since 0.11.4 Funnel turns off by path, one command per path EK Bridge answers.
+                && self.model.remotePublicPaths.count == 4
+                && summary.stopCommands == self.model.remotePublicPaths.map {
+                    "tailscale funnel --https=443 --set-path \($0) off"
+                }
                 && summary.mcpURL == quick + "/r/••••••/mcp"
         }
         step("switch: Cancel in the confirmation goes back to Paste and test") {
