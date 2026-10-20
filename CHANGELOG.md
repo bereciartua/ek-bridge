@@ -6,6 +6,10 @@ Versions up to 0.7.0 were built and used from source only; none was published as
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-20
+
+Agents need no changes: same tools, ports, files and setups. EK Bridge can now stay light or dark whatever macOS uses, and Remote Access offers to move a Tailscale Funnel setup on port 8443 or 10000 to 443, the only port claude.ai and ChatGPT connect to. The client registry stays at **version 4**, so going back to 0.11.4 works by installing its DMG over this one.
+
 ### Added
 
 - **Appearance: Automatic, Light or Dark.** In Settings ▸ General, keep EK Bridge dark while macOS is light, or the other way round. Automatic follows macOS, as before. It covers the window, Settings, approval and access panels, sheets, alerts and the menu bar menu, changes at once and is kept across launches. The same setting as in Funes Vault.
