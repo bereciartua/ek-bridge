@@ -11,8 +11,8 @@
 # names a local checkout instead, for work on BridgeKit itself. To update
 # BridgeKit, change both values, run test.sh and the live check, and note it
 # in CHANGELOG.md.
-bridgekit_version=0.4.0
-bridgekit_commit=45f8382a9175be3cc4a4c770cef7b61697576103
+bridgekit_version=0.4.1
+bridgekit_commit=c7ea1447555df34932f01dd9ce87a741b4f172ce
 bridgekit_repository=https://github.com/bereciartua/bridgekit.git
 
 if [ -n "${EVENTKIT_BRIDGEKIT_DIR:-}" ]; then
